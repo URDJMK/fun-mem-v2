@@ -1,0 +1,14 @@
+# Git hooks, run by pre-commit (https://pre-commit.com). Once per clone: `just setup`.
+#
+# Both hooks use tools installed on the machine (gitleaks), so nothing is downloaded and
+# they work offline. CI runs the same checks, so a hook skipped with --no-verify is still
+# caught there.
+repos:
+  - repo: local
+    hooks:
+      - id: gitleaks
+        name: gitleaks (secrets in staged changes)
+        entry: gitleaks git --pre-commit --staged --redact --no-banner --verbose
+        language: system
+        pass_filenames: false
+        stages: [pre-commit]

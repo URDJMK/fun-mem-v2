@@ -1,0 +1,16 @@
+# gitleaks: the default rules, plus one narrow exception.
+#
+# Used by the pre-commit hook (staged changes), `just secrets-scan` (the whole history)
+# and CI. If a real secret is ever committed, rotate it FIRST: deleting the commit does not
+# un-leak it.
+
+[extend]
+useDefault = true
+
+[[allowlists]]
+description = "Supabase's public local-development keys: every `supabase start` uses the same anon and service_role tokens (issuer supabase-demo). They open nothing outside a laptop."
+regexTarget = "match"
+regexes = [
+  '''eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9\.eyJpc3MiOiJzdXBhYmFzZS1kZW1vIiwicm9sZSI6ImFub24iLCJleHAiOjE5ODM4MTI5OTZ9\.CRXP1A7WOeoJeXxjNni43kdQwgnWNReilDMblYTn_I0''',
+  '''eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9\.eyJpc3MiOiJzdXBhYmFzZS1kZW1vIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImV4cCI6MTk4MzgxMjk5Nn0\.EGIM96RAZx35lJzdJsyH-qQwv8Hdp7fsn3W0YpN81IU''',
+]
