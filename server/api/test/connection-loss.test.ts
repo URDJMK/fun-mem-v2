@@ -81,7 +81,11 @@ describe('D5 a lost database connection does not take the API down', () => {
         fetch(`http://127.0.0.1:${port}/v1/archives/${archive}/notes`, {
           headers: { authorization: `Bearer ${s.token}` },
         }).then((r) => r.status);
-      expect(await get()).toBe(200);
+      // Several requests at once, so the pool holds connections that sit IDLE when they are cut:
+      // an idle connection's death is what reaches the 'error' listener. A connection busy in a
+      // query (the embedding pass, which runs without pause while a backlog waits) reports to
+      // that query instead, so with one request the line below appeared only some of the time.
+      expect(await Promise.all([get(), get(), get(), get()])).toEqual([200, 200, 200, 200]);
       expect(await cut(name)).toBeGreaterThan(0);
       await sleep(1500);
       expect(proc.exitCode, 'the server died with its connections').toBeNull();
