@@ -1,0 +1,10 @@
+node_modules/
+dist/
+reports/
+pnpm-lock.yaml
+docs/
+*.md
+.claude/
+supabase/.temp/
+supabase/.branches/
+supabase/config.toml

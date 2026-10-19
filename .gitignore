@@ -1,0 +1,12 @@
+node_modules/
+dist/
+reports/
+*.log
+.DS_Store
+.env
+.env.*
+!.env.example
+
+# Supabase CLI scratch (never commit)
+supabase/.temp/
+supabase/.branches/
