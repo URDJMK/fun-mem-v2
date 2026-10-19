@@ -6,7 +6,6 @@
  * and nowhere else — `createApp` stays DI-only (app.ts:20).
  */
 import { serve } from '@hono/node-server';
-import { createClient } from '@supabase/supabase-js';
 import { Pool } from 'pg';
 import type { EmbeddingProvider } from '@funmem/core';
 import { DeterministicEmbeddingProvider } from '@funmem/core';
@@ -17,7 +16,7 @@ import { describeError } from './ingest-jobs';
 import { startEmbeddingLoop } from './embeddings';
 import { createBgeM3Provider, type RealProvider } from './embeddings-real';
 
-// Local secrets (NVIDIA_API_KEY, service key) live in a git-ignored .env at the repo
+// Local secrets (NVIDIA_API_KEY) live in a git-ignored .env at the repo
 // root. Real environment variables win; a missing file is normal (CI, hosted).
 for (const path of ['.env', '../../.env']) {
   try {
@@ -133,15 +132,11 @@ async function main(): Promise<void> {
   });
   pool.on('error', () => undefined);
   const supabaseUrl = need('FUNMEM_SUPABASE_URL');
-  const storage = createClient(supabaseUrl, need('FUNMEM_SERVICE_KEY'), {
-    auth: { persistSession: false, autoRefreshToken: false },
-  });
 
   const { provider, mayDrain, disposable, state } = await selectProvider();
 
   const app = createApp({
     pool,
-    storage,
     embeddings: provider,
     chat: createNimChat(),
     agentModel: createNimAgentModel(),

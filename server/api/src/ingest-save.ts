@@ -1020,7 +1020,7 @@ export async function persistImport(
 /* ── undo ────────────────────────────────────────────────────────────── */
 
 /** Why a note of the import was kept rather than erased. */
-export type KeptReason = 'edited' | 'photo' | 'linked';
+export type KeptReason = 'edited' | 'linked';
 
 export interface UndoOutcome {
   /** notes erased */
@@ -1037,8 +1037,6 @@ export interface UndoOutcome {
  *   edited   a revision other than the import's own. A rename cascade does not count:
  *            it is the machine following another note's new title, not a person; nor
  *            does an erasure cascade (a quote of an erased note taken out of it).
- *   photo    a photograph belongs to it (erasing it would hide the photograph from
- *            everyone but its uploader).
  *   linked   another note links to it that a PERSON wrote, edited or restored after the
  *            import, or another memory of this import that a person has edited. A link
  *            another import (or the assistant) made by itself, because the words matched
@@ -1085,8 +1083,7 @@ export async function undoImport(
     if (run.undone_at) return { erased: 0, kept: [], alreadyUndone: true, erasedIds: [] };
 
     // 1. LOCK the import's notes, in id order (the order every writer here locks notes in).
-    // A writer that got to one of them first (an edit, a photograph being attached) is
-    // waited for here.
+    // A writer that got to one of them first (an edit) is waited for here.
     const locked = await client.query(
       `select n.id from public.notes n
         where n.archive_id = $1
@@ -1100,10 +1097,9 @@ export async function undoImport(
 
     // 2. THEN decide, in a new statement. A statement sees what was committed when it began,
     // so deciding in the one that waited for the locks judged a note by how it looked BEFORE
-    // the wait: an edit or a photograph that won the race was not seen, and its note was
-    // erased (round-2 review #3, #5).
+    // the wait: an edit that won the race was not seen, and its note was erased (round-2
+    // review #3).
     //   edited  a revision other than the import's own; a rename or erasure cascade is the machine
-    //   photo   a photograph belongs to it
     //   linked  a note links to it that a person has worked on since: written, edited or
     //           restored after the import, OR another memory of this import that is itself
     //           edited (a person who edits memory A and links it to memory B has built on B;
@@ -1117,7 +1113,6 @@ export async function undoImport(
                                 and v.reason::text not in ('rename-cascade', 'erasure-cascade')))
        select n.id, n.title,
               n.id in (select id from edited) as edited,
-              exists (select 1 from public.media m where m.note_id = n.id) as photo,
               exists (select 1 from public.links l
                        where l.resolved_id = n.id and l.archive_id = $1 and l.source_id <> n.id
                          and (l.source_id in (select id from edited)
@@ -1136,25 +1131,25 @@ export async function undoImport(
       id: string;
       title: string;
       edited: boolean;
-      photo: boolean;
       linked: boolean;
     }>;
     const reasonOf = (r: (typeof rows)[number]): KeptReason | null =>
-      r.edited ? 'edited' : r.photo ? 'photo' : r.linked ? 'linked' : null;
-    // the delete itself spares a note a photograph belongs to, whatever happened after step 2
-    // ...and what other notes quote of the ones that go is taken out of them first (D2)
+      r.edited ? 'edited' : r.linked ? 'linked' : null;
+    // what other notes quote of the ones that go is taken out of them first (D2)
     const erasedIds = new Set(
       await eraseNotes(
         client,
         archiveId,
         rows.filter((r) => reasonOf(r) === null).map((r) => r.id),
         userId,
-        { unlessPhoto: true, changeId },
+        { changeId },
       ),
     );
+    // every note asked for was locked in step 1, so exactly those were erased: a note that is
+    // still here is one with a reason
     const kept = rows
       .filter((r) => !erasedIds.has(r.id))
-      .map((r) => ({ id: r.id, title: r.title, reason: reasonOf(r) ?? ('photo' as KeptReason) }));
+      .map((r) => ({ id: r.id, title: r.title, reason: reasonOf(r)! }));
     const erase = [...erasedIds];
     // what is left of the record is content-free: no file name, no hash of the words
     await client.query(

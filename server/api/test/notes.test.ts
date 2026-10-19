@@ -1,9 +1,8 @@
 import { createClient, type SupabaseClient } from '@supabase/supabase-js';
 import { Pool } from 'pg';
-import { createHash, randomUUID } from 'node:crypto';
+import { randomUUID } from 'node:crypto';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { createApp, type App } from '../src/app';
-import { MEDIA_BUCKET } from '../src/media';
 
 // Local Supabase stack (must be running — these tests FAIL when it is down; loop rule 1).
 const SUPABASE_URL = process.env.FUNMEM_SUPABASE_URL ?? 'http://127.0.0.1:54321';
@@ -12,8 +11,8 @@ const DB_URL =
 const ANON_KEY =
   process.env.FUNMEM_ANON_KEY ??
   'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZS1kZW1vIiwicm9sZSI6ImFub24iLCJleHAiOjE5ODM4MTI5OTZ9.CRXP1A7WOeoJeXxjNni43kdQwgnWNReilDMblYTn_I0';
-// service key is a TEST FIXTURE ONLY: mints real GoTrue sessions + owns the Storage
-// client injected into the app. It never appears in an access-control assertion.
+// service key is a TEST FIXTURE ONLY: mints real GoTrue sessions. It never appears in an
+// access-control assertion.
 const SERVICE_KEY =
   process.env.FUNMEM_SERVICE_KEY ??
   'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZS1kZW1vIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImV4cCI6MTk4MzgxMjk5Nn0.EGIM96RAZx35lJzdJsyH-qQwv8Hdp7fsn3W0YpN81IU';
@@ -87,16 +86,11 @@ beforeAll(async () => {
     app = createApp({
       embeddings: null,
       pool,
-      storage: admin,
       auth: {
         jwksUrl: `${SUPABASE_URL}/auth/v1/.well-known/jwks.json`,
         issuer: `${SUPABASE_URL}/auth/v1`,
       },
     });
-    // bucket is declared in config.toml; creating it here keeps the suite
-    // independent of a stack restart (db reset wipes bucket metadata)
-    const made = await admin.storage.createBucket(MEDIA_BUCKET, { public: false });
-    if (made.error && !/already exist/i.test(made.error.message)) throw made.error;
   } catch (e) {
     setupError = e;
   }
@@ -130,7 +124,7 @@ async function revisionBody(
   return ((await r.json()) as { body: string }).body;
 }
 
-describe('FM-015 notes CRUD, version log, media', () => {
+describe('FM-015 notes CRUD, version log', () => {
   it('note create read update append attributed revisions per edit', async () => {
     requireSetup();
     const s = await realSession(`crud-${RUN}@test.local`);
@@ -218,110 +212,6 @@ describe('FM-015 notes CRUD, version log, media', () => {
     );
     // owner still sees it (the 404s above were access decisions, not absence)
     expect((await api(owner.token, 'GET', base)).status).toBe(200);
-  });
-
-  it('media uploads are content addressed attributed and immutable', async () => {
-    requireSetup();
-    const s = await realSession(`media-${RUN}@test.local`);
-    const stranger = await realSession(`mediastranger-${RUN}@test.local`);
-    const archive = await provisionArchive(s, `Media ${RUN}`);
-    const bytes = Buffer.from(`unique media payload ${RUN}`);
-    const expectedHash = createHash('sha256').update(bytes).digest('hex');
-
-    const upload = () =>
-      app.request(`/v1/archives/${archive}/media`, {
-        method: 'POST',
-        headers: { authorization: `Bearer ${s.token}`, 'content-type': 'application/pdf' },
-        body: bytes,
-      });
-
-    const first = await upload();
-    expect(first.status).toBe(201);
-    const media = (await first.json()) as { id: string; contentHash: string };
-    expect(media.contentHash).toBe(expectedHash);
-
-    // metadata row: content-addressed + attributed
-    const row = await pool.query(
-      `select content_hash, mime, bytes, created_by from public.media where archive_id = $1`,
-      [archive],
-    );
-    expect(row.rows).toEqual([
-      {
-        content_hash: expectedHash,
-        mime: 'application/pdf',
-        bytes: String(bytes.length),
-        created_by: s.userId,
-      },
-    ]);
-
-    // the blob itself lives content-addressed in Storage and round-trips intact
-    // (FM-040: source bytes now live at <archive>/<hash>/original)
-    const blob = await admin.storage
-      .from(MEDIA_BUCKET)
-      .download(`${archive}/${expectedHash}/original`);
-    expect(blob.error).toBeNull();
-    expect(Buffer.from(await blob.data!.arrayBuffer()).equals(bytes)).toBe(true);
-
-    // capture the stored object's identity BEFORE the duplicate upload — an
-    // upsert:true regression would overwrite it and change updated_at.
-    // FM-040: list ONE LEVEL DEEPER and match 'original'. Listing the archive
-    // now yields a folder placeholder named <hash> with id:null, so the old
-    // form made both comparisons below `null === null` — a tautology that a
-    // real upsert regression passed.
-    const objAt = async () =>
-      (await admin.storage.from(MEDIA_BUCKET).list(`${archive}/${expectedHash}`)).data?.find(
-        (o) => o.name === 'original',
-      );
-    const objBefore = await objAt();
-    expect(objBefore).toBeDefined();
-    expect(objBefore?.id).toBeTruthy(); // a real object, not a folder placeholder
-
-    // re-upload of identical content dedups: same hash, same single row, blob unchanged
-    const second = await upload();
-    expect([200, 201]).toContain(second.status);
-    // immutability: the duplicate upload was REJECTED by storage, not overwritten
-    const objAfter = await objAt();
-    expect(objAfter?.id).toBe(objBefore?.id);
-    expect(objAfter?.updated_at).toBe(objBefore?.updated_at);
-    // a mislabeled duplicate must not relabel the stored row either
-    const relabeled = await app.request(`/v1/archives/${archive}/media`, {
-      method: 'POST',
-      headers: { authorization: `Bearer ${s.token}`, 'content-type': 'image/png' },
-      body: bytes,
-    });
-    // FM-057 made the dedup answer identical to a fresh upload's — in status
-    // AND in every field. A distinct 200, or a `mime` echoing the stored row
-    // rather than the request, told a caller the archive already held those
-    // exact bytes, which is disclosure about a blob they may not read.
-    expect(relabeled.status).toBe(201);
-    expect(((await relabeled.json()) as { mime: string }).mime).toBe('image/png');
-    // ...which is why the invariant this block exists for is now asserted
-    // against the ROW. That is the real claim — a mislabeled duplicate must not
-    // relabel stored media — and reading it from the database rather than
-    // inferring it from the response is strictly stronger.
-    const storedMime = await pool.query<{ mime: string }>(
-      `select mime from public.media where archive_id = $1 and content_hash = $2`,
-      [archive, expectedHash],
-    );
-    expect(storedMime.rows[0]!.mime, 'a mislabeled duplicate relabelled the stored row').toBe(
-      'application/pdf',
-    );
-    const again = (await second.json()) as { id: string; contentHash: string };
-    expect(again.contentHash).toBe(expectedHash);
-    expect(again.id).toBe(media.id);
-    const count = await pool.query(
-      `select count(*)::int as n from public.media where archive_id = $1`,
-      [archive],
-    );
-    expect(count.rows[0].n).toBe(1);
-
-    // strangers cannot upload into a foreign archive — uniform 404
-    const foreign = await app.request(`/v1/archives/${archive}/media`, {
-      method: 'POST',
-      headers: { authorization: `Bearer ${stranger.token}`, 'content-type': 'application/pdf' },
-      body: bytes,
-    });
-    expect(foreign.status).toBe(404);
   });
 
   it('link occurrences reindex on save and backlinks endpoint serves them', async () => {

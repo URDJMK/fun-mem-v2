@@ -902,19 +902,15 @@ export async function createNotesBatch(
  * revisions cascade away through the erasure door, then a content-free tombstone for each
  * note actually erased. Incoming links are left unresolved, and a person's words in other
  * notes are not rewritten; what the MACHINE quoted of them elsewhere (a "may disagree with"
- * line) is taken out first (`scrubQuotesOf`). Returns the ids erased.
- *
- * `unlessPhoto`: a note a photograph belongs to is NOT erased. The notes are locked first and
- * the photographs counted in the next statement: an upload that names a locked note waits at
- * its foreign key until this transaction ends, so what is counted is final, and the quotes
- * removed are exactly those of the notes that go (round-2 review #5; round-3 D2).
+ * line) is taken out first (`scrubQuotesOf`). The notes are locked first, in id order, so the
+ * quotes removed are exactly those of the notes that go (round-3 D2). Returns the ids erased.
  */
 export async function eraseNotes(
   client: PoolClient,
   archiveId: string,
   noteIds: string[],
   userId: string,
-  opts: { unlessPhoto?: boolean; changeId: string },
+  opts: { changeId: string },
 ): Promise<string[]> {
   if (noteIds.length === 0) return [];
   await client.query(
@@ -925,8 +921,7 @@ export async function eraseNotes(
   const going = (
     await client.query(
       `select n.id from public.notes n
-        where n.archive_id = $1 and n.id = any($2::uuid[])
-          ${opts.unlessPhoto ? 'and not exists (select 1 from public.media m where m.note_id = n.id)' : ''}`,
+        where n.archive_id = $1 and n.id = any($2::uuid[])`,
       [archiveId, noteIds],
     )
   ).rows.map((r) => (r as { id: string }).id);
@@ -937,7 +932,6 @@ export async function eraseNotes(
   const gone = await client.query(
     `delete from public.notes n
       where n.archive_id = $1 and n.id = any($2::uuid[])
-        ${opts.unlessPhoto ? 'and not exists (select 1 from public.media m where m.note_id = n.id)' : ''}
       returning n.id`,
     [archiveId, going],
   );

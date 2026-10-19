@@ -1,11 +1,9 @@
 import { Hono } from 'hono';
 import type { Pool } from 'pg';
-import type { SupabaseClient } from '@supabase/supabase-js';
 import { supabaseAuth, type AuthConfig, type AuthVariables } from './auth';
 import { provisionSignup, ProvisionError } from './provision';
 import { isMember } from './membership';
 import { registerNotesRoutes } from './notes';
-import { registerMediaRoutes } from './media';
 import { registerViewsRoutes } from './views';
 import { registerChunkRoutes } from './chunks';
 import { registerSearchRoutes } from './search';
@@ -13,14 +11,11 @@ import { registerAskRoutes } from './ask';
 import { registerDraftRoutes } from './drafts';
 import { registerAgentRoutes, type AgentModelConfig } from './agent';
 import { registerIngestRoutes, type ChatModel } from './ingest';
-import { registerExportRoutes } from './export';
 import type { EmbeddingProvider } from '@funmem/core';
 
 export interface AppDeps {
   pool: Pool;
   auth: AuthConfig;
-  /** Service-key Storage client: uploads + the sole FR-143 erasure remove() (never queries — pg owns data). */
-  storage: SupabaseClient;
   /**
    * Embedding provider for the vector search leg + drain (FM-022). Selection
    * is DI-only (never env-branched in src). Absent/null = model unavailable:
@@ -95,7 +90,6 @@ export function createApp(deps: AppDeps): App {
   });
 
   registerNotesRoutes(app, deps);
-  registerMediaRoutes(app, deps);
   registerViewsRoutes(app, deps);
   registerChunkRoutes(app, deps);
   registerSearchRoutes(app, deps);
@@ -103,7 +97,6 @@ export function createApp(deps: AppDeps): App {
   registerDraftRoutes(app, deps);
   registerIngestRoutes(app, deps);
   registerAgentRoutes(app, deps);
-  registerExportRoutes(app, deps);
 
   return app;
 }

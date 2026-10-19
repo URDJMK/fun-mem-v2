@@ -1,30 +1,14 @@
-import { createHash, randomUUID } from 'node:crypto';
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { MEDIA_BUCKET, listAllUnderPrefix, mediaPrefix } from '../src/media';
+import { randomUUID } from 'node:crypto';
+import { afterAll, describe, expect, it } from 'vitest';
 import { testContext, type RealSession } from './helpers';
 
 // Local Supabase stack must be running — these tests FAIL when it is down (loop rule 1).
 const ctx = testContext();
 const RUN = randomUUID().slice(0, 8);
 
-let setupError: unknown = null;
-
-beforeAll(async () => {
-  try {
-    const made = await ctx.admin.storage.createBucket(MEDIA_BUCKET, { public: false });
-    if (made.error && !/already exist/i.test(made.error.message)) throw made.error;
-  } catch (e) {
-    setupError = e;
-  }
-});
-
 afterAll(async () => {
   await ctx.close();
 });
-
-function requireSetup(): void {
-  if (setupError) throw setupError;
-}
 
 interface NoteResponse {
   id: string;
@@ -49,7 +33,6 @@ async function createNote(
 
 describe('FM-017 deletion cascade with deletion log', () => {
   it('deleting a note cascades revisions links and audiences and writes a content free deletion log', async () => {
-    requireSetup();
     const s = await ctx.realSession(`del1-${RUN}@test.local`);
     const archive = await ctx.provisionArchive(s, `Del1 ${RUN}`);
     await createNote(s, archive, 'Ref One', 'I stay behind.');
@@ -118,7 +101,6 @@ describe('FM-017 deletion cascade with deletion log', () => {
   });
 
   it('deleted note vanishes from every read surface and frees its title', async () => {
-    requireSetup();
     const s = await ctx.realSession(`del2-${RUN}@test.local`);
     const archive = await ctx.provisionArchive(s, `Del2 ${RUN}`);
     const phoenix = await createNote(s, archive, 'Phoenix', 'First life. ^p1');
@@ -156,86 +138,22 @@ describe('FM-017 deletion cascade with deletion log', () => {
     expect(rows[0]).toMatchObject({ sourceId: referrer.id, target: 'Phoenix' });
   });
 
-  it('media hard delete removes the blob and writes a tombstone', async () => {
-    requireSetup();
-    const s = await ctx.realSession(`del3-${RUN}@test.local`);
-    const archive = await ctx.provisionArchive(s, `Del3 ${RUN}`);
-    const bytes = Buffer.from(`erasable payload ${RUN}`);
-    const hash = createHash('sha256').update(bytes).digest('hex');
-
-    const upload = () =>
-      ctx.app.request(`/v1/archives/${archive}/media`, {
-        method: 'POST',
-        headers: { authorization: `Bearer ${s.token}`, 'content-type': 'application/pdf' },
-        body: bytes,
-      });
-    const first = await upload();
-    expect(first.status).toBe(201);
-    const media = (await first.json()) as { id: string };
-
-    const del = await ctx.api(s.token, 'DELETE', `/v1/archives/${archive}/media/${media.id}`);
-    expect(del.status).toBe(200);
-
-    // row gone, blob gone
-    const count = await ctx.pool.query(
-      `select count(*)::int as n from public.media where archive_id = $1`,
-      [archive],
-    );
-    expect(count.rows[0].n).toBe(0);
-    // FM-040: assert the whole prefix is empty, not that one key 404s. Downloading
-    // the pre-FM-040 flat key would pass VACUOUSLY now that nothing is written
-    // there — the object under test lives at <archive>/<hash>/original.
-    expect(await listAllUnderPrefix(ctx.admin, MEDIA_BUCKET, mediaPrefix(archive, hash))).toEqual(
-      [],
-    );
-
-    // tombstone references the ROW id, never the content hash
-    const stone = await ctx.pool.query(
-      `select kind, subject_id, deleted_by from public.tombstones
-        where archive_id = $1 and kind = 'media'`,
-      [archive],
-    );
-    expect(stone.rows).toEqual([{ kind: 'media', subject_id: media.id, deleted_by: s.userId }]);
-
-    // identical bytes upload FRESH afterwards: hard delete, not a soft flag
-    const again = await upload();
-    expect(again.status).toBe(201);
-    expect(((await again.json()) as { id: string }).id).not.toBe(media.id);
-  });
-
   it('deletion is refused for strangers and the append only wall still holds', async () => {
-    requireSetup();
     const owner = await ctx.realSession(`del4-${RUN}@test.local`);
     const stranger = await ctx.realSession(`del4s-${RUN}@test.local`);
     const archive = await ctx.provisionArchive(owner, `Del4 ${RUN}`);
     const note = await createNote(owner, archive, 'Guarded', 'content');
-    const bytes = Buffer.from(`guarded payload ${RUN}`);
-    const up = await ctx.app.request(`/v1/archives/${archive}/media`, {
-      method: 'POST',
-      headers: { authorization: `Bearer ${owner.token}`, 'content-type': 'text/plain' },
-      body: bytes,
-    });
-    const mediaId = ((await up.json()) as { id: string }).id;
 
-    // strangers: uniform 404 on both delete routes; nothing was deleted
+    // strangers: uniform 404; nothing was deleted, and no tombstone was written
     expect(
       (await ctx.api(stranger.token, 'DELETE', `/v1/archives/${archive}/notes/${note.id}`)).status,
     ).toBe(404);
     expect(
-      (await ctx.api(stranger.token, 'DELETE', `/v1/archives/${archive}/media/${mediaId}`)).status,
-    ).toBe(404);
-    expect(
       (await ctx.api(owner.token, 'GET', `/v1/archives/${archive}/notes/${note.id}`)).status,
     ).toBe(200);
-    // "nothing was deleted" holds for the MEDIA too: row intact, no tombstone
-    const mediaSurvived = await ctx.pool.query(
-      `select count(*)::int as n from public.media where id = $1`,
-      [mediaId],
-    );
-    expect(mediaSurvived.rows[0].n).toBe(1);
     const noStone = await ctx.pool.query(
       `select count(*)::int as n from public.tombstones where subject_id = $1`,
-      [mediaId],
+      [note.id],
     );
     expect(noStone.rows[0].n).toBe(0);
 

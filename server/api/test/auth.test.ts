@@ -82,7 +82,6 @@ beforeAll(async () => {
     app = createApp({
       embeddings: null,
       pool,
-      storage: admin,
       auth: {
         jwksUrl: `${SUPABASE_URL}/auth/v1/.well-known/jwks.json`,
         issuer: `${SUPABASE_URL}/auth/v1`,
@@ -91,7 +90,6 @@ beforeAll(async () => {
     hs256App = createApp({
       embeddings: null,
       pool,
-      storage: admin,
       auth: { hs256Secret: JWT_SECRET, issuer: `${SUPABASE_URL}/auth/v1` },
     });
   } catch (e) {

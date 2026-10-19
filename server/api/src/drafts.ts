@@ -7,13 +7,14 @@ import {
 } from '@funmem/core';
 import type { PoolClient, Pool } from 'pg';
 import type { App, AppDeps } from './app';
-import { isMember, UUID_RE } from './membership';
+import { isMember } from './membership';
 import { isNounTail } from './grounding-ko';
 import { readEnglishDate } from './speech';
-import { mediaVisibleSql, visibleSql } from './views';
+import { visibleSql } from './views';
 
 /**
- * "Let the app write the memory for me" — from words, or from a photograph.
+ * "Let the app write the memory for me" — from words. (The composers below can also take a
+ * photograph; this repository has no photographs, so the route passes none.)
  *
  * WHAT THIS IS NOT: a generator. The default provider below composes; it does
  * not write. Every sentence in a returned draft came from the contributor's own
@@ -346,44 +347,14 @@ export function registerDraftRoutes(app: App, deps: AppDeps, provider?: DraftPro
       return c.json({ error: 'not found' }, 404);
     }
 
-    const input = (await c.req.json().catch(() => ({}))) as {
-      text?: string;
-      mediaId?: string;
-      filename?: string;
-    };
+    const input = (await c.req.json().catch(() => ({}))) as { text?: string };
     const text = typeof input.text === 'string' ? input.text : '';
-
-    let media: DraftRequest['media'] = null;
-    if (input.mediaId !== undefined) {
-      if (!UUID_RE.test(input.mediaId)) return c.json({ error: 'not found' }, 404);
-      // the same visibility rule the by-id read uses, so a photograph the
-      // caller may not see cannot be described back to them
-      const row = await deps.pool.query<{ content_hash: string; filename: string | null }>(
-        `select m.content_hash, m.filename from public.media m
-          where m.id = $1 and m.archive_id = $2 and ${mediaVisibleSql('m', '$2', '$3')}`,
-        [input.mediaId, archiveId, userId],
-      );
-      if (row.rowCount === 0) return c.json({ error: 'not found' }, 404);
-      media = { contentHash: row.rows[0]!.content_hash, filename: row.rows[0]!.filename };
-    } else if (typeof input.filename === 'string' && input.filename.trim() !== '') {
-      /**
-       * A file the contributor has CHOSEN but not yet uploaded.
-       *
-       * Nothing is looked up and nothing is trusted: the name is the
-       * contributor's own string, it is used only to propose a title, and that
-       * title goes back to them to read before anything is written. There is no
-       * row here to authorize against because there is no row yet.
-       */
-      media = { contentHash: null, filename: input.filename.slice(0, 300) };
-    }
-
-    if (text.trim() === '' && media === null) {
-      return c.json({ error: 'text, mediaId or filename is required' }, 400);
-    }
+    if (text.trim() === '') return c.json({ error: 'text is required' }, 400);
 
     const result = await composer.draft({
       text,
-      media,
+      // no photographs in this repository: a draft is composed from words alone
+      media: null,
       titles: await visibleTitles(deps.pool, archiveId, userId),
     });
 

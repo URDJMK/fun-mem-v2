@@ -76,7 +76,6 @@ export function testContext(overrides?: { embeddings?: TestContext['embeddings']
   });
   const deps: AppDeps = {
     pool,
-    storage: admin,
     // the deterministic provider is the suite-wide default: the real ONNX
     // model must never load in the default test tier (env-gated smoke only)
     embeddings,
