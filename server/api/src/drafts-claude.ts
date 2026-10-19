@@ -519,7 +519,8 @@ export function runClaude(
     });
 
     child.on('error', (e: NodeJS.ErrnoException) => {
-      const failure: CliFailure = e.code === 'ENOENT' || e.code === 'EACCES' ? 'unavailable' : 'crashed';
+      const failure: CliFailure =
+        e.code === 'ENOENT' || e.code === 'EACCES' ? 'unavailable' : 'crashed';
       settle(() => reject(new ClaudeCliError(failure, `${e.code ?? 'spawn'}: ${e.message}`)));
     });
 
@@ -590,9 +591,8 @@ export function parseStream(out: string, code: number | null, stderr: string): R
     throw classifyResult(result);
   }
 
-  const text = typeof result.result === 'string' && result.result !== ''
-    ? result.result
-    : assistant.join('');
+  const text =
+    typeof result.result === 'string' && result.result !== '' ? result.result : assistant.join('');
   if (text.trim() === '') {
     throw new ClaudeCliError('model', 'claude returned an empty answer');
   }
@@ -625,7 +625,11 @@ function classifyResult(r: StreamLine): ClaudeCliError {
   if (r.api_error_status === 429 || /rate limit|usage limit|too many requests|quota/i.test(msg)) {
     return new ClaudeCliError('rate_limited', msg, BREAKER_COOLDOWN_MS);
   }
-  if (r.api_error_status !== null && r.api_error_status !== undefined && r.api_error_status >= 500) {
+  if (
+    r.api_error_status !== null &&
+    r.api_error_status !== undefined &&
+    r.api_error_status >= 500
+  ) {
     return new ClaudeCliError('crashed', `upstream ${r.api_error_status}: ${msg}`, 15_000);
   }
   return new ClaudeCliError('crashed', msg === '' ? 'claude failed' : msg, BREAKER_COOLDOWN_MS);
@@ -678,7 +682,12 @@ export interface MediaFetcher {
 const MAGIC: Array<[string, (b: Buffer) => boolean]> = [
   ['image/jpeg', (b) => b[0] === 0xff && b[1] === 0xd8 && b[2] === 0xff],
   ['image/png', (b) => b.subarray(0, 8).equals(Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]))],
-  ['image/webp', (b) => b.subarray(0, 4).toString('latin1') === 'RIFF' && b.subarray(8, 12).toString('latin1') === 'WEBP'],
+  [
+    'image/webp',
+    (b) =>
+      b.subarray(0, 4).toString('latin1') === 'RIFF' &&
+      b.subarray(8, 12).toString('latin1') === 'WEBP',
+  ],
   ['image/gif', (b) => b.subarray(0, 6).toString('latin1').startsWith('GIF8')],
 ];
 
@@ -739,7 +748,10 @@ async function imageBlock(
     notes.push('사진 형식을 알 수 없어 글만 보고 정리했습니다.');
     return null;
   }
-  return { type: 'image', source: { type: 'base64', media_type: mediaType, data: bytes.toString('base64') } };
+  return {
+    type: 'image',
+    source: { type: 'base64', media_type: mediaType, data: bytes.toString('base64') },
+  };
 }
 
 /* ── 6. concurrency ──────────────────────────────────────────────────── */
@@ -963,7 +975,9 @@ export class ClaudeCliDraftProvider implements DraftProvider {
         return accepted;
       } catch (e) {
         const err =
-          e instanceof ClaudeCliError ? e : new ClaudeCliError('crashed', String(e), BREAKER_COOLDOWN_MS);
+          e instanceof ClaudeCliError
+            ? e
+            : new ClaudeCliError('crashed', String(e), BREAKER_COOLDOWN_MS);
         this.breaker.fail(err);
         this.lastFailure = err.failure;
         // one line per failure, typed, never the contributor's text
@@ -1015,11 +1029,16 @@ export class ClaudeCliDraftProvider implements DraftProvider {
       ].join('\n'),
     });
 
-    const { text: outText, costUsd, throttleHint } = await runClaude(content, {
+    const {
+      text: outText,
+      costUsd,
+      throttleHint,
+    } = await runClaude(content, {
       timeoutMs: image ? VISION_TIMEOUT_MS : TEXT_TIMEOUT_MS,
       ...(req.signal ? { signal: req.signal } : {}),
     });
-    if (throttleHint) console.warn(`[drafts] rate_limit_event observed (cost $${costUsd.toFixed(4)})`);
+    if (throttleHint)
+      console.warn(`[drafts] rate_limit_event observed (cost $${costUsd.toFixed(4)})`);
     return outText;
   }
 }
@@ -1095,17 +1114,21 @@ export function coerceDraft(raw: string, req: DraftRequest): DraftResult | null 
  * starts with `DeterministicComposer`, exactly as a failed embedding load
  * starts it with keyword-only search.
  */
-export async function probeClaudeCli(): Promise<{ ok: true; version: string } | { ok: false; why: ClaudeCliError }> {
+export async function probeClaudeCli(): Promise<
+  { ok: true; version: string } | { ok: false; why: ClaudeCliError }
+> {
   try {
-    const { text } = await runClaude(
-      [{ type: 'text', text: 'Reply with exactly: {"ok":true}' }],
-      { timeoutMs: 20_000 },
-    );
+    const { text } = await runClaude([{ type: 'text', text: 'Reply with exactly: {"ok":true}' }], {
+      timeoutMs: 20_000,
+    });
     // the probe is not checking the model's obedience, only that a round trip
     // completed with a subscription attached
     return { ok: true, version: text.includes('ok') ? 'probe-ok' : 'probe-odd' };
   } catch (e) {
-    return { ok: false, why: e instanceof ClaudeCliError ? e : new ClaudeCliError('crashed', String(e)) };
+    return {
+      ok: false,
+      why: e instanceof ClaudeCliError ? e : new ClaudeCliError('crashed', String(e)),
+    };
   }
 }
 
