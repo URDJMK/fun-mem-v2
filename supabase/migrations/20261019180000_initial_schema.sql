@@ -17,8 +17,8 @@
 -- the default privileges hand future tables nothing either. test/rls.test.ts pins it.
 
 create extension if not exists vector with schema extensions;
--- honest Korean tokenization for search: '바다' matches '바다에', which the built-in
--- analyzers cannot do
+-- partial-word matching for search ('bake' finds 'bakery', 'main st' finds 'Main Street'),
+-- which the 'simple' full-text configuration cannot do
 create extension if not exists pgroonga with schema extensions;
 
 -- ---------- enums ----------
