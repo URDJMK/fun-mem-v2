@@ -1,0 +1,36 @@
+{
+  "name": "@funmem/api",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "build": "tsc --noEmit",
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit",
+    "start": "vite-node src/main.ts"
+  },
+  "devDependencies": {
+    "@types/pg": "^8.20.0",
+    "@types/yauzl": "^3.4.0",
+    "@types/yazl": "^3.3.1",
+    "pg": "^8.22.0",
+    "vite-node": "^3.2.4",
+    "yauzl": "^3.4.0"
+  },
+  "dependencies": {
+    "@ai-sdk/openai-compatible": "^3.0.71",
+    "@funmem/core": "workspace:*",
+    "@funmem/persona": "workspace:*",
+    "@hono/node-server": "^2.0.10",
+    "@huggingface/transformers": "^4.2.0",
+    "@mastra/core": "^1.78.0",
+    "@supabase/supabase-js": "^2.110.6",
+    "hono": "^4.12.30",
+    "jose": "^6.2.3",
+    "yazl": "^3.3.1",
+    "zod": "^4.6.7"
+  }
+}
