@@ -547,32 +547,7 @@ describe('#2 a preview is kept while somebody is reviewing it, whatever anyone e
 
 /* ── #3: undo keeps what somebody has built on ────────────────────────── */
 
-describe('#3 undo keeps a memory somebody attached a photograph to, or linked to since', () => {
-  it('a photograph a relative attached keeps its memory, and stays visible', async () => {
-    const { owner, archive, post, addMember, undo } = await setup('photo');
-    const out = (await (await post({ transcript: interview(2), save: true })).json()) as {
-      runId: string;
-      saved: Array<{ id: string }>;
-    };
-    const member = await addMember('contributor');
-    const up = await ctx.app.request(`/v1/archives/${archive}/media?note=${out.saved[0]!.id}`, {
-      method: 'POST',
-      headers: { authorization: `Bearer ${member.token}`, 'content-type': 'image/png' },
-      body: new Uint8Array(Buffer.from(`IPPHOTO${RUN}\n`)),
-    });
-    expect(up.status).toBe(201);
-    const media = (await up.json()) as { id: string };
-    const res = await undo(owner, out.runId);
-    expect(await res.json()).toMatchObject({
-      erased: 1,
-      kept: [{ id: out.saved[0]!.id, reason: 'photo' }],
-      alreadyUndone: false,
-    });
-    expect(
-      (await ctx.api(owner.token, 'GET', `/v1/archives/${archive}/media/${media.id}`)).status,
-    ).toBe(200);
-  });
-
+describe('#3 undo keeps a memory somebody linked to since', () => {
   it('a note written since that links to a memory keeps it; a link that was already there does not', async () => {
     const { owner, archive, post, addMember, undo } = await setup('linked');
     const member = await addMember('contributor');

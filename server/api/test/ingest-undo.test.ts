@@ -149,37 +149,6 @@ describe('#3 an edit that got 200 is never erased by an undo, however the archiv
   });
 });
 
-describe('#5 a photograph attached while the undo starts keeps its memory', () => {
-  it('the attach is still uncommitted when the undo reaches the note: the undo waits, then keeps it', async () => {
-    const { owner, archive, save, undo, exists, q } = await setup('photo-race');
-    const out = await save({ transcript: interview(2), save: true });
-    const A = out.saved[0]!;
-    const hash = `iuphoto${RUN}`;
-    const client = await ctx.pool.connect();
-    let u: Undone;
-    try {
-      await client.query('begin');
-      await client.query(
-        `insert into public.media (archive_id, note_id, content_hash, mime, bytes, created_by)
-         values ($1, $2, $3, 'image/png', 10, $4)`,
-        [archive, A.id, hash, owner.userId],
-      );
-      const pending = undo(out.runId);
-      await sleep(500);
-      await client.query('commit');
-      u = await pending;
-    } finally {
-      client.release();
-    }
-    expect(u.kept).toEqual([expect.objectContaining({ id: A.id, reason: 'photo' })]);
-    expect(u.erased).toBe(1);
-    expect(await exists(A.id)).toBe(true);
-    expect(await q(`select note_id from public.media where content_hash = $1`, [hash])).toEqual([
-      { note_id: A.id },
-    ]);
-  });
-});
-
 describe('#4 an import whose notes are all gone keeps no file name, no hash and no guard, at once', () => {
   it('every note deleted by hand: the record is scrubbed by the delete itself, however old it is', async () => {
     const { owner, archive, save, q } = await setup('scrub');

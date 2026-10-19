@@ -197,67 +197,25 @@ describe('FM-071 draft composition', () => {
       expect(Number(after.rows[0]!.n), 'drafting created a note').toBe(Number(before.rows[0]!.n));
     });
 
-    it('refuses an empty request and a photograph that is not the caller’s to see', async () => {
-      const owner = await ctx.realSession(`df4a-${RUN}@test.local`);
-      const other = await ctx.realSession(`df4b-${RUN}@test.local`);
-      const archive = await ctx.provisionArchive(owner, `DF4 ${RUN}`);
-      await ctx.pool.query(
-        `insert into public.memberships (archive_id, user_id, role)
-         values ($1, $2, 'contributor') on conflict do nothing`,
-        [archive, other.userId],
-      );
+    it('refuses a request without words: there are no photographs here to draft from', async () => {
+      const s = await ctx.realSession(`df4-${RUN}@test.local`);
+      const archive = await ctx.provisionArchive(s, `DF4 ${RUN}`);
 
-      expect((await draft(owner, archive, {})).status, 'an empty draft was accepted').toBe(400);
+      expect((await draft(s, archive, {})).status, 'an empty draft was accepted').toBe(400);
+      // v1 also composed from a photograph alone: by its id, or by the name of one not yet uploaded
+      expect((await draft(s, archive, { mediaId: randomUUID() })).status).toBe(400);
+      expect((await draft(s, archive, { filename: 'grandma-60th.jpg' })).status).toBe(400);
 
-      // a photograph uploaded with no `?note=` mints a note PRIVATE to its
-      // uploader, so a co-member must not be able to have it described to them
-      const up = await ctx.app.request(`/v1/archives/${archive}/media`, {
-        method: 'POST',
-        headers: { authorization: `Bearer ${owner.token}`, 'content-type': 'image/png' },
-        body: new Uint8Array(Buffer.from(`private-${RUN}\n`, 'utf8')),
+      // words that come with them are composed as words alone: nothing embedded, nothing promised
+      const res = await draft(s, archive, {
+        text: 'The photo from that day.',
+        mediaId: randomUUID(),
+        filename: 'grandma-60th.jpg',
       });
-      const { id: mediaId } = (await up.json()) as { id: string };
-
-      // POSITIVE CONTROL: the uploader can draft from it
-      const mine = await draft(owner, archive, { mediaId });
-      expect(mine.status, 'the uploader cannot draft from their own photograph').toBe(200);
-
-      const theirs = await draft(other, archive, { mediaId });
-      expect(theirs.status, 'a private photograph was described to a co-member').toBe(404);
-    });
-
-    it('embeds by content hash when the photograph is already stored', async () => {
-      const s = await ctx.realSession(`df5-${RUN}@test.local`);
-      const archive = await ctx.provisionArchive(s, `DF5 ${RUN}`);
-      const up = await ctx.app.request(`/v1/archives/${archive}/media`, {
-        method: 'POST',
-        headers: { authorization: `Bearer ${s.token}`, 'content-type': 'image/png' },
-        body: new Uint8Array(Buffer.from(`stored-${RUN}\n`, 'utf8')),
-      });
-      const { id: mediaId, contentHash } = (await up.json()) as {
-        id: string;
-        contentHash: string;
-      };
-
-      const d = (await (await draft(s, archive, { mediaId, text: '그날의 사진' })).json()) as Draft;
-      // BY HASH, not by media id: a row's id is per-uploader, so an id-keyed
-      // embed breaks the moment a second relative reads the same memory
-      expect(d.body, 'the photograph was not embedded by content hash').toContain(
-        `![[${contentHash}]]`,
-      );
-      expect(d.body).not.toContain(mediaId);
-    });
-
-    it('a file only chosen, not yet uploaded, still names the memory', async () => {
-      const s = await ctx.realSession(`df6-${RUN}@test.local`);
-      const archive = await ctx.provisionArchive(s, `DF6 ${RUN}`);
-
-      // the ordinary composing case: the photograph is still in the browser
-      const d = (await (await draft(s, archive, { filename: '할머니 환갑.jpg' })).json()) as Draft;
-      expect(d.title).toBe('할머니 환갑');
-      // nothing to embed yet, and it says so rather than embedding a null
-      expect(d.body).not.toContain('![[');
-      expect(d.notes.join(' ')).toContain('저장할 때');
+      expect(res.status).toBe(200);
+      const d = (await res.json()) as Draft;
+      expect(d.body).toBe('The photo from that day.');
+      expect(d.notes.join(' ')).not.toMatch(/사진/);
     });
   });
 });
