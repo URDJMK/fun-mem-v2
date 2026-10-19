@@ -9,20 +9,22 @@ export interface NoteFormValues extends NoteFields {
 
 /** What the person is told when a save is refused, in words they can act on. */
 function saveFailure(e: unknown): string {
-  if (!(e instanceof ApiError)) return '저장하지 못했습니다.';
-  if (e.status === 409) return '같은 제목의 기억이 이미 있습니다. 조금 다르게 적어 주세요.';
-  if (e.code === 'date') return '날짜를 읽지 못했습니다. 1987, 1987-03, ~1948 처럼 적어 주세요.';
+  if (!(e instanceof ApiError)) return 'Could not save.';
+  if (e.status === 409)
+    return 'A memory with this title already exists. Try a slightly different title.';
+  if (e.code === 'date')
+    return 'That date could not be read. Write it like 1987, 1987-03 or ~1948.';
   if (e.code === 'too_long' || e.code === 'too_large')
-    return '글이 너무 깁니다. 나누어 적어 주세요.';
-  if (e.code === 'too_many_links') return '한 기억에 이어 둔 기억이 너무 많습니다.';
-  if (e.status === 403) return '이 기록에서는 읽기만 할 수 있습니다.';
-  if (e.status === 400) return '제목에 쓸 수 없는 글자가 있습니다. [ ] # ^ | 는 빼 주세요.';
-  return '저장하지 못했습니다.';
+    return 'The text is too long. Split it into more than one memory.';
+  if (e.code === 'too_many_links') return 'This memory links to too many others.';
+  if (e.status === 403) return 'In this archive you can read, but not write.';
+  if (e.status === 400) return 'A title cannot contain [ ] # ^ or |.';
+  return 'Could not save.';
 }
 
 /**
  * Writing a memory, new or again: its title, when it happened, what it is about (only when it
- * is new: the server keeps a memory's kind), and what happened. v1's words throughout.
+ * is new: the server keeps a memory's kind), and what happened.
  */
 export function NoteForm({
   initial,
@@ -45,7 +47,7 @@ export function NoteForm({
 
   async function save() {
     if (title.trim() === '') {
-      setError('제목이 필요합니다.');
+      setError('A title is needed.');
       return;
     }
     setSaving(true);
@@ -69,34 +71,33 @@ export function NoteForm({
     >
       <p>
         <label>
-          제목
+          Title
           <br />
           <input
             data-testid="note-title"
             value={title}
             onChange={(e) => setTitle(e.target.value)}
-            placeholder="마당의 빨랫줄"
+            placeholder="The clothesline in the yard"
           />
         </label>
       </p>
       <p>
         <label>
-          언제
+          When
           <br />
           <input
             data-testid="note-occurred"
             value={occurred}
             onChange={(e) => setOccurred(e.target.value)}
-            placeholder="1987 · 1987-03 · ~1948 · 비워 두어도 됩니다"
+            placeholder="1987 · 1987-03 · ~1948 · or leave it empty"
           />
         </label>
-        <br />
-        연도만 알아도 괜찮습니다. 모르면 비워 두세요 — 없는 날짜를 지어내지 않습니다.
+        <br />A year alone is fine. If you don’t know, leave it empty: a date is never made up.
       </p>
       {withType && (
         <p>
           <label>
-            무엇에 대한 기억인가요
+            What is this memory about?
             <br />
             <select
               data-testid="note-type"
@@ -114,7 +115,7 @@ export function NoteForm({
       )}
       <p>
         <label>
-          내용
+          Text
           <br />
           <textarea
             data-testid="note-body"
@@ -122,17 +123,17 @@ export function NoteForm({
             cols={60}
             value={body}
             onChange={(e) => setBody(e.target.value)}
-            placeholder="[[어머니]] 처럼 대괄호로 감싸면 다른 기억과 이어집니다."
+            placeholder="Put a name in double brackets, like [[Mother]], to link it to another memory."
           />
         </label>
       </p>
       {error && <p role="alert">{error}</p>}
       <p>
         <button type="submit" data-testid="note-save" disabled={saving}>
-          {saving ? '저장하는 중' : '저장하기'}
+          {saving ? 'Saving…' : 'Save'}
         </button>{' '}
         <button type="button" onClick={onCancel}>
-          그만두기
+          Cancel
         </button>
       </p>
     </form>

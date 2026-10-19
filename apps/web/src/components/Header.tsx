@@ -17,18 +17,18 @@ export function Header() {
   return (
     <header>
       <nav>
-        <Link to="/">별의 기록</Link>
+        <Link to="/">fun-mem</Link>
         {archive.writer && (
           <>
             {' · '}
             <Link to="/new" data-testid="nav-new">
-              기억 남기기
+              Leave a memory
             </Link>
           </>
         )}
         {' · '}
         <button type="button" data-testid="sign-out" onClick={() => void signOut()}>
-          로그아웃
+          Sign out
         </button>
       </nav>
     </header>

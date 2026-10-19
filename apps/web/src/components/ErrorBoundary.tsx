@@ -16,13 +16,13 @@ export class ErrorBoundary extends Component<{ children: ReactNode }, { failed: 
     if (!this.state.failed) return this.props.children;
     return (
       <main role="alert" data-testid="error-boundary">
-        <h1>문제가 생겼습니다</h1>
-        <p>이 화면을 보여 드리지 못했습니다. 새로 고침하면 이어서 할 수 있습니다.</p>
+        <h1>Something went wrong</h1>
+        <p>This page could not be shown. Reload it to carry on.</p>
         <p>
           <button type="button" onClick={() => window.location.reload()}>
-            새로 고침
+            Reload
           </button>{' '}
-          <a href="/">처음으로</a>
+          <a href="/">Go to the start</a>
         </p>
       </main>
     );

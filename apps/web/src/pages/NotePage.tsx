@@ -50,7 +50,7 @@ export function NotePage({ noteId }: { noteId: string }) {
     void load();
   }, [load]);
 
-  if (data === 'loading') return <p>기억을 여는 중입니다</p>;
+  if (data === 'loading') return <p>Opening the memory…</p>;
   if (data === 'missing' || data === 'failed') {
     return (
       <>
@@ -58,11 +58,11 @@ export function NotePage({ noteId }: { noteId: string }) {
         <main>
           <p role="alert">
             {data === 'missing'
-              ? '이 기억을 찾지 못했습니다. 지워졌거나, 볼 수 없는 기억입니다.'
-              : '기억을 불러오지 못했습니다. 새로 고침해 주세요.'}
+              ? 'This memory could not be found. It was deleted, or you cannot see it.'
+              : 'Could not load the memory. Reload the page.'}
           </p>
           <p>
-            <Link to="/">기억 목록으로</Link>
+            <Link to="/">Back to the memories</Link>
           </p>
         </main>
       </>
@@ -73,7 +73,7 @@ export function NotePage({ noteId }: { noteId: string }) {
   const missing = missingTargets(note.body, notes);
 
   async function remove() {
-    if (!window.confirm(`“${note.title}” 기억을 지울까요? 지운 기억은 되돌릴 수 없습니다.`)) return;
+    if (!window.confirm(`Delete “${note.title}”? A deleted memory cannot be brought back.`)) return;
     setDeleting(true);
     setDeleteFailed(false);
     try {
@@ -87,7 +87,7 @@ export function NotePage({ noteId }: { noteId: string }) {
 
   return (
     <>
-      <title>{`${note.title} · 별의 기록`}</title>
+      <title>{`${note.title} · fun-mem`}</title>
       <Header />
       <main>
         {editing ? (
@@ -146,7 +146,7 @@ export function NotePage({ noteId }: { noteId: string }) {
                 {missing.map((t) => (
                   <li key={t}>
                     <Link to={`/new?title=${encodeURIComponent(t)}`} data-testid="create-note">
-                      “{t}” 새로 만들기
+                      Create “{t}”
                     </Link>
                   </li>
                 ))}
@@ -155,7 +155,7 @@ export function NotePage({ noteId }: { noteId: string }) {
             {archive.writer && (
               <p>
                 <button type="button" data-testid="note-edit" onClick={() => setEditing(true)}>
-                  고치기
+                  Edit
                 </button>{' '}
                 <button
                   type="button"
@@ -163,18 +163,18 @@ export function NotePage({ noteId }: { noteId: string }) {
                   disabled={deleting}
                   onClick={() => void remove()}
                 >
-                  {deleting ? '지우는 중' : '지우기'}
+                  {deleting ? 'Deleting…' : 'Delete'}
                 </button>
               </p>
             )}
-            {deleteFailed && <p role="alert">지우지 못했습니다.</p>}
+            {deleteFailed && <p role="alert">Could not delete.</p>}
           </article>
         )}
 
         <aside data-testid="backlinks">
           <h2>Backlinks</h2>
           {backlinks.occurrences.length === 0 ? (
-            <p>아직 이 기억을 부르는 곳이 없습니다.</p>
+            <p>No other memory links here yet.</p>
           ) : (
             <ul>
               {backlinks.occurrences.map((o, i) => (
@@ -190,7 +190,7 @@ export function NotePage({ noteId }: { noteId: string }) {
           {/* say it was cut: a short list that looks complete is a quiet lie */}
           {backlinks.truncated && (
             <p data-testid="backlinks-truncated">
-              {backlinks.total}개의 언급 중 {backlinks.occurrences.length}개를 보이고 있습니다.
+              Showing {backlinks.occurrences.length} of {backlinks.total} mentions.
             </p>
           )}
         </aside>

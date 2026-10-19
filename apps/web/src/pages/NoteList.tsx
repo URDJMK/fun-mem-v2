@@ -22,20 +22,20 @@ export function NoteList() {
 
   return (
     <>
-      <title>기억 목록 · 별의 기록</title>
+      <title>Memories · fun-mem</title>
       <Header />
       <main>
         <h1>{archive.subjectName}</h1>
-        <section data-testid="note-list" aria-label="기억 목록">
+        <section data-testid="note-list" aria-label="Memories">
           {notes === null ? (
-            <p>기억을 여는 중입니다</p>
+            <p>Opening the memories…</p>
           ) : notes === 'failed' ? (
-            <p role="alert">기억을 불러오지 못했습니다. 새로 고침해 주세요.</p>
+            <p role="alert">Could not load the memories. Reload the page.</p>
           ) : notes.length === 0 ? (
-            <p>아직 남긴 기억이 없습니다.</p>
+            <p>No memories yet.</p>
           ) : (
             <>
-              <p>{notes.length}개의 기억</p>
+              <p>{notes.length === 1 ? '1 memory' : `${notes.length} memories`}</p>
               <ul>
                 {notes.map((n) => (
                   <li key={n.id}>

@@ -49,7 +49,7 @@ export function ArchiveGate({ children }: { children: ReactNode }) {
 
   if (archive === undefined) return null;
   if (archive === 'failed') {
-    return <p role="alert">기록을 불러오지 못했습니다. 새로 고침해 주세요.</p>;
+    return <p role="alert">Could not load your archive. Reload the page.</p>;
   }
   if (archive === null) return <Provision onDone={load} />;
   return <ArchiveContext.Provider value={archive}>{children}</ArchiveContext.Provider>;
@@ -57,7 +57,7 @@ export function ArchiveGate({ children }: { children: ReactNode }) {
 
 function Provision({ onDone }: { onDone: () => Promise<void> }) {
   const [subjectName, setSubjectName] = useState('');
-  const [jurisdiction, setJurisdiction] = useState('KR');
+  const [jurisdiction, setJurisdiction] = useState('');
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -69,17 +69,17 @@ function Provision({ onDone }: { onDone: () => Promise<void> }) {
       storeArchiveId(archiveId);
       await onDone();
     } catch {
-      setError('기록을 만들지 못했습니다');
+      setError('Could not create the archive.');
       setPending(false);
     }
   }
 
   return (
     <main>
-      <title>기록 만들기 · 별의 기록</title>
+      <title>Create an archive · fun-mem</title>
       <p>A place to keep them</p>
-      <h1>누구의 기억을 모을까요?</h1>
-      <p>이름을 적으면 그 사람을 중심으로 기억이 모입니다. 나중에 바꿀 수 있습니다.</p>
+      <h1>Whose memories will you gather?</h1>
+      <p>Write a name, and the memories gather around that person. You can change it later.</p>
       <form
         data-testid="provision-form"
         onSubmit={(e) => {
@@ -94,7 +94,7 @@ function Provision({ onDone }: { onDone: () => Promise<void> }) {
             <input
               name="subjectName"
               required
-              placeholder="김순자"
+              placeholder="Their name"
               value={subjectName}
               onChange={(e) => setSubjectName(e.target.value)}
             />
@@ -107,6 +107,7 @@ function Provision({ onDone }: { onDone: () => Promise<void> }) {
             <input
               name="jurisdiction"
               required
+              placeholder="A country code, e.g. US"
               value={jurisdiction}
               onChange={(e) => setJurisdiction(e.target.value)}
             />
@@ -114,7 +115,7 @@ function Provision({ onDone }: { onDone: () => Promise<void> }) {
         </p>
         <p>
           <button type="submit" disabled={pending}>
-            {pending ? '만드는 중' : '시작하기'}
+            {pending ? 'Creating…' : 'Start'}
           </button>
         </p>
         {error && <p role="alert">{error}</p>}

@@ -12,11 +12,10 @@ export function NewNote() {
 
   return (
     <>
-      <title>기억 남기기 · 별의 기록</title>
+      <title>Leave a memory · fun-mem</title>
       <Header />
       <main>
-        <p>Leave a memory</p>
-        <h1>기억을 남깁니다</h1>
+        <h1>Leave a memory</h1>
         {archive.writer ? (
           <NoteForm
             initial={{ title: params.get('title') ?? '', type: 'event', body: '', occurred: null }}
@@ -28,7 +27,7 @@ export function NewNote() {
             onCancel={() => void navigate(-1)}
           />
         ) : (
-          <p>이 기록에서는 읽기만 할 수 있습니다.</p>
+          <p>In this archive you can read, but not write.</p>
         )}
       </main>
     </>

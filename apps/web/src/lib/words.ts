@@ -1,13 +1,13 @@
 import { ENTITY_TYPES, type EntityType } from '@funmem/core';
 
-/** What a note is about, in the words the app uses (v1's labels). */
+/** What a note is about, in the words the app shows. */
 export const TYPE_LABEL: Record<EntityType, string> = {
-  person: '사람',
-  place: '장소',
-  event: '일',
-  period: '시절',
-  object: '물건',
-  source: '자료',
+  person: 'Person',
+  place: 'Place',
+  event: 'Event',
+  period: 'Period',
+  object: 'Object',
+  source: 'Source',
 };
 
 export const TYPES: readonly EntityType[] = ENTITY_TYPES;
