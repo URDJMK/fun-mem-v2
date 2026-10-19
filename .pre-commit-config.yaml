@@ -12,3 +12,8 @@ repos:
         language: system
         pass_filenames: false
         stages: [pre-commit]
+      - id: conventional-commit
+        name: commit message follows Conventional Commits
+        entry: scripts/check-commit-msg.sh
+        language: script
+        stages: [commit-msg]
