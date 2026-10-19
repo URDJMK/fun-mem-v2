@@ -352,12 +352,7 @@ describe('applyRoles: interjections folded only once the roles are sure', () => 
 });
 
 describe('the demo samples are sure answers: the import is not interrupted', () => {
-  for (const f of [
-    'grandma-sunja-en.txt',
-    'grandma-sunja-en.json',
-    'grandma-sunja-ko.txt',
-    'grandma-sunja-ko.json',
-  ]) {
+  for (const f of ['grandma-sunja-en.txt', 'grandma-sunja-en.json']) {
     it(f, () => {
       const raw = readFileSync(
         new URL(`../../../docs/ingest/samples/${f}`, import.meta.url),

@@ -1,4 +1,4 @@
-# fun-mem v2 — 별의 기록
+# fun-mem v2
 
 A family memory wiki. Relatives write down, or tell in a recorded interview, what they remember
 about one person. The app keeps it as linked notes, and its AI only ever repeats what was written:

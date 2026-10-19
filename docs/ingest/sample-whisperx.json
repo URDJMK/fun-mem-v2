@@ -1,12 +1,12 @@
 {
-  "language": "ko",
+  "language": "en",
   "segments": [
-    { "start": 0.0, "end": 4.6, "text": " 어린 시절 이야기부터 들려주세요.", "speaker": "SPEAKER_01" },
-    { "start": 4.6, "end": 15.2, "text": " 어 나는 부산에서 태어났어요. 어릴 때 바닷가 집에서 살았어요.", "speaker": "SPEAKER_00" },
-    { "start": 15.2, "end": 22.0, "text": " 겨울에는 아버지가 장작을 패 주셨어요.", "speaker": "SPEAKER_00" },
-    { "start": 22.0, "end": 25.1, "text": " 어머니는 어떤 분이셨어요?", "speaker": "SPEAKER_01" },
-    { "start": 25.1, "end": 38.4, "text": " 우리 어머니는 국수를 참 잘 삶으셨어요. 여름마다 마당에서 국수를 삶아 주셨어요.", "speaker": "SPEAKER_00" },
-    { "start": 38.4, "end": 41.0, "text": " 네, 그러셨군요.", "speaker": "SPEAKER_01" },
-    { "start": 41.0, "end": 55.3, "text": " 1962년에 서울로 올라와서 공장에서 일을 했어요. 거기서 남편을 만났어요.", "speaker": "SPEAKER_00" }
+    { "start": 0.0, "end": 4.2, "text": " Let us start with your childhood. Where did you grow up?", "speaker": "SPEAKER_01" },
+    { "start": 4.2, "end": 14.8, "text": " Um, I grew up by the sea. We lived in a little house near the harbour.", "speaker": "SPEAKER_00" },
+    { "start": 14.8, "end": 21.5, "text": " In the winter my father split the firewood for us.", "speaker": "SPEAKER_00" },
+    { "start": 21.5, "end": 24.6, "text": " What was your mother like?", "speaker": "SPEAKER_01" },
+    { "start": 24.6, "end": 37.9, "text": " My mother made the best noodles. Every summer she cooked them out in the yard.", "speaker": "SPEAKER_00" },
+    { "start": 37.9, "end": 40.3, "text": " Yes, I see.", "speaker": "SPEAKER_01" },
+    { "start": 40.3, "end": 54.6, "text": " In 1962 I moved to the city and worked in a factory. That is where I met my husband.", "speaker": "SPEAKER_00" }
   ]
 }
