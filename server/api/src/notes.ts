@@ -370,46 +370,43 @@ interface MarkerForm {
   end: string;
 }
 
-let markerForms: MarkerForm[] | null = null;
+let markerForm: MarkerForm | null = null;
 
 /**
- * The fixed words of a "may disagree with [[note]]" line, in each language, read off the one
- * function that writes it (`crossNoteMarker`), so this reader cannot drift from the writer.
+ * The fixed words of a "may disagree with [[note]]" line, read off the one function that writes
+ * it (`crossNoteMarker`), so this reader cannot drift from the writer.
  */
-function forms(): MarkerForm[] {
-  if (markerForms) return markerForms;
+function form(): MarkerForm {
+  if (markerForm) return markerForm;
   const [T, W, E] = ['qqtitleqq', 'qqwhenqq', 'qqexistingqq'];
-  markerForms = ['A sentence in English.', '한국어로 한 말입니다.'].map((claim) => {
-    const line = crossNoteMarker(
-      { when: W, who: null, channel: 'interview' },
-      { claim, title: T, existing: E },
-    );
-    const t = line.indexOf(`[[${T}]]`);
-    const e = line.indexOf(E);
-    return {
-      open: `${line.slice(0, t)}[[`,
-      shut: line.slice(t + 2 + T.length, line.indexOf(W)),
-      says: line.slice(line.lastIndexOf(': ', e), e),
-      end: line.slice(e + E.length),
-    };
-  });
-  return markerForms;
+  const line = crossNoteMarker(
+    { when: W, who: null, channel: 'interview' },
+    { claim: 'A sentence in English.', title: T, existing: E },
+  );
+  const t = line.indexOf(`[[${T}]]`);
+  const e = line.indexOf(E);
+  markerForm = {
+    open: `${line.slice(0, t)}[[`,
+    shut: line.slice(t + 2 + T.length, line.indexOf(W)),
+    says: line.slice(line.lastIndexOf(': ', e), e),
+    end: line.slice(e + E.length),
+  };
+  return markerForm;
 }
 
 /**
  * The title a machine-written "may disagree with [[note]]" line names (an import's or the
- * assistant's, in either language), or null for any other line. A line a person has rewritten
- * out of that shape is theirs, and is not one.
+ * assistant's), or null for any other line. A line a person has rewritten out of that shape is
+ * theirs, and is not one. The title and the words quoted may be in any script: only the fixed
+ * words around them are read.
  */
 export function markerTarget(line: string): string | null {
   const l = line.endsWith('\r') ? line.slice(0, -1) : line;
-  for (const f of forms()) {
-    if (!l.startsWith(f.open) || !l.endsWith(f.end)) continue;
-    const close = l.indexOf(f.shut, f.open.length);
-    if (close <= f.open.length || l.indexOf(f.says, close) === -1) continue;
-    return l.slice(f.open.length, close);
-  }
-  return null;
+  const f = form();
+  if (!l.startsWith(f.open) || !l.endsWith(f.end)) return null;
+  const close = l.indexOf(f.shut, f.open.length);
+  if (close <= f.open.length || l.indexOf(f.says, close) === -1) return null;
+  return l.slice(f.open.length, close);
 }
 
 /**

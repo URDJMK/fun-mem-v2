@@ -117,7 +117,6 @@ describe('N-F12: the assistant can record a year correction for any verb (F12: l
     ['The church burned down in 1955.', 'The church burned down in 1957.'],
     ['Dad worked at the mill from 1950.', 'Dad worked at the mill from 1952.'],
     ['We had 12 cows.', 'We had 20 cows.'],
-    ['저는 1970년에 부산에 살았어요.', '저는 1971년에 부산에 살았어요.'],
     ['My mother was born in 1925.', 'My mother was born in 1926.'],
     ['We sold the farm in nineteen eighty-four.', 'We sold the farm in 1982.'],
   ])('%s -> a correction, the original kept', (old, neu) => {
@@ -159,11 +158,6 @@ describe('N-F1: what is said of NOW is not compared across two tellings (F1: an 
       'I am 81 years old and I live with my daughter.',
       'I am 82 years old and I live with my daughter.',
     ],
-    ['저는 올해 82살이에요.', '저는 올해 85살이에요.'],
-    ['저는 지금 손주가 3명 있어요.', '저는 지금 손주가 5명 있어요.'],
-    ['할머니는 올해 82세예요.', '할머니는 올해 85세예요.'],
-    ['저는 82살이에요.', '저는 85살이에요.'],
-    ['제 나이는 82살이에요.', '제 나이는 85살이에요.'],
   ])('%s / %s', (a, b) => {
     expect(compareClaims(a, b).relation).not.toBe('conflict');
     expect(compareClaims(b, a).relation).not.toBe('conflict');
@@ -173,8 +167,6 @@ describe('N-F1: what is said of NOW is not compared across two tellings (F1: an 
     for (const [a, b] of [
       ['Mom had four children.', 'Mom had five children.'],
       ['I was 20 when I married.', 'I was 22 when I married.'],
-      ['저는 16살에 시집왔어요.', '저는 17살에 시집왔어요.'],
-      ['저는 1931년생이에요.', '저는 1932년생이에요.'], // a birth said in the present is still a birth
       ['Now, in 1950 we sold the farm.', 'We sold the farm in 1952.'],
     ])
       expect(compareClaims(a!, b!).relation).toBe('conflict');
@@ -225,13 +217,12 @@ describe('N-F3: a wish, a plan, hearsay or a condition is not a fact (F3)', () =
     ['Dad could have died in 1950.', 'Dad died in 1990.'],
     ['Had he lived, Dad would have retired in 1990.', 'Dad retired in 1985.'],
     ['Mom was due to be born in 1930.', 'Mom was born in 1931.'],
-    ['민호는 1980년에 은퇴하고 싶어 했어요.', '민호는 1985년에 은퇴했다.'],
-    ['민호는 1980년에 은퇴하려고 했어요.', '민호는 1985년에 은퇴했다.'],
-    ['민호는 1980년에 은퇴할 뻔했어요.', '민호는 1985년에 은퇴했다.'],
-    ['민호는 1980년에 은퇴했으면 좋겠다고 했어요.', '민호는 1985년에 은퇴했다.'],
-    ['민호는 1980년에 은퇴했을 거라고 했어요.', '민호는 1985년에 은퇴했다.'],
-    ['민호는 1980년에 은퇴했다고 들었어요.', '민호는 1985년에 은퇴했다.'],
-    ['민호가 일찍 은퇴했다면 1980년에 은퇴했을 거예요.', '민호는 1985년에 은퇴했다.'],
+    ['Minho meant to retire in 1980.', 'Minho retired in 1985.'],
+    ['Minho almost retired in 1980.', 'Minho retired in 1985.'],
+    ['Minho wished he had retired in 1980.', 'Minho retired in 1985.'],
+    ['I heard that Minho retired in 1980.', 'Minho retired in 1985.'],
+    ['Minho was told to retire in 1980.', 'Minho retired in 1985.'],
+    ['If Minho had retired early it would have been 1980.', 'Minho retired in 1985.'],
   ])('%s', innocent);
 
   it('a hedge on one\'s own memory is still a statement ("I think")', () => {
@@ -243,13 +234,11 @@ describe('N-F3: a wish, a plan, hearsay or a condition is not a fact (F3)', () =
 
 describe('N-F2: an approximate number or a bound is not a point (F2)', () => {
   it.each([
-    ['민호는 광산에서 30년 정도 일했어요.', '민호는 광산에서 32년 일했다.'],
-    ['아버지는 30년 넘게 광산에서 일하셨다.', '아버지는 32년 광산에서 일하셨다.'],
-    ['아버지는 30년 이상 광산에서 일하셨다.', '아버지는 32년 광산에서 일하셨다.'],
-    ['아버지는 30년 가까이 광산에서 일하셨다.', '아버지는 29년 광산에서 일하셨다.'],
-    ['아버지는 광산에서 30년 안팎 일하셨다.', '아버지는 광산에서 32년 일하셨다.'],
-    ['어머니는 1931년인가 태어나셨어요.', '어머니는 1932년에 태어나셨어요.'],
-    ['어머니는 1931년이었나 태어나셨어요.', '어머니는 1932년에 태어나셨어요.'],
+    ['Minho worked at the mill for about 30 years.', 'Minho worked at the mill for 32 years.'],
+    ['Minho worked at the mill for over 30 years.', 'Minho worked at the mill for 32 years.'],
+    ['Minho worked at the mill for around 30 years.', 'Minho worked at the mill for 29 years.'],
+    ['My mother was born maybe 1931.', 'My mother was born in 1932.'],
+    ['My mother was born in 1931 or so.', 'My mother was born in 1932.'],
     [
       'Minho worked at the mill for more than thirty years.',
       'Minho worked at the mill for 32 years.',
@@ -277,44 +266,29 @@ describe('N-F2: an approximate number or a bound is not a point (F2)', () => {
 describe('N-F10: a four-digit amount is not a year (F10)', () => {
   it.each([
     ['Minho sold the cow for 2000 won.', 'Minho sold the cow in nineteen fifty.'],
-    ['민호는 소를 2000원에 팔았어요.', '민호는 소를 1950년에 팔았다.'],
-    ['우리는 집을 2000만 원에 샀다.', '우리는 집을 1975년에 샀다.'],
     ['Minho sold the cow for 2000 dollars.', 'Minho sold the cow in 1950.'],
     ['Minho sold the cow for $1900.', 'Minho sold the cow in 1950.'],
     ['We kept 2000 chickens on the farm.', 'We kept chickens on the farm in 1950.'],
     ['They were married for 1950 days.', 'They married in 1960.'],
   ])('%s', innocent);
 
-  it('...while "in 1950" and "1950년에" are still years', () => {
+  it('...while "in 1950" is still a year', () => {
     expect(
       compareClaims('Minho sold the cow in 1950.', 'Minho sold the cow in 1952.').relation,
     ).toBe('conflict');
-    // ("그 소": that cow, one thing; a bare "소를 팔았다" may be any cow, review round 3 F9)
+    // ("that cow": one thing; a bare "sold a cow" may be any cow, review round 3 F9)
     expect(
-      compareClaims('민호는 그 소를 1950년에 팔았다.', '민호는 그 소를 1952년에 팔았다.').relation,
+      compareClaims('Minho sold that cow in 1950.', 'Minho sold that cow in 1952.').relation,
     ).toBe('conflict');
   });
 });
 
-describe('labels and Korean pronouns (F2/F9 neighbours)', () => {
+describe('labels (F2/F9 neighbours)', () => {
   it.each([
     ['I was in Company 12.', 'I was in Company 14.'],
     ['Grade 5 was hard.', 'Grade 6 was hard.'],
     ['We lived at 25 Main Street.', 'We lived at 52 Main Street.'],
   ])('%s', innocent);
-
-  it('"그분" and "그녀" in two notes are not taken to be one person', async () => {
-    const [list] = await findConflictsInGroups({ judge: null, budget: { left: 0 } }, [
-      {
-        retrieve: async () => [
-          { id: 'n', title: '할아버지', text: '그분은 1920년에 태어나셨다.', voice: 'author:me' },
-        ],
-        claims: ['그분은 1925년에 태어나셨다.'],
-        voice: 'author:me',
-      },
-    ]);
-    expect(list).toEqual([]);
-  });
 });
 
 describe('N-F13c / N-F14a: only a usable answer wins the judge race, and no reply can crash the check', () => {
@@ -399,8 +373,8 @@ describe('N-F4: the judge reads what is about the claim, and the report says why
       complete: async (_s, user) => {
         const shown = shownIn(user);
         asked.push({ claim: newIn(user), titles: shown.map((p) => p.title) });
-        const hit = /Busan|부산/.test(newIn(user))
-          ? shown.filter((p) => /Daegu|대구/.test(p.text) && /born|Born|태어/.test(p.text))
+        const hit = /Busan/.test(newIn(user))
+          ? shown.filter((p) => /Daegu/.test(p.text) && /born|Born/.test(p.text))
           : [];
         return JSON.stringify({
           conflicts: hit.map((p) => ({
@@ -501,23 +475,23 @@ describe('N-F4: the judge reads what is about the claim, and the report says why
     expect(list).toEqual([]);
   });
 
-  it('the teller typed in lower case, or in Korean, is still the person the archive names', async () => {
+  it('the teller typed in lower case is still the person the archive names', async () => {
     for (const [subject, seed, claim] of [
       ['grandma sunja', SEED, DEMO],
       [
-        '김순자 할머니',
+        'sunja kim',
         {
           id: 'k',
-          title: '김순자',
-          text: '순자는 1952년에 대구에서 태어났다.',
+          title: 'Sunja',
+          text: 'Sunja was born in Daegu in nineteen fifty-two.',
           voice: 'author:noah',
         },
-        '저는 부산에서 태어났어요.',
+        'I was born in Busan, and it was nineteen forty-six.',
       ],
     ] as const) {
       const b = birthJudge();
       const [list] = await findConflictsInGroups({ judge: b.judge, budget: { left: 3 } }, [
-        { retrieve: async () => [seed], claims: [claim, '우리는 그때 정말 행복했어요.'], subject },
+        { retrieve: async () => [seed], claims: [claim, 'We were so happy then.'], subject },
       ]);
       expect(b.asked.map((a) => a.claim)).toEqual([claim]);
       expect(list).toHaveLength(1);
@@ -619,7 +593,6 @@ describe('N-F6: two relatives who share a name, or a family word, are not one te
     ['Grandma Sunja', 'Aunt Sunja', 'I was born in 1946 in Busan.', 'I was born in 1950 in Busan.'],
     ['Grandpa Joe', 'Uncle Joe', 'My wife died in 1980.', 'My wife died in 1990.'],
     ['Grandpa Joe', 'Cousin Joe', 'My mother was born in 1925.', 'My mother was born in 1950.'],
-    ['순자 할머니', '순자 이모', '저는 1946년에 태어났어요.', '저는 1950년에 태어났어요.'],
     ['Joe Sr.', 'Joe Jr.', 'I was born in 1920.', 'I was born in 1950.'],
     ['Joe', 'Joe Jr.', 'I was born in 1920.', 'I was born in 1950.'],
   ])('%s and %s', (a, b, x, y) => {
@@ -632,8 +605,6 @@ describe('N-F6: two relatives who share a name, or a family word, are not one te
     ['walt kowalski', 'Walt Kowalski', 'I was born in 1946.', 'I was born in 1950.'],
     ['José García', 'josé garcía', 'I was born in 1946.', 'I was born in 1950.'],
     ['Grandma Sunja', 'Sunja Kim', 'I was born in 1946.', 'I was born in 1950.'],
-    ['김순자', '김순자 할머니', '저는 1946년에 태어났어요.', '저는 1948년에 태어났어요.'],
-    ['순자', '김순자', '저는 1946년에 태어났어요.', '저는 1948년에 태어났어요.'],
   ])('...while %s and %s are one person, told twice', (a, b, x, y) => {
     expect(told(a, b, x, y)).toBe('conflict');
   });
@@ -646,9 +617,6 @@ describe('N-F6: two relatives who share a name, or a family word, are not one te
     expect(one('Aunt Sunja', 'I was born in Daegu in nineteen forty-six.', EN)).not.toBe(
       'conflict',
     );
-    const KO = '김순자 할머니는 1952년에 대구에서 태어나셨다.';
-    expect(one('김순자 할머니', '저는 1946년에 대구에서 태어났어요.', KO)).toBe('conflict');
-    expect(one('순자 이모', '저는 1946년에 대구에서 태어났어요.', KO)).not.toBe('conflict');
     // and the teller's own grandmother is not the teller
     expect(
       one('Grandma Sunja', 'My grandmother was born in 1920.', 'Grandma Sunja was born in 1952.'),
@@ -660,13 +628,6 @@ describe('N-F6: two relatives who share a name, or a family word, are not one te
       compareClaims(claim, note, { sameTeller: false, sameText: false, tellerA: teller }).relation;
     expect(
       one('Sunja Kim', 'I was born in Daegu in 1946.', 'Sunja was born in Daegu in 1952.'),
-    ).toBe('conflict');
-    expect(
-      one(
-        '김순자 할머니',
-        '저는 1946년에 대구에서 태어났어요.',
-        '순자는 1952년에 대구에서 태어났다.',
-      ),
     ).toBe('conflict');
     expect(
       one('Sunja Kim', 'I was born in Daegu in 1946.', 'Kim was born in Daegu in 1952.'),
@@ -684,7 +645,7 @@ describe('N-F6: two relatives who share a name, or a family word, are not one te
             rows: (params[0] as string[]).map((id) => ({
               id,
               kind: 'archive-members',
-              quoted: [`> From “Winter 2025” · told by ${id === 'g1' ? 'Grandma' : '할머니'}`],
+              quoted: [`> From “Winter 2025” · told by ${id === 'g1' ? 'Grandma' : 'Granny'}`],
             })),
           };
         return {
@@ -697,8 +658,8 @@ describe('N-F6: two relatives who share a name, or a family word, are not one te
             },
             {
               note_id: 'g2',
-              title: '남편',
-              content: '남편은 1980년에 돌아가셨다.',
+              title: 'Wife',
+              content: 'My wife died in nineteen eighty.',
               created_by: 'u',
             },
           ],
@@ -709,14 +670,14 @@ describe('N-F6: two relatives who share a name, or a family word, are not one te
     const got = await r('husband');
     expect(got.map((p) => p.voice)).toEqual([
       `${tellerVoice('Grandma')}#g1`,
-      `${tellerVoice('할머니')}#g2`,
+      `${tellerVoice('Granny')}#g2`,
     ]);
     const [fromArchive, sameInterview] = await findConflictsInGroups(
       { judge: null, budget: { left: 0 } },
       [
         {
           retrieve: r,
-          claims: ['My husband died in nineteen ninety.', '남편은 1990년에 돌아가셨다.'],
+          claims: ['My husband died in nineteen ninety.', 'My wife died in nineteen ninety.'],
           subject: 'Grandma',
         },
         {
@@ -835,11 +796,11 @@ describe('N-F9: "once in a life" is what happens once, to one person or one thin
     ['My mother was 20 when she had a baby.', 'My mother was 22 when she had a baby.'],
     ['Dad was 30 when he lost his job.', 'Dad was 40 when he lost his job.'],
     ['He was 12 when he left school.', 'He was 14 when he left school.'],
-    ['민호는 차를 1960년에 샀다.', '민호는 차를 1970년에 샀다.'],
-    ['민호는 집을 1950년에 지었다.', '민호는 집을 1971년에 지었다.'],
-    ['민호는 1960년에 입사했어요.', '민호는 1962년에 입사했어요.'],
-    ['민호는 1970년에 이혼했어요.', '민호는 1980년에 이혼했어요.'],
-    ['제 동생은 1950년에 태어났다.', '제 동생은 1953년에 태어났다.'],
+    ['Minho bought a car in 1960.', 'Minho bought a car in 1970.'],
+    ['Minho built a house in 1950.', 'Minho built a house in 1971.'],
+    ['Minho got a new job in 1960.', 'Minho got a new job in 1962.'],
+    ['Minho divorced in 1970.', 'Minho divorced in 1980.'],
+    ['My brother was born in 1950.', 'My brother was born in 1953.'],
   ])('%s', innocent);
 
   it.each([
@@ -854,7 +815,7 @@ describe('N-F9: "once in a life" is what happens once, to one person or one thin
     ['My eldest son was born in 1960.', 'My eldest son was born in 1963.'],
     ['My brother Jaesung was born in 1950.', 'My brother Jaesung was born in 1953.'],
     ['Our oldest son Tom was born in 1968 in a snowstorm.', 'Our oldest son Tom was born in 1969.'],
-    ['The Korean War ended in 1953.', 'The Korean War ended in 1954.'],
+    ['The Vietnam War ended in 1975.', 'The Vietnam War ended in 1976.'],
     ['The flood of 1972 took our barn and two of the cows.', 'The flood of 1974 took the barn.'],
     ['I started school in 1950.', 'I started school in 1951.'],
     ['I left home at 16.', 'I left home at 17.'],
@@ -870,9 +831,8 @@ describe('N-F9: "once in a life" is what happens once, to one person or one thin
     ['Walt was drafted in 1968.', 'Walt was drafted in 1969.'],
     ['My uncle Joe died in 1980 of a heart attack.', 'Uncle Joe died in 1982.'],
     ['Dad retired in 1985.', 'Dad retired in 1987.'],
-    ['농장은 1984년에 팔았어요.', '농장은 1982년에 팔았어요.'],
-    ['아버지는 그 농장을 1984년에 파셨다.', '아버지는 그 농장을 1982년에 파셨다.'],
-    ['큰아들은 1970년에 태어났다.', '큰아들은 1971년에 태어났다.'],
+    ['Father sold that farm in 1984.', 'Father sold that farm in 1982.'],
+    ['My eldest son was born in 1970.', 'My eldest son was born in 1971.'],
   ])('...while this is one event told twice: %s', (a, b) => {
     expect(compareClaims(a, b).relation).toBe('conflict');
     expect(compareClaims(b, a).relation).toBe('conflict');
@@ -961,14 +921,10 @@ describe("N-F8: a sentence that holds the claim's words in other roles is no rep
 describe('N-F11: a seed that names her otherwise than the teller label is still hers (F11, e2e part 8)', () => {
   // the judge says nothing here: only the numbers can mark
   const CLAIM = 'I was born in Daegu in nineteen forty-six.';
-  const KO_CLAIM = '저는 1946년에 대구에서 태어났어요.';
   it.each([
     ['X1', 'Grandma Sunja', 'Sunja was born in Daegu in nineteen fifty-two.', CLAIM],
     ['X2', 'Sunja Kim', 'Sunja was born in Daegu in nineteen fifty-two.', CLAIM],
     ['X3', 'Grandma Sunja', 'Grandma Sunja was born in Daegu in nineteen fifty-two.', CLAIM],
-    ['X6', '김순자 할머니', '순자는 1952년에 대구에서 태어났다.', KO_CLAIM],
-    ['X7', '김순자', '김순자는 1952년에 대구에서 태어났다.', KO_CLAIM],
-    ['X8', '김순자 할머니', '김순자 할머니는 1952년에 대구에서 태어나셨다.', KO_CLAIM],
     ['T10', 'grandma sunja', 'Sunja was born in Daegu in nineteen fifty-two.', CLAIM],
   ])('%s: teller %s, seed %s', async (_label, subject, seed, claim) => {
     const [list] = await findConflictsInGroups(

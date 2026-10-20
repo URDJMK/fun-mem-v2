@@ -29,7 +29,7 @@ describe('FM-022 embedding drain', () => {
       s,
       archive,
       'Diary',
-      '# 하나\n\n첫 문단 이야기.\n\n# 둘\n\n둘째 문단 기록.',
+      '# One\n\nFirst paragraph story.\n\n# Two\n\nSecond paragraph record.',
     );
 
     // save indexed 2 chunks but embedded nothing (embedding never runs inside
@@ -60,16 +60,18 @@ describe('FM-022 embedding drain', () => {
     // edit only section two: the unchanged chunk's embedding row survives
     // byte-identically (same id — hash cache, no re-embed), the stale hash is
     // removed by the save itself (erasure hygiene), the new content drains
-    const keptId = rows.rows.find((r) => r.content_hash === chunkHashes.rows[0]!.content_hash)!
-      .id as string;
     const hash1 = (
       await ctx.pool.query(
         `select content_hash from public.chunks where note_id = $1 and chunk_index = 0`,
         [noteId],
       )
     ).rows[0]!.content_hash as string;
+    // section one's own embedding, picked by ITS hash. (It was once the first of
+    // the rows sorted by hash, which is section one only when the text happens to
+    // hash that way.)
+    const keptId = rows.rows.find((r) => r.content_hash === hash1)!.id as string;
     const put = await ctx.api(s.token, 'PUT', `/v1/archives/${archive}/notes/${noteId}`, {
-      body: '# 하나\n\n첫 문단 이야기.\n\n# 둘\n\n완전히 새로운 내용.',
+      body: '# One\n\nFirst paragraph story.\n\n# Two\n\nCompletely new content.',
     });
     expect(put.status).toBe(200);
     const afterSave = await ctx.pool.query(

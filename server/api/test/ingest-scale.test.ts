@@ -129,7 +129,7 @@ describe('#2 a 2,300-memory interview: preview, a save that retitles every memor
 });
 
 describe('#10 in an archive with more than 500 titles, the ones the interview mentions are offered first', () => {
-  it('a short title the interview mentions ("Busan", "부산") is offered, though 600 longer ones exist', async () => {
+  it('a short title the interview mentions ("Busan", "Одесса") is offered, though 600 longer ones exist', async () => {
     const owner = await ctx.realSession(`sc-titles-${RUN}@test.local`);
     const archive = await ctx.provisionArchive(owner, `SC titles ${RUN}`);
     await ctx.pool.query(
@@ -140,14 +140,15 @@ describe('#10 in an archive with more than 500 titles, the ones the interview me
     );
     await ctx.pool.query(
       `insert into public.notes (archive_id, title, type, body, created_by)
-       values ($1, 'Busan', 'place', '', $2), ($1, '부산', 'place', '', $2), ($1, 'Mom', 'person', '', $2)`,
+       values ($1, 'Busan', 'place', '', $2), ($1, 'Одесса', 'place', '', $2), ($1, 'Mom', 'person', '', $2)`,
       [archive, owner.userId],
     );
+    // a title in another script is found as the whole word it is, compared exactly
     const text =
-      'We lived in Busan near the harbour. 어릴 때 부산에서 살았어요. My father repaired boats.';
+      'We lived in Busan near the harbour. Later we moved to Одесса. My father repaired boats.';
     const offered = await sharedTitles(ctx.pool, archive, text);
     expect(offered).toHaveLength(500);
-    expect(offered).toEqual(expect.arrayContaining(['Busan', '부산']));
+    expect(offered).toEqual(expect.arrayContaining(['Busan', 'Одесса']));
     expect(offered).not.toContain('Mom'); // not mentioned, and shorter than the 500 longest
     // without a transcript the longest come first, as before
     expect(await sharedTitles(ctx.pool, archive)).not.toContain('Busan');
@@ -162,7 +163,7 @@ describe('#10 in an archive with more than 500 titles, the ones the interview me
       [archive, owner.userId],
     );
     const sentence =
-      'and then we walked down to the old harbour where the boats came in, 그리고 부산에서 ';
+      'and then we walked down to the old harbour where the boats came in, потом в Одессе ';
     const big = sentence.repeat(Math.ceil(400_000 / sentence.length)).slice(0, 400_000);
     const half = big.slice(0, 200_000);
     const time = async (t: string) => {

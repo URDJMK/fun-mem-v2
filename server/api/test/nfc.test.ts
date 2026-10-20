@@ -15,9 +15,9 @@ import { testContext, type RealSession } from './helpers';
 const ctx = testContext();
 const RUN = randomUUID().slice(0, 8);
 
-/** 바다 — 6 bytes composed, 12 decomposed. */
-const NFC_T = (r: string) => `바다${r}`.normalize('NFC');
-const NFD_T = (r: string) => `바다${r}`.normalize('NFD');
+/** Café — 5 bytes composed (the é is two), 6 decomposed (an e plus a two-byte accent). */
+const NFC_T = (r: string) => `Caf\u{E9} ${r}`.normalize('NFC');
+const NFD_T = (r: string) => `Caf\u{E9} ${r}`.normalize('NFD');
 
 afterAll(async () => {
   await ctx.close();
@@ -69,7 +69,7 @@ describe('FM-050 unicode title normalization', () => {
 
     const target = await post(s, archive, nfc);
     const targetId = ((await target.json()) as { id: string }).id;
-    // the REFERRER types the decomposed form, as a Korean IME may emit it
+    // the REFERRER types the decomposed form, as a macOS file name or a pasted-in text carries it
     await post(s, archive, `Ref ${RUN}`, `see [[${nfd}]] here.`);
 
     const link = await ctx.pool.query<{ resolved_id: string | null; target: string }>(

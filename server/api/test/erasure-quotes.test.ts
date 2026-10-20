@@ -92,19 +92,20 @@ describe('the reader of a "may disagree" line', () => {
     title: 'Born in Haeundae',
     existing: 'I was born in 1950.',
   });
-  const ko = crossNoteMarker(at, {
-    claim: '저는 1946년에 태어났어요.',
-    title: '해운대에서 태어남',
-    existing: '저는 1950년에 태어났어요.',
+  // a title and words in a script the rules do not cover: only the fixed words around them are read
+  const ru = crossNoteMarker(at, {
+    claim: 'Я родился в 1946 году.',
+    title: 'Рождение в Хайдэ',
+    existing: 'Я родился в 1950 году.',
   });
   const viaAssistant = crossNoteMarker(
     { ...at, channel: 'assistant' },
     { claim: 'She left in 1971.', title: 'The move', existing: 'She left in 1970.' },
   );
 
-  it('knows the line in both languages and from the assistant, and nothing a person rewrote', () => {
+  it('knows the line, whatever script its title is in, and from the assistant, and nothing a person rewrote', () => {
     expect(markerTarget(en)).toBe('Born in Haeundae');
-    expect(markerTarget(ko)).toBe('해운대에서 태어남');
+    expect(markerTarget(ru)).toBe('Рождение в Хайдэ');
     expect(markerTarget(viaAssistant)).toBe('The move');
     expect(markerTarget(`${en}\r`)).toBe('Born in Haeundae');
     expect(markerTarget('We talked about [[Born in Haeundae]] at dinner.')).toBeNull();
@@ -126,7 +127,7 @@ describe('the reader of a "may disagree" line', () => {
     const own = `Words about [[Born in Haeundae]].\n\n${en}`;
     expect(withoutMarkersNaming(own, gone)).toBe('Words about [[Born in Haeundae]].');
     expect(withoutMarkersNaming(joined, new Set(['the move']))).toBe(joined);
-    expect(withoutMarkersNaming(`가.\n\n${ko}`, new Set(['해운대에서 태어남']))).toBe('가.');
+    expect(withoutMarkersNaming(`Слова.\n\n${ru}`, new Set(['рождение в хайдэ']))).toBe('Слова.');
   });
 
   it('reads 400,000 characters of near-misses in linear time', () => {

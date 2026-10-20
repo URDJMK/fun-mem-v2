@@ -5,7 +5,6 @@ import {
   claimUnits,
   eventsOf,
   factWords,
-  koreanStem,
   norm,
   numbersConflict,
   plainText,
@@ -19,7 +18,6 @@ import {
   type TellerWords,
   type Voices,
 } from './claims';
-import { detectLang, honorific, type Lang } from './ingest-lang';
 import type { ChatModel } from './ingest';
 import { mapPool } from './pool';
 import { hybridQuery } from './search';
@@ -80,30 +78,27 @@ export type Retrieve = ((query: string) => Promise<Passage[]>) & { readonly voic
 
 /** The voice of a named teller: the same in every interview they tell. */
 export const tellerVoice = (name: string): string =>
-  `teller:${name.normalize('NFC').toLowerCase().replace(/님$/, '').replace(/\s+/g, ' ').trim()}`;
+  `teller:${name.normalize('NFC').toLowerCase().replace(/\s+/g, ' ').trim()}`;
 const voiceOf = (p: { teller?: string | null; voice?: string | null }): string | null =>
   p.voice ?? (p.teller ? tellerVoice(p.teller) : null);
 /**
  * The voice of a note's teller as the archive knows it. A footer that names nobody ("told by
- * Grandma", "told by Mom", 할머니 말씀) is that note's own voice: two families' "Grandma" are
- * not one person, nor one family's two grandmothers (review round 3, F6).
+ * Grandma", "told by Mom") is that note's own voice: two families' "Grandma" are not one
+ * person, nor one family's two grandmothers (review round 3, F6).
  */
 const archiveVoice = (teller: string, noteId: string): string =>
   tellerNames(teller).length > 0 ? tellerVoice(teller) : `${tellerVoice(teller)}#${noteId}`;
 
 /**
  * The teller an imported note's footer names, if any: "> From “Spring 2026” · told by Grandma
- * Sunja (0:03–0:24)", "> “봄 인터뷰”에서 옮김 · 박순자님 말씀 (0:03–0:24)". A hand-written note
- * has no such line.
+ * Sunja (0:03–0:24)". A hand-written note has no such line.
  */
 export function footerTeller(body: string): string | null {
   const clock = String.raw`(?:\s+\(\d{1,2}(?::\d{2}){1,2}(?:–\d{1,2}(?::\d{2}){1,2})?\))?\s*$`;
-  const en = new RegExp(String.raw`^>\s*From\b.*?·\s*told by\s+(.+?)${clock}`);
-  const ko = new RegExp(String.raw`^>.*?에서 옮김\s*·\s*(.+?)\s*말씀${clock}`);
+  const footer = new RegExp(String.raw`^>\s*From\b.*?·\s*told by\s+(.+?)${clock}`);
   for (const line of body.split('\n')) {
     if (!line.startsWith('>') || line.length > 400) continue;
-    const m = en.exec(line) ?? ko.exec(line);
-    const name = m?.[1]?.replace(/님$/, '').trim();
+    const name = footer.exec(line)?.[1]?.trim();
     if (name) return name;
   }
   return null;
@@ -169,19 +164,15 @@ export function makeRetriever(deps: AppDeps, archiveId: string, userId: string):
 /**
  * The search for passages about a claim: its meaningful words, ANY of them. Joined with an
  * uppercase OR, which is the OR of both keyword legs of `hybridQuery`: the full-text leg reads
- * "or" in any case, but the Korean (PGroonga) leg only knows uppercase OR, and there a lowercase
- * "or" is one more word that every hit must contain (so it matched next to nothing). Korean
- * words go in without their particles ("대구에서" -> "대구"), which the bigram search would
- * otherwise require literally.
+ * "or" in any case, but the PGroonga leg only knows uppercase OR, and there a lowercase "or" is
+ * one more word that every hit must contain (so it matched next to nothing).
  */
 export function retrievalQuery(s: string): string {
   const terms: string[] = [];
   // the short words that say who count too: "Mom was born in 1931." searches "mom OR born"
   for (const w of factWords(s)) {
-    if (/^\d/.test(w)) continue;
-    const t = /[가-힣]/.test(w) ? koreanStem(w) : w;
-    if (t.length < 2 || terms.includes(t)) continue;
-    terms.push(t);
+    if (/^\d/.test(w) || w.length < 2 || terms.includes(w)) continue;
+    terms.push(w);
     if (terms.length >= 8) break;
   }
   return terms.join(' OR ');
@@ -981,8 +972,9 @@ export interface Attribution {
 }
 
 /**
- * The day a marker is dated with, in the family's time zone (FUNMEM_TZ, default Asia/Seoul): the
- * UTC day showed yesterday's date to anyone importing in Korea before 9 in the morning.
+ * The day a marker is dated with, in the archive's time zone (FUNMEM_TZ, default UTC). The UTC day
+ * can be tomorrow's or yesterday's date for the person writing, so a deployment whose people
+ * live elsewhere sets FUNMEM_TZ. A zone that does not exist counts as none.
  */
 export const today = (now: Date = new Date()): string => {
   const day = (timeZone: string) =>
@@ -993,14 +985,10 @@ export const today = (now: Date = new Date()): string => {
       day: '2-digit',
     }).format(now);
   try {
-    return day(process.env.FUNMEM_TZ || 'Asia/Seoul');
+    return day(process.env.FUNMEM_TZ || 'UTC');
   } catch {
-    // a misspelt FUNMEM_TZ falls back to the default zone, not to UTC (review round 3)
-    try {
-      return day('Asia/Seoul');
-    } catch {
-      return now.toISOString().slice(0, 10);
-    }
+    // a misspelt FUNMEM_TZ falls back to the default zone
+    return now.toISOString().slice(0, 10);
   }
 };
 
@@ -1013,15 +1001,9 @@ const oneLine = (s: string, max: number): string => {
   return t.length > max ? `${t.slice(0, max - 1).trimEnd()}…` : t;
 };
 
-const attribution = (lang: Lang, a: Attribution): string => {
-  const who = a.who ? oneLine(a.who, 60) : lang === 'ko' ? '기여자' : 'a contributor';
+const attribution = (a: Attribution): string => {
+  const who = a.who ? oneLine(a.who, 60) : 'a contributor';
   const teller = a.teller ? oneLine(a.teller, 60) : null;
-  if (lang === 'ko') {
-    if (a.channel === 'assistant') return `${who} (도우미)`;
-    return teller
-      ? `${honorific(teller)} 인터뷰 (${honorific(who)}이 올림)`
-      : `${honorific(who)}이 올린 인터뷰 녹취`;
-  }
   if (a.channel === 'assistant') return `${who} via the assistant`;
   return teller
     ? `an interview with ${teller}, added by ${who}`
@@ -1030,24 +1012,22 @@ const attribution = (lang: Lang, a: Attribution): string => {
 
 /** Two claims in ONE note: the original stays above, the other is recorded here. */
 export function sameNoteMarker(a: Attribution, p: { claim: string; existing: string }): string {
-  const lang = detectLang(p.claim);
   const claim = oneLine(p.claim, 220);
   const existing = oneLine(p.existing, 180);
-  return lang === 'ko'
-    ? `> ⚠ 서로 다른 기억 · ${a.when} · ${attribution(lang, a)}: “${claim}” — 위 글에는 “${existing}”라고 되어 있습니다.`
-    : `> ⚠ Disagreement · ${a.when} · ${attribution(lang, a)}: “${claim}” — the text above says “${existing}”`;
+  return `> ⚠ Disagreement · ${a.when} · ${attribution(a)}: “${claim}” — the text above says “${existing}”`;
 }
 
-/** This note's claim against ANOTHER note's: a link both ways (the other gets a backlink). */
+/**
+ * This note's claim against ANOTHER note's: a link both ways (the other gets a backlink). The line
+ * names the other note and quotes what it says; the claim itself stays in this note's own text, so
+ * `claim` is not printed (it is kept in the signature so no caller has to change).
+ */
 export function crossNoteMarker(
   a: Attribution,
   p: { claim: string; title: string; existing: string },
 ): string {
-  const lang = detectLang(p.claim);
   const existing = oneLine(p.existing, 180);
-  return lang === 'ko'
-    ? `> ⚠ [[${p.title}]]와(과) 다를 수 있음 · ${a.when} · ${attribution(lang, a)}: 그 노트에는 “${existing}”라고 되어 있습니다.`
-    : `> ⚠ May disagree with [[${p.title}]] · ${a.when} · ${attribution(lang, a)}: that note says “${existing}”`;
+  return `> ⚠ May disagree with [[${p.title}]] · ${a.when} · ${attribution(a)}: that note says “${existing}”`;
 }
 
 export interface Recorded {

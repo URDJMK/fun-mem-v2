@@ -46,18 +46,18 @@ describe('P1-1 a paste that lost its line breaks is cut at every label of its sp
     }
   });
 
-  it('Korean speech-to-text with no "?" before the label', () => {
+  it('speech-to-text with no "?" before the label', () => {
     expect(
       turnsOf(
-        '면접관: 어디서 태어나셨어요 할머니: 부산에서요. 면접관: 아버지는요? 할머니: 배를 고치셨어요. 면접관: 어머니는요? 할머니: 생선을 파셨어요.',
+        'Interviewer: Where were you born Grandma: In Busan. Interviewer: And your father? Grandma: He repaired boats. Interviewer: And your mother? Grandma: She sold fish.',
       ),
     ).toEqual([
-      ['면접관', '어디서 태어나셨어요'],
-      ['할머니', '부산에서요.'],
-      ['면접관', '아버지는요?'],
-      ['할머니', '배를 고치셨어요.'],
-      ['면접관', '어머니는요?'],
-      ['할머니', '생선을 파셨어요.'],
+      ['Interviewer', 'Where were you born'],
+      ['Grandma', 'In Busan.'],
+      ['Interviewer', 'And your father?'],
+      ['Grandma', 'He repaired boats.'],
+      ['Interviewer', 'And your mother?'],
+      ['Grandma', 'She sold fish.'],
     ]);
   });
 
@@ -88,7 +88,7 @@ describe('P1-1 a paste that lost its line breaks is cut at every label of its sp
     ).toEqual(['Voice 3', 'Grandma']);
   });
 
-  it('a relative who answers only once is still her own turn: after a question, or after a Korean question with no "?"', () => {
+  it('a relative who answers only once is still her own turn after a question', () => {
     expect(
       linesOf(
         'Interviewer: Where were you born? Grandma: In Busan. We were poor. Interviewer: Thank you.',
@@ -98,15 +98,11 @@ describe('P1-1 a paste that lost its line breaks is cut at every label of its sp
       'Grandma: In Busan. We were poor.',
       'Interviewer: Thank you.',
     ]);
-    expect(linesOf('Q: 그때 집은 어땠어요 José: 방이 두 칸이었어요. Q: 고맙습니다.')).toEqual([
-      'Q: 그때 집은 어땠어요',
-      'José: 방이 두 칸이었어요.',
-      'Q: 고맙습니다.',
+    expect(linesOf('Q: What was the house like? José: Two rooms. Q: Thank you.')).toEqual([
+      'Q: What was the house like?',
+      'José: Two rooms.',
+      'Q: Thank you.',
     ]);
-    // a one-word Korean name stays one word: "어땠어요" is the end of the question
-    expect(linesOf('Q: 그때 집은 어땠어요 외할머니: 방이 두 칸이었어요. Q: 고맙습니다.')[1]).toBe(
-      '외할머니: 방이 두 칸이었어요.',
-    );
   });
 
   it('a time before a label goes with it, but the time at the end of a sound note stays with the note', () => {
@@ -180,13 +176,13 @@ describe('P1-1 a paste that lost its line breaks is cut at every label of its sp
 describe('P1-2 label shapes the readers could not read', () => {
   it('Zoom and Otter header lines with "Family, Given"', () => {
     const zoom = parseHeaderText(
-      '[Interviewer] 00:00:00\n어디서 태어나셨어요\n\n[Kim, Sunja] 00:00:05\n부산에서 태어났어요.\n\n[Interviewer] 00:00:20\n아버지는요\n\n[Kim, Sunja] 00:00:25\n배를 고치셨어요.',
+      '[Interviewer] 00:00:00\nWhere were you born\n\n[Kim, Sunja] 00:00:05\nIn Busan.\n\n[Interviewer] 00:00:20\nAnd your father\n\n[Kim, Sunja] 00:00:25\nHe repaired boats.',
     )!;
     expect(zoom.segs.map((s) => [s.speaker, s.text])).toEqual([
-      ['Interviewer', '어디서 태어나셨어요'],
-      ['Kim, Sunja', '부산에서 태어났어요.'],
-      ['Interviewer', '아버지는요'],
-      ['Kim, Sunja', '배를 고치셨어요.'],
+      ['Interviewer', 'Where were you born'],
+      ['Kim, Sunja', 'In Busan.'],
+      ['Interviewer', 'And your father'],
+      ['Kim, Sunja', 'He repaired boats.'],
     ]);
     const otter = parseHeaderText(
       'Noah Kim 0:00\nWhere were you born?\nKim, Sunja 0:05\nIn Busan.\nNoah Kim 0:20\nAnd your mother?\nKim, Sunja 0:25\nShe sold fish.',
@@ -199,26 +195,26 @@ describe('P1-2 label shapes the readers could not read', () => {
     ]);
   });
 
-  it('a subtitle cue holding two named speakers is cut, in Korean and English', () => {
+  it('a subtitle cue holding two named speakers is cut', () => {
     const srt = (a: string, b: string) =>
       [1, 2, 3]
         .map(
           (i) =>
-            `${i}\n00:00:${i}0,000 --> 00:00:${i}9,000\n[${a}]: 질문 ${i} [${b}]: 대답 ${i}.\n`,
+            `${i}\n00:00:${i}0,000 --> 00:00:${i}9,000\n[${a}]: Ask ${i} [${b}]: Reply ${i}.\n`,
         )
         .join('\n');
     for (const [a, b] of [
-      ['Interviewer', '할머니'],
+      ['Interviewer', 'Grandma'],
       ['Host', 'Grandma'],
       ['Dr. J. Park', 'Sunja Kim'],
     ]) {
       expect(parseSubtitles(srt(a!, b!))!.segs.map((s) => [s.speaker, s.text])).toEqual([
-        [a, '질문 1'],
-        [b, '대답 1.'],
-        [a, '질문 2'],
-        [b, '대답 2.'],
-        [a, '질문 3'],
-        [b, '대답 3.'],
+        [a, 'Ask 1'],
+        [b, 'Reply 1.'],
+        [a, 'Ask 2'],
+        [b, 'Reply 2.'],
+        [a, 'Ask 3'],
+        [b, 'Reply 3.'],
       ]);
     }
   });
@@ -249,11 +245,11 @@ describe('P1-2 label shapes the readers could not read', () => {
 describe('P1-3 words before the first label are kept unless they say they are a header', () => {
   it('speech before the first label is kept, counted, and belongs to nobody yet', () => {
     for (const lead of [
-      '그래서 우리 아버지가 그날 밤 늦게 오셨는데\n어머니가 많이 우셨어요',
+      'We left before dawn with only what we could carry\nMy brother held the lamp',
       'My father came home late that night and my mother was crying\nShe said the soldiers had taken the boat',
     ]) {
       const raw = parseLabelled(
-        `${lead}\n면담자: 그게 몇 년도였어요?\n할머니: 1950년이었지.\n면담자: 그다음에는요?\n할머니: 피난을 갔지.`,
+        `${lead}\nInterviewer: What year was that?\nGrandma: It was 1950.\nInterviewer: And then?\nGrandma: We fled.`,
       )!;
       expect(raw.segs.slice(0, 2).map((s) => [s.speaker, s.text])).toEqual(
         lead.split('\n').map((l) => [null, l]),
@@ -269,17 +265,22 @@ describe('P1-3 words before the first label are kept unless they say they are a 
     });
   });
 
-  it('titles, header fields and dates are left out, and counted (Korean fields too)', () => {
+  it('titles, header fields and dates are left out, and counted', () => {
     const en = parseLabelled(
       'Interview with Grandma\nRecorded March 1, 2024, at her house in Daejeon\n\nThis is the transcript of a conversation we had over two afternoons.\nTranscribed by Noah\n\nInterviewer: Where were you born?\nGrandma: In Busan.\nInterviewer: And then?\nGrandma: We moved.',
     )!;
     expect(en.notices).toEqual({ unlabelledStart: 1, linesDropped: 3 });
     expect(en.segs[0]!.text).toMatch(/^This is the transcript/);
-    const ko = parseLabelled(
-      '제목: 할머니 구술\n일시: 2024년 3월 1일\n장소: 대전 할머니 댁\n\n면담자: 어디서 태어나셨어요\n구술자: 부산에서 태어났어요.\n면담자: 아버지는요\n구술자: 배를 고치셨어요.',
+    const fields = parseLabelled(
+      'Title: Grandma tells her story\nDate: March 1, 2024\nPlace: Daejeon, at her house\n\nInterviewer: Where were you born\nNarrator: In Busan.\nInterviewer: And your father\nNarrator: He repaired boats.',
     )!;
-    expect(ko.segs.map((s) => s.speaker)).toEqual(['면담자', '구술자', '면담자', '구술자']);
-    expect(ko.notices).toEqual({ linesDropped: 3 });
+    expect(fields.segs.map((s) => s.speaker)).toEqual([
+      'Interviewer',
+      'Narrator',
+      'Interviewer',
+      'Narrator',
+    ]);
+    expect(fields.notices).toEqual({ linesDropped: 3 });
     expect(
       parseLabelled(
         "Grandma Sunja's Story\n\nInterviewer: Where?\nGrandma: Busan.\nInterviewer: Then?\nGrandma: Seoul.",
@@ -462,7 +463,7 @@ describe('the new patterns are linear on 400,000 characters', () => {
     ['notes in brackets before colons', big('x (a b c): ')],
     ['times before labels', big('[00:12] Noah: x ')],
     ['header fields', big('Date: March 1, 2024\n')],
-    ['date lines', big('2024년 3월 1일 녹음\n')],
+    ['date lines', big('May 3, 2026, 3:21PM recorded\n')],
     ['bold labels', big('**Noah:** x\n')],
     ['dash labels', big('Noah - x\n')],
     ['chat labels', big('<Noah> x\n')],
@@ -553,21 +554,6 @@ describe('round 3 · P1-A1 below the first turn every line is somebody’s, and 
       'March 3rd, 1946, in Busan',
     ],
     [
-      'a Korean Otter answer that starts with a date',
-      '참석자 1 00:00\n언제 태어나셨어요\n\n참석자 2 00:04\n1946년 3월에 태어났어요\n\n참석자 1 00:10\n아버지는 뭐 하셨어요\n\n참석자 2 00:13\n배를 고치셨어요',
-      '1946년 3월에 태어났어요',
-    ],
-    [
-      'a Korean continuation line that starts with a date',
-      '면담자: 전쟁 때 어떠셨어요?\n할머니: 아주 무서웠지.\n1950년 6월 25일 새벽에 갑자기 포 소리가 났어요\n면담자: 그다음에는요?\n할머니: 피난을 갔지.',
-      '1950년 6월 25일 새벽에',
-    ],
-    [
-      'a Korean continuation line with a year and a season',
-      '면담자: 언제 태어나셨어요?\n할머니: 부산에서 태어났지.\n1946년 봄에 태어났고 그때는 정말 가난했어요\n면담자: 아버지는요?\n할머니: 배를 고치셨지.',
-      '1946년 봄에 태어났고',
-    ],
-    [
       'a header key in her sentence',
       'Noah: What was school like?\nGrandma: Time: that is what we never had. We worked from sunrise.\nNoah: And church?\nGrandma: Place: the old hall by the river, every Sunday.',
       'the old hall by the river',
@@ -589,13 +575,8 @@ describe('round 3 · P1-A1 below the first turn every line is somebody’s, and 
     ],
     [
       '"Language:" opening a line of her answer',
-      'Noah: What did you speak at home?\nGrandma: We spoke Korean.\nLanguage: it was forbidden at school, so we whispered.\nNoah: Hm.\nGrandma: Yes.',
+      'Noah: What did you speak at home?\nGrandma: We spoke Polish.\nLanguage: it was forbidden at school, so we whispered.\nNoah: Hm.\nGrandma: Yes.',
       'it was forbidden at school',
-    ],
-    [
-      'a Korean header key in her answer',
-      '면담자: 학교는 어땠어요?\n할머니: 힘들었지.\n시간: 그게 제일 부족했어요 우리는 늘 일했으니까.\n면담자: 그렇군요.\n할머니: 네.',
-      '그게 제일 부족했어요',
     ],
     [
       'an Otter paragraph that starts "Interviewed by"',
@@ -634,10 +615,6 @@ describe('round 3 · P1-A1 below the first turn every line is somebody’s, and 
         'I will tell you the story',
       ],
       [
-        '그때 이야기를 해 드릴게요\n면담자: 네 말씀하세요.\n할머니: 부산에서 시작됐어요.\n면담자: 그다음에는요?\n할머니: 이사를 갔죠.',
-        '그때 이야기를 해 드릴게요',
-      ],
-      [
         'Hi Grandma\n\nNoah: Hi, ready?\nGrandma: Yes.\nNoah: Where were you born?\nGrandma: Busan.',
         'Hi Grandma',
       ],
@@ -656,11 +633,11 @@ describe('round 3 · P1-A1 below the first turn every line is somebody’s, and 
     const translator = [
       'Noah: Where were you born?',
       'Translator: She asks where you were born.',
-      'Grandma: 부산에서 태어났어요.',
+      'Grandma: Я родилась в Пусане.',
       'Translator: She says she was born in Busan, in a little house near the harbour.',
       'Noah: What did your father do?',
       'Translator: He asks what your father did for a living.',
-      'Grandma: 배를 고치셨어요.',
+      'Grandma: Он чинил лодки.',
       'Translator: She says he repaired boats for forty years and did not talk much.',
     ].join('\n');
     expect(turnsOf(translator).filter(([s]) => s === 'Translator')).toHaveLength(4);
@@ -669,27 +646,6 @@ describe('round 3 · P1-A1 below the first turn every line is somebody’s, and 
 });
 
 describe('round 3 · P1-F2 in a file whose labels start its lines, a colon in a sentence is no speaker', () => {
-  const ko = [
-    '질문자: 어디서 태어나셨어요?',
-    '할머니: 저는 1946년에 부산에서 태어났어요. 아버지는 배를 고치셨어요.',
-    '질문자: 어머니는요?',
-    '할머니: 어머니는 시장에서 생선을 파셨어요. 힘들다고 한 번도 안 하셨어요.',
-    '질문자: 더 말씀해 주세요.',
-  ];
-  it.each([
-    '어머니는 시장에서 생선을 파셨어요: 힘들다고 한 번도 안 하셨어요. 한 마디도요.',
-    '그때 우리 집은 부산에서: 아주 작았어요. 방이 하나뿐이었어요.',
-    '제 이름은 순자예요. 나이: 여든이고요. 고향은 부산이에요.',
-    '우리는 여섯 식구였어요. 아버지 이름은 철수: 배를 고치셨고, 어머니는 영희: 생선을 파셨어요.',
-    '그날은 비가 왔어요. 아침: 일찍 일어났고, 저녁: 늦게 잤어요. 정말 힘든 하루였어요.',
-    '학교는 5학년까지 다녔어요. 이유는 간단해요: 돈이 없었어요. 그래도 선생님이 잘해 주셨어요.',
-    '아이는 넷이에요. 큰애: 선생님, 둘째: 엔지니어, 막내: 의사가 됐어요.',
-  ])('Korean: %s', (answer) => {
-    const t = turnsOf([...ko, `할머니: ${answer}`].join('\n'));
-    expect(new Set(t.map(([s]) => s))).toEqual(new Set(['질문자', '할머니']));
-    expect(t[t.length - 1]).toEqual(['할머니', answer]);
-  });
-
   const en = [
     'Noah: Where were you born?',
     'Grandma: I was born in Busan in 1946. My father repaired boats and he had big hands.',
@@ -767,12 +723,6 @@ describe('round 3 · P1-A6/A7/A9 a list, a cue of digits, a question on two line
       "Let's talk about your childhood. Where were you born, and what was it like there?",
     ]);
     expect(t[1]![1]).toMatch(/^In Busan/);
-    // and a Korean request on the second line
-    const ko = turnsOf(
-      '면담자: 어린 시절 이야기를 해 볼게요.\n고향이 어디인지 말씀해 주세요.\n부산이에요. 항구 근처였어요.\n면담자: 아버지는요?\n배를 고치셨어요.',
-    );
-    expect(ko[0]![1]).toMatch(/말씀해 주세요/);
-    expect(ko[1]![1]).toMatch(/^부산이에요/);
   });
 });
 
@@ -850,11 +800,6 @@ describe('round 3 · P1-F1 what is above the first turn and says it is a header 
     [
       'an Apple Mail attribution',
       ['On May 4, 2026, at 9:12 AM, Noah Kim <noah@example.com> wrote:', '', ...quoted],
-      1,
-    ],
-    [
-      'a Korean Gmail attribution',
-      ['2026년 5월 4일 (월) 오전 9:12, Noah Kim <noah@example.com>님이 작성:', '', ...quoted],
       1,
     ],
     [
@@ -963,7 +908,7 @@ describe('round 3 · the new patterns are linear on 400,000 characters', () => {
     ['a lead of date and time lines', big('Tue, 5/12 9:15AM • 45:30\n') + turns],
     ['a lead of tape and part lines', big('Tape 2, side A\n') + turns],
     ['one long attribution-like line', `On ${'x '.repeat(N / 2)} wrote:${turns}`],
-    ['one long Korean attribution-like line', `${'가 '.repeat(N / 2)}님이 작성:${turns}`],
+    ['one long attribution-like line in another script', `${'я '.repeat(N / 2)} написал:${turns}`],
     ['one long mapping-like line', big('Speaker 1 = Noah Kim, ') + turns],
     [
       'header keys used as labels',

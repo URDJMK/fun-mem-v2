@@ -50,19 +50,6 @@ describe('lines above the first label that are not hers are never filed as her m
     expect(r.roles.confidence).toBe('high');
   });
 
-  it('Korean: a greeting to her stays the interviewer’s', () => {
-    const r = read(
-      [
-        '안녕하세요 할머니, 오늘 시간 내주셔서 정말 감사합니다.',
-        '노아: 어디서 태어나셨어요?',
-        '할머니: 저는 1946년에 부산에서 태어났어요. 아버지는 배를 고치셨고 손이 아주 크셨어요.',
-        '노아: 어머니는요?',
-        '할머니: 어머니는 시장에서 생선을 파셨어요. 힘들다고 한 번도 말씀하신 적이 없어요.',
-      ].join('\n'),
-    );
-    expect(told(r)).not.toContain('안녕하세요');
-  });
-
   it('a WhisperX first segment with no speaker that introduces the session', () => {
     const seg = (i: number, sp: string | null, text: string) => ({
       start: i * 5,
@@ -107,18 +94,7 @@ describe('a tape that starts mid-answer: her words, kept, and the import asks', 
     expect(chosen.roles.needsConfirmation).toBe(false);
   });
 
-  it('Korean: a lead that starts with 그래서 is hers; in an Interviewer-only file too', () => {
-    const ko = read(
-      [
-        '그래서 우리 아버지가 그날 밤 늦게 오셨는데 어머니가 많이 우셨어요.',
-        '노아: 그게 몇 년도였어요?',
-        '할머니: 1950년이었지. 전쟁이 막 시작됐을 때야.',
-        '노아: 그때 어디 사셨어요?',
-        '할머니: 부산에 살았어요. 바닷가 작은 집에서.',
-      ].join('\n'),
-    );
-    expect(told(ko)).toContain('그래서 우리 아버지가');
-    expect(ko.roles.needsConfirmation).toBe(true);
+  it('a lead that starts mid-answer is hers in an Interviewer-only file too', () => {
     const qOnly = read(
       [
         'and so my father sent me to live with my aunt in the city, which I did not want at all',
@@ -242,7 +218,7 @@ describe('what a choice leaves out leaves a trace', () => {
     ].join('\n');
 
   it('the person picks one teller: the odd voice left out is counted, never quoted', () => {
-    const r = read(story('Halmoni'), ['Grandma']);
+    const r = read(story('Granny'), ['Grandma']);
     expect(r.warnings).toContainEqual({ code: 'speaker_left_out', count: 1 });
     expect(read(story('Grandma'), ['Grandma']).warnings.map((w) => w.code)).not.toContain(
       'speaker_left_out',

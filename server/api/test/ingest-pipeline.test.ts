@@ -14,6 +14,8 @@ import {
 import { ModelError, type ChatModel } from '../src/nim';
 import { applyRoles, parseTranscript } from '../src/transcript';
 
+/** a letter of a script other than the Latin alphabet */
+const OTHER_SCRIPT = /(?![\p{Script=Latin}\p{Script=Common}\p{Script=Inherited}])\p{L}/u;
 const Q = 'Tell me about your father please.';
 const seg = (i: number, speaker: string, text: string) => ({
   start: i * 10,
@@ -98,11 +100,11 @@ describe('the identity of an interview is its words', () => {
     expect(hashTurns(a)).toBe(hashTurns(b));
     expect(hashTurns(a)).toBe(hashTurns(c));
   });
-  it('differs when a single word differs, and is the same Hangul however it was composed', () => {
+  it('differs when a single word differs, and is the same however its accents were composed', () => {
     const a = [turn(0, 'A', 'In Busan, in 1946.')];
     expect(hashTurns(a)).not.toBe(hashTurns([turn(0, 'A', 'In Busan, in 1947.')]));
-    const nfc = [turn(0, 'A', '부산에서 태어났어요')];
-    const nfd = [turn(0, 'A', '부산에서 태어났어요'.normalize('NFD'))];
+    const nfc = [turn(0, 'A', 'José was born in Mérida.')];
+    const nfd = [turn(0, 'A', 'José was born in Mérida.'.normalize('NFD'))];
     expect(hashTurns(nfc)).toBe(hashTurns(nfd));
   });
 });
@@ -542,7 +544,6 @@ Grandma: It was a small house near the harbour, with a blue door, and my mother 
         method: 'verbatim',
         type: 'event',
         occurred: null,
-        language: 'en',
         speaker: 'Grandma',
       });
       expect(prose(short.body)).toBe('- Did he ever talk about the war? — No. Never.');
@@ -550,29 +551,29 @@ Grandma: It was a small house near the harbour, with a blue door, and my mother 
     });
   }
 
-  it('a Korean interview of one-sentence answers keeps every answer (it used to produce no note)', async () => {
-    const KO = `질문자: 어머니 성함이 어떻게 되세요?
-할머니: 김순자예요.
-질문자: 언제 태어나셨어요?
-할머니: 1946년에 부산에서 태어났어요.
-질문자: 형제는요?
-할머니: 오빠가 넷, 언니가 둘이었어요.
-질문자: 고향이 어디세요?
-할머니: 부산.`;
+  it('answers in a script these rules do not read are kept, every one, as they were said', async () => {
+    const OTHER = `Interviewer: What was your mother's name?
+Grandma: Её звали Ирина.
+Interviewer: When were you born?
+Grandma: В 1946 году, в Одессе.
+Interviewer: Brothers and sisters?
+Grandma: Четыре брата, две сестры.
+Interviewer: Where is home?
+Grandma: Одесса.`;
     for (const chat of [null, model([eachLine])]) {
-      const r = await ingestTranscript(KO, {}, deps(chat));
+      const r = await ingestTranscript(OTHER, {}, deps(chat));
       expect(r.stats.coverage).toEqual({ covered: 4, total: 4 });
-      expect(r.memories.map((m) => m.title).at(-1)).toBe('짧은 답변');
+      expect(r.memories.map((m) => m.title).at(-1)).toBe('Short answers');
       const short = r.memories.at(-1)!;
       expect(prose(short.body)).toBe(
-        '- 어머니 성함이 어떻게 되세요? — 김순자예요.\n- 고향이 어디세요? — 부산.',
+        "- What was your mother's name? — Её звали Ирина.\n- Where is home? — Одесса.",
       );
-      expect(short.body).toContain('인터뷰 녹취에서 옮김');
-      expect(short.body).not.toContain('> 질문');
-      expect(short.notes).toHaveLength(1);
-      expect(short.notes[0]).toMatch(/[가-힣]/);
-      expect(allProse(r)).toContain('1946년에 부산에서 태어났어요.');
-      expect(allProse(r)).toContain('오빠가 넷, 언니가 둘이었어요.');
+      expect(short.body).toContain('> From the interview transcript · told by Grandma');
+      expect(short.notes).toEqual([
+        'Short replies are gathered in this one note, each with the question it answered, so that none is lost.',
+      ]);
+      expect(allProse(r)).toContain('В 1946 году, в Одессе.');
+      expect(allProse(r)).toContain('Четыре брата, две сестры.');
     }
   });
 
@@ -782,7 +783,7 @@ describe('the date is read from the accepted text itself (A2)', () => {
 describe('who told it: a speaker label that is a name (A4)', () => {
   const told = (r: IngestResult) => r.memories.map((m) => m.body.split('\n').at(-1)!);
 
-  it('"Grandpa Tae:" with no teller given writes "told by Grandpa Tae", in Korean with the honorific', async () => {
+  it('"Grandpa Tae:" with no teller given writes "told by Grandpa Tae"; a name in another script is written as given', async () => {
     const en = await ingestTranscript(
       `Interviewer: Where did you grow up?\nGrandpa Tae: ${A1}`,
       {},
@@ -790,22 +791,22 @@ describe('who told it: a speaker label that is a name (A4)', () => {
     );
     expect(told(en)[0]).toContain('· told by Grandpa Tae');
     expect(en.memories[0]!.speakerName).toBe('Grandpa Tae');
-    const ko = await ingestTranscript(
-      '질문자: 어린 시절 이야기를 들려주세요.\n김순자: 나는 부산에서 태어났어요. 어릴 때 바닷가 집에서 살았어요.',
+    const other = await ingestTranscript(
+      `Interviewer: Where did you grow up?\nИрина: ${A1}`,
       {},
       deps(null),
     );
-    expect(told(ko)[0]).toContain('· 김순자님 말씀');
+    expect(told(other)[0]).toContain('· told by Ирина');
   });
 
   it('a voice label is never written as a name; a name given by the caller wins', async () => {
-    for (const label of ['SPEAKER_01', 'Speaker 2', 'Interviewee', 'A', '화자 1', '참석자 2']) {
+    for (const label of ['SPEAKER_01', 'Speaker 2', 'Interviewee', 'A']) {
       const r = await ingestTranscript(
         { segments: [seg(0, 'Q', Q), seg(1, label, A1)] },
         { interviewees: [label] },
         deps(null),
       );
-      expect(told(r)[0]).not.toMatch(/told by|말씀/);
+      expect(told(r)[0]).not.toMatch(/told by/);
     }
     const named = await ingestTranscript(
       `Interviewer: Where did you grow up?\nGrandpa Tae: ${A1}`,
@@ -835,8 +836,7 @@ describe('nothing in a note reads as structure (A5)', () => {
       body.slice(body.lastIndexOf('\n\n') + 2),
     ];
     expect(text.split('\n').filter((l) => /^\s*[>#]|^\s*(?:```|---)/.test(l))).toEqual([]);
-    for (const l of footer.split('\n'))
-      expect(l).toMatch(/^> (?:From|Question:|질문:)|^> “|에서 옮김/);
+    for (const l of footer.split('\n')) expect(l).toMatch(/^> (?:From|Question:)|^> “/);
   };
 
   it('a model body written as a quotation, a heading or a fence is stripped to its words', async () => {
@@ -948,7 +948,7 @@ describe('a speaker id that is an Object.prototype name, as the pipeline receive
 describe('every memory is an event (A8)', () => {
   it('a trip to LA is not typed a "place" because it mentions a town', async () => {
     const r = await ingestTranscript(
-      '면접자: 미국에서 처음 얼마나 사셨어요?\n정미경: 어, 1985년에 LA로 갔어요. 처음엔 Korean town에서 살았는데 영어를 하나도 못 했어요. 집도 학교도 시장도 다 멀었어요.',
+      'Interviewer: How long did you live in America at first?\nJung Mi-kyung: Uh, in 1985 I went to LA. At first we lived in Koreatown and I could not speak any English. Home, school and the market were all far away.',
       {},
       deps(null),
     );
@@ -961,7 +961,7 @@ describe('every memory is an event (A8)', () => {
           seg(
             1,
             'A',
-            '우리 집은 시장 옆에 있었어요. 학교도 가까웠어요. 어머니는 시장에서 생선을 파셨어요.',
+            'Our house was next to the market. The school was close too. My mother sold fish at the market.',
           ),
         ],
       },
@@ -972,65 +972,36 @@ describe('every memory is an event (A8)', () => {
   });
 });
 
-describe('language, per memory (B1)', () => {
-  const MIXED = `Interviewer: 할머니, 어린 시절 이야기를 해 주세요.
-Grandma: 나는 부산에서 태어났어요. 바닷가 바로 앞에 작은 집이 있었어요.
-Interviewer: 어머니는 어떤 분이셨어요?
-Grandma: 어머니는 새벽마다 시장에 나가서 생선을 파셨어요. 정말 부지런하셨어요.
+describe('words in another script, in an English interview (B1)', () => {
+  const MIXED = `Interviewer: Grandma, tell me about your childhood.
+Grandma: Я родилась в Одессе. Наш маленький дом стоял прямо у моря.
+Interviewer: What was your mother like?
+Grandma: Мама каждое утро ходила на рынок продавать рыбу. Она очень много работала.
 Interviewer: How did you come to America?
 Grandma: We came to Los Angeles in 1975 because my husband found work at a garment factory downtown.
 Interviewer: What was the hardest part?
 Grandma: The language was the hardest. I could not read the signs at the supermarket for years.`;
 
-  it('a Korean answer gets a Korean footer and notes, an English one English, and each keeps its own title', async () => {
+  it("every footer and note is English, the words are kept as said, and a title in that script is never the model's", async () => {
     const chat = model([
       (user) =>
         answer(
           ...[...user.matchAll(/^\[(\d+)\] (.*)$/gm)].map((m) => ({
             turns: [Number(m[1])],
-            title: /[가-힣]/.test(m[2]!) ? '부산의 바닷가 집' : 'Coming to Los Angeles',
+            title: OTHER_SCRIPT.test(m[2]!) ? 'Дом у моря' : 'Coming to Los Angeles',
             body: m[2]!,
           })),
         ),
     ]);
-    const r = await ingestTranscript(MIXED, { teller: '김순자' }, deps(chat));
-    expect(r.language).toBe('ko');
-    expect(r.memories.map((m) => m.language)).toEqual(['ko', 'ko', 'en', 'en']);
+    const r = await ingestTranscript(MIXED, { teller: 'Irina Petrova' }, deps(chat));
     for (const m of r.memories) {
-      const footer = m.body.split('\n').at(-1)!;
-      const notes = m.notes.join(' ');
-      if (m.language === 'ko') {
-        expect(footer).toContain('김순자님 말씀');
-        expect(notes).toMatch(/[가-힣]/);
-      } else {
-        expect(footer).toContain('told by 김순자');
-        expect(notes).not.toMatch(/[가-힣]/);
-      }
+      expect(m.body.split('\n').at(-1)).toContain('told by Irina Petrova');
+      expect(m.notes.join(' ')).not.toMatch(OTHER_SCRIPT);
     }
-    expect(r.memories[0]!.title).toBe('부산의 바닷가 집');
+    expect(allProse(r)).toContain('Я родилась в Одессе. Наш маленький дом стоял прямо у моря.');
+    // the model's title in that script is not used: the memory is named by its own first words
+    expect(r.memories[0]!.title).toBe('Я родилась в Одессе');
     expect(r.memories[2]!.title).toBe('Coming to Los Angeles');
-  });
-});
-
-describe('a swapped household word is reported to the reader (B2)', () => {
-  it('엄마 written as 어머니: the note says so, or the word stays theirs', async () => {
-    const said = '엄마가 시장에서 생선을 파셨어요. 새벽 네 시에 나가셨어요.';
-    const r = await ingestTranscript(
-      { interviewee: 'A', segments: [seg(0, 'Q', '그때 이야기를 해 주세요.'), seg(1, 'A', said)] },
-      {},
-      deps(
-        model([
-          answer({
-            turns: [1],
-            title: '시장',
-            body: '어머니가 시장에서 생선을 파셨어요. 새벽 네 시에 나가셨어요.',
-          }),
-        ]),
-      ),
-    );
-    const m = r.memories[0]!;
-    if (m.method === 'ai-grounded') expect(m.notes.join(' ')).toContain('어머니');
-    else expect(prose(m.body)).toBe(said);
   });
 });
 
@@ -1277,6 +1248,20 @@ describe("the speaker's opening word is theirs", () => {
     expect(prose(m.body)).not.toMatch(/Yes\.? He mended/);
     expect(prose(m.body)).toMatch(/^Yes\. My father played the flute at night\./);
   });
+
+  it('a rewrite that opens on a quotation mark does not fail the import (it used to throw)', async () => {
+    const said =
+      'Yes. "Come here," she said, and she gave me the bread she had baked that morning.';
+    const m = await tidyOne(
+      said,
+      '"Come here," she said, and she gave me the bread she had baked that morning.',
+      'Did your mother bake?',
+    );
+    // the opener cannot be joined to a quotation mark: the rewrite is judged as written, and the
+    // answer it lost ("Yes.") sends it back, so the speaker's words are what the note keeps
+    expect(prose(m.body)).toBe(said);
+    expect(withOpener('"Come here," she said.', said, said)).toBe('"Come here," she said.');
+  });
 });
 
 describe('a request is a prompt, not an interjection', () => {
@@ -1364,17 +1349,16 @@ describe('the result (A6)', () => {
     };
     const r = await ingestTranscript(t, {}, deps(null));
     expect(r.sourceHash).toBe(hashTurns(parseTranscript(t).turns));
-    expect(r.memories.every((m) => m.language === 'en')).toBe(true);
   });
 });
 
 describe('a short reply the AI folds into a story is not lost (round 2, G2-1)', () => {
   const STORY = 'He made us bow to him every morning before we were allowed to eat our rice.';
-  const KO_STORY = '아버지는 매일 아침 밥을 먹기 전에 우리한테 절을 하라고 하셨어요.';
   for (const [q, reply, more, story] of [
     ['Did he ever hit you?', 'Yes.', 'Tell me more about him.', STORY],
     ['Did he ever hit you?', 'No.', 'Tell me more about him.', STORY],
-    ['때리셨어요?', '네.', '아버지 이야기 더 해 주세요.', KO_STORY],
+    // a reply in a script these rules do not read is kept the same way, as it was said
+    ['Did he ever hit you?', 'Да.', 'Tell me more about him.', STORY],
   ] as const) {
     it(`"${reply}" grouped with the next story and dropped from the body goes to Short answers with its own question`, async () => {
       const m = model([answer({ turns: [1, 3], title: 'Bowing every morning', body: story })]);
@@ -1573,29 +1557,33 @@ describe('a reply is paired with what it answered, never an earlier question (ro
 });
 
 describe('a question without a "?" still ends a story (round 2, G2-3)', () => {
-  it('a Korean interview whose questions have no "?" gives one memory per answer', async () => {
+  it('an interview whose questions have no "?" gives one memory per answer', async () => {
     const r = await ingestTranscript(
       {
         segments: [
-          seg(0, '손녀', '할머니 어디서 태어나셨어요'),
-          seg(1, '할머니', '부산 영도에서 태어났어요. 바닷가 바로 앞에 작은 집이 있었어요.'),
-          seg(2, '손녀', '아버지는 어떤 분이셨어요'),
-          seg(3, '할머니', '아버지는 배를 고치는 일을 하셨고 말씀이 별로 없으셨어요.'),
-          seg(4, '손녀', '때리신 적도 있어요'),
-          seg(5, '할머니', '아니요.'),
-          seg(6, '손녀', '학교는 다니셨나요'),
-          seg(7, '할머니', '전쟁 때문에 초등학교 오학년까지만 다녔어요.'),
+          seg(0, 'Mina', 'Grandma where were you born'),
+          seg(
+            1,
+            'Grandma',
+            'I was born on Yeongdo in Busan. Our little house stood right by the sea.',
+          ),
+          seg(2, 'Mina', 'What was your father like'),
+          seg(3, 'Grandma', 'My father repaired boats and he did not talk much at all.'),
+          seg(4, 'Mina', 'Did he ever hit you'),
+          seg(5, 'Grandma', 'No.'),
+          seg(6, 'Mina', 'Did you go to school'),
+          seg(7, 'Grandma', 'Because of the war I only went to school until the fifth grade.'),
         ],
       },
-      { interviewees: ['할머니'] },
+      { interviewees: ['Grandma'] },
       deps(null),
     );
     expect(r.memories.map((m) => m.turns)).toEqual([[1], [3], [7], [5]]);
-    expect(prose(r.memories.at(-1)!.body)).toBe('- 때리신 적도 있어요 — 아니요.');
-    expect(r.memories[2]!.body).toContain('> 질문: “학교는 다니셨나요”');
+    expect(prose(r.memories.at(-1)!.body)).toBe('- Did he ever hit you — No.');
+    expect(r.memories[2]!.body).toContain('> Question: “Did you go to school”');
   });
 
-  it('an English prompt without "?" ends a story; a listener\'s "Wow." / "그렇구나" does not', async () => {
+  it('an English prompt without "?" ends a story; a listener\'s "Wow." does not', async () => {
     const en = await ingestTranscript(
       {
         segments: [
@@ -1615,19 +1603,6 @@ describe('a question without a "?" still ends a story (round 2, G2-3)', () => {
       'We lived in a shack made of scrap boards near the harbour.',
       expect.stringMatching(/^He repaired boats[\s\S]*He also sang in the kitchen/),
     ]);
-    const ko = await ingestTranscript(
-      {
-        segments: [
-          seg(0, '손녀', '아버지 이야기 해 주세요'),
-          seg(1, '할머니', '아버지는 배를 고치셨어요. 말씀이 별로 없으셨어요.'),
-          seg(2, '손녀', '아 그렇구나'),
-          seg(3, '할머니', '그래도 일요일마다 부두에 데려가 주셨어요.'),
-        ],
-      },
-      { interviewees: ['할머니'] },
-      deps(null),
-    );
-    expect(ko.memories.map((m) => m.turns)).toEqual([[1, 3]]);
   });
 });
 
@@ -1699,35 +1674,9 @@ describe('a restored opener is never misplaced or doubled (round 2, G2-6)', () =
   });
 });
 
-describe('a mixed Korean and English memory reads in one language (round 2, G2-7)', () => {
-  it('a Korean-led answer with an English tail gets a Korean footer under its Korean title', async () => {
-    const r = await ingestTranscript(
-      '면접자: 미국에는 언제 가셨어요?\n박순자: 1975년에 LA로 갔어요. 우리 큰딸 Jenny가 그때 세 살이었어요. We lived on Western Avenue for two years, and then we moved.',
-      {},
-      deps(null),
-    );
-    const m = r.memories[0]!;
-    expect(m.language).toBe('ko');
-    expect(m.title).toBe('1975년에 LA로 갔어요');
-    expect(m.body.split('\n').at(-1)).toBe('> 인터뷰 녹취에서 옮김 · 박순자님 말씀');
-    expect(m.notes.join(' ')).toMatch(/[가-힣]/);
-  });
-
-  it('an English label in a Korean footer takes no 님', async () => {
-    const r = await ingestTranscript(
-      'Noah: 어디서 태어나셨어요?\nHalmoni: 부산 영도에서 태어났어요. 바닷가 바로 앞이었어요.',
-      {},
-      deps(null),
-    );
-    expect(r.memories[0]!.body.split('\n').at(-1)).toBe('> 인터뷰 녹취에서 옮김 · Halmoni 말씀');
-  });
-});
-
 describe('a swallowed reply does not cost the story its AI polish (round 3, G2-B7)', () => {
   const STORY =
     'He made us bow to him every morning, and he beat us with a stick if we were late. My mother never said a word about it.';
-  const KO_STORY =
-    '아버지는 우리를 아침마다 절하게 하셨고 늦으면 회초리로 때리셨어요. 어머니는 그것에 대해 한마디도 하지 않으셨어요.';
   const grouped = (story: string) =>
     model([
       (user) =>
@@ -1746,18 +1695,12 @@ describe('a swallowed reply does not cost the story its AI polish (round 3, G2-B
     'My brother.',
     'Never.',
     'About ten.',
-    '아니요.',
-    '아홉 살이요.',
-    '부산이요.',
-    '날마다요.',
-    '가끔요.',
-    '두 번이요.',
+    // replies in a script these rules do not read: kept the same way, as they were said
+    'Да.',
+    'Иногда.',
   ]) {
     it(`"${reply}" goes beside its own question, and the story is polished with no retry`, async () => {
-      const ko = /[가-힣]/.test(reply);
-      const [q, more, story] = ko
-        ? ['아버지가 때리신 적 있어요?', '그분에 대해 더 말씀해 주세요.', KO_STORY]
-        : ['Did he ever hit you?', 'Tell me more about him.', STORY];
+      const [q, more, story] = ['Did he ever hit you?', 'Tell me more about him.', STORY];
       const m = grouped(story);
       const r = await ingestTranscript(
         `Noah: ${q}\nGrandma: ${reply}\nNoah: ${more}\nGrandma: ${story}`,

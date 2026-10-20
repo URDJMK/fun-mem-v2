@@ -41,7 +41,7 @@ describe('FM-052 fragment integrity (endpoint)', () => {
   it('backlinks report a broken fragment without disturbing resolution', async () => {
     const s = await ctx.realSession(`fr1-${RUN}@test.local`);
     const archive = await ctx.provisionArchive(s, `FR1 ${RUN}`);
-    const targetTitle = `Halmoni ${RUN}`;
+    const targetTitle = `Grandma ${RUN}`;
     const target = await note(
       s,
       archive,
@@ -85,7 +85,7 @@ describe('FM-052 fragment integrity (endpoint)', () => {
   it('a fragment-broken occurrence keeps its resolvedId', async () => {
     const s = await ctx.realSession(`fr2-${RUN}@test.local`);
     const archive = await ctx.provisionArchive(s, `FR2 ${RUN}`);
-    const targetTitle = `Appa ${RUN}`;
+    const targetTitle = `Dad ${RUN}`;
     const target = await note(s, archive, targetTitle, 'A note with no anchors at all.');
     const src = await note(s, archive, `Src ${RUN}`, `cite [[${targetTitle}#^nothere]]`);
 

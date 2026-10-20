@@ -31,20 +31,7 @@ const pick = <T>(r: Rand, xs: readonly T[]): T => xs[Math.floor(r() * xs.length)
 
 /* ── words ───────────────────────────────────────────────────────────── */
 
-const FILLER = new Set([
-  'um',
-  'uh',
-  'uhm',
-  'er',
-  'erm',
-  'hmm',
-  'mhm',
-  'mm',
-  '어',
-  '음',
-  '으음',
-  '흠',
-]);
+const FILLER = new Set(['um', 'uh', 'uhm', 'er', 'erm', 'hmm', 'mhm', 'mm']);
 const wordsOf = (s: string): string[] =>
   (
     s
@@ -69,11 +56,12 @@ const LONG_EN = [
   'I sent half of my pay home every month and kept the rest in a tin',
   'He could not cook at all but he washed every dish for fifty years',
 ];
-const LONG_KO = [
-  '아버지는 항구에서 배를 고치셨고 말씀이 별로 없으셨어요',
-  '일요일마다 온 동네 사람들이 바닷가 작은 교회까지 걸어갔어요',
-  '어머니는 새벽마다 시장에 나가서 생선을 파셨어요',
-  '우리는 산으로 도망가서 삼 주 동안 동굴에 숨어 있었어요',
+/** words in a script these rules do not read: opaque, and every one must be kept as said */
+const LONG_OTHER = [
+  'Мой отец чинил лодки в порту и почти ничего не говорил',
+  'По воскресеньям вся деревня ходила в маленькую церковь у воды',
+  'Мама каждое утро ходила на рынок продавать рыбу',
+  'Мы три недели прятались в пещере в горах',
 ];
 const SHORT = [
   'Yes.',
@@ -86,11 +74,11 @@ const SHORT = [
   'Sometimes.',
   'No. Never.',
   'Mm-hm, yes.',
-  '네.',
-  '부산.',
-  '매일.',
-  '김순자예요.',
-  '그럼. 많이.',
+  'Да.',
+  'Одесса.',
+  'Каждый день.',
+  'Её звали Ирина.',
+  'Конечно. Очень.',
   'In 1946.',
   '1952.',
   '> Fine.',
@@ -100,8 +88,8 @@ const QUESTIONS = [
   'What did your father do?',
   'Did you love him?',
   'And then what happened?',
-  '어디서 태어나셨어요?',
-  '아버지는 무슨 일을 하셨어요?',
+  'Where did you grow up?',
+  'What did your mother do?',
   'Tell me about the war.',
 ];
 const REMARKS = ['Oh wow.', 'I see.', 'That is lovely.', 'Right.'];
@@ -129,7 +117,7 @@ function randomTranscript(r: Rand, n: number): Generated {
         text = pick(r, SHORT);
       } else {
         // a unique word in every long turn, so one turn's words never pass as another's
-        const bank = r() < 0.7 ? LONG_EN : LONG_KO;
+        const bank = r() < 0.7 ? LONG_EN : LONG_OTHER;
         const k = 1 + Math.floor(r() * 3);
         text = Array.from({ length: k }, () => `${pick(r, bank)} place${n}x${i}.`).join(' ');
       }
@@ -368,22 +356,23 @@ Grandpa Tae: Two thousand and nineteen. In the spring.
 Interviewer: Do you miss her?
 Grandpa Tae: Every day.`;
 
-const ONEWORD_KO = `면접자: 할아버지, 어디서 태어나셨어요?
-김태식: 부산.
-면접자: 몇 년도에요?
-김태식: 서른여덟.
-면접자: 학교는 다니셨어요?
-김태식: 이 년.
-면접자: 왜 이 년만 다니셨어요?
-김태식: 일해야 했지.
-면접자: 아버지가 때리셨어요?
-김태식: 가끔.
-면접자: 아버지를 사랑하셨어요?
-김태식: 그럼. 많이.
-면접자: 결혼식 날은 어땠어요?
-김태식: 비가 왔어. 다들 복 받는다고 했지. 네 할머니가 하루 종일 울었어.
-면접자: 할머니가 보고 싶으세요?
-김태식: 매일.`;
+/** the same interview with every answer in a script these rules do not read */
+const ONEWORD_OTHER = `Interviewer: Grandpa, where were you born?
+Dmitri: Одесса.
+Interviewer: And what year was that?
+Dmitri: Тридцать восьмой.
+Interviewer: Did you go to school?
+Dmitri: Два года.
+Interviewer: Why only two years?
+Dmitri: Работа.
+Interviewer: Did your father ever hit you?
+Dmitri: Иногда.
+Interviewer: Did you love him?
+Dmitri: Конечно. Очень.
+Interviewer: Tell me about your wedding day.
+Dmitri: Шёл дождь. Все говорили, что это к счастью. Твоя бабушка плакала весь день.
+Interviewer: Do you miss her?
+Dmitri: Каждый день.`;
 
 const honest: ChatModel = misbehaving('honest', rng(1));
 
@@ -416,23 +405,22 @@ describe('a grandparent who answers in a word or two (A1)', () => {
       if (!chat) expect(wedding.title).toBe('Everyone said it was good luck');
     });
 
-    it(`Korean, ${chat ? 'with' : 'without'} AI: the same, in Korean`, async () => {
+    it(`answers in another script, ${chat ? 'with' : 'without'} AI: the same, every word kept as said`, async () => {
       const r = await ingestTranscript(
-        ONEWORD_KO,
-        { interviewees: ['김태식'] },
+        ONEWORD_OTHER,
+        { interviewees: ['Dmitri'] },
         { chat, titles: [] },
       );
       checkNothingLost(
-        applyRoles(parseTranscript(ONEWORD_KO), ['김태식']).turns,
-        ['김태식'],
+        applyRoles(parseTranscript(ONEWORD_OTHER), ['Dmitri']).turns,
+        ['Dmitri'],
         r,
-        'ko',
+        'other script',
       );
       const short = r.memories.at(-1)!;
-      expect(short.title).toBe('짧은 답변');
-      expect(short.language).toBe('ko');
-      expect(proseOf(short.body)).toContain('- 할머니가 보고 싶으세요? — 매일.');
-      expect(short.body.split('\n').at(-1)).toContain('김태식님 말씀');
+      expect(short.title).toBe('Short answers');
+      expect(proseOf(short.body)).toContain('- Do you miss her? — Каждый день.');
+      expect(short.body.split('\n').at(-1)).toContain('told by Dmitri');
     });
   }
 });

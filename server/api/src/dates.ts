@@ -1,5 +1,4 @@
 import { parseFuzzyDate } from '@funmem/core';
-import { readFuzzyDate } from './drafts';
 import { readEnglishDate, spokenYearsToDigits } from './speech';
 
 /**
@@ -14,18 +13,18 @@ import { readEnglishDate, spokenYearsToDigits } from './speech';
  *   - a sentence about the recording itself ("today is", "this interview was recorded") is skipped;
  *   - numbers that only look like years are masked first, spoken or in digits: prices and
  *     quantities ("nineteen hundred dollars", "1946 chickens", "$2000"), addresses ("1946 Main
- *     Street"), things with a number ("Room 1912", "Flight 1946", "jersey number 1984", 호/번지),
- *     phone numbers ("555-1946", "010-1946-5523");
+ *     Street"), things with a number ("Room 1912", "Flight 1946", "jersey number 1984"), phone
+ *     numbers ("555-1946", "010-1946-5523");
  *   - a year the speaker rejects ("not 1950, it was 1951"), reports as someone else's ("everyone
  *     says 1950"), meets only as today's date ("it is 2026 now") or has not reached ("I hope to
  *     see 2030") is not the memory's date;
- *   - spans (since/until/from/between, 부터/까지/이후/이전), ranges ("1950-53") and decades ("the
- *     1960s", 1990년대) are time claims but not events: they never BECOME the date, and they
- *     count as a second year when another year is named ("guessing which year the speaker
- *     meant would put a star in the wrong decade");
+ *   - spans (since/until/from/between), ranges ("1950-53") and decades ("the 1960s") are time
+ *     claims but not events: they never BECOME the date, and they count as a second year when
+ *     another year is named ("guessing which year the speaker meant would put a star in the
+ *     wrong decade");
  *   - a year inside "who was born in ...," or ", born 1920," or "(born 1920)" is about a third
  *     person, not what the memory is about, and competes with nothing;
- *   - a hedge NEXT TO the date ("maybe", "about", "I think", 쯤, 아마, ...했나) yields "~YYYY";
+ *   - a hedge NEXT TO the date ("maybe", "about", "I think") yields "~YYYY";
  *   - one year named (in any sentence): that year. Several different years: the one in the
  *     first substantive sentence when that sentence names exactly one, otherwise none.
  * Whatever is returned has been re-parsed by parseFuzzyDate.
@@ -53,10 +52,6 @@ const PRICE_VERB = new RegExp(
   'gi',
 );
 const MONEY_SIGN = new RegExp(String.raw`[$€£₩¥]\s?${DIGITS}`, 'g');
-const WON = new RegExp(
-  String.raw`${DIGITS}\s*(?:(?:만\s?)?원|달러|명|마리|킬로|센티|미터|평|(?:개|살|세)(?:(?![가-힣])|(?=(?:나|씩|짜리|째|이|가|은|는|을|를|도|만|밖에))))`,
-  'g',
-);
 /** "twenty-twenty vision", "20/20 vision" */
 const VISION = /\b(?:twenty[\s-]+twenty|20[/-]20)\s+vision\b/gi;
 /** a model year before a brand: "a 1957 Chevy", "my nineteen fifty-two Farmall" (Capitalised word after it) */
@@ -80,9 +75,6 @@ const IDENT = new RegExp(
   String.raw`\b(?:room|rm|flight|bus|route|highway|hwy|apartment|apt|unit|suite|building|bldg|gate|cell|block|lot|plot|box|channel|chapter|page|pier|dock|ward|seat|bed|locker|stall|booth|table|train|platoon|company|battalion|regiment|division|squad|bunker|number|num|no)\b\.?(?:\s+(?:number|num|no)\b\.?)?(?:\s+(?:was|is|were|are)\b)?\s*(?:[:#]\s*)?\d{3,5}\b|#\s?\d{3,5}\b`,
   'gi',
 );
-/** 1912호, 1912번지, 1946번 버스, 2003동, 전화번호 1946 */
-const IDENT_KO =
-  /\d{3,5}\s?(?:호선|호실|호|번지|번째|번|동|층|평)(?![가-힣]*년)|(?:전화번호|우편번호|주민번호|군번|번호)[^.\d]{0,6}\d{3,5}/g;
 /** "555-1946", "010-1946-5523", "1946-2233": digit groups joined by hyphens are numbers, not years */
 const PHONE = /(?<![\d-])\d{2,4}(?:[-–]\d{2,4}){1,3}(?![\d-])/g;
 /** the date-shaped ones are NOT phone numbers: 1965-06-05, 1965-06, 12-25-1950 */
@@ -100,18 +92,13 @@ const SPAN = new RegExp(
   String.raw`\b(?:since|until|till|from|before|after|through|between)\s+(?:the\s+(?:year|summer|winter|spring|fall|autumn)\s+(?:of\s+)?|in\s+)?${NUMSEQ}(?:\s+(?:and|to)\s+${NUMSEQ})?`,
   'gi',
 );
-/** 1953년부터, 1953년까지, 1953년 이후로, 1953년 전에는: bounded gaps, so spaces cannot make it quadratic */
-const SPAN_KO = new RegExp(
-  String.raw`(${YEAR})(?:년)?[ \t]{0,2}(?:도)?[ \t]{0,2}(?:이후로|이후에|이후|이전에|이전|전까지|전부터|전에|후에|후부터|뒤에|뒤로|이래|사이|동안|부터|까지)`,
-  'g',
-);
 /** "1950-53", "1950–1953" (a second part that is no year, like 2233, is not a range) */
 const RANGE = new RegExp(
   String.raw`(?<![\d-])(${YEAR})[ \t]{0,2}[-–—][ \t]{0,2}(${YEAR}|[1-9]\d)(?![\d-])`,
   'g',
 );
-/** "the 1960s", 1990년대 */
-const DECADE = new RegExp(String.raw`(?<!\d)(1[89]\d0|20[0-4]0)(?:s\b|년대)`, 'g');
+/** "the 1960s" */
+const DECADE = new RegExp(String.raw`(?<!\d)(1[89]\d0|20[0-4]0)s\b`, 'g');
 /** ", who was born in eighteen ninety-eight," about someone else; ", born 1920,"; "(born 1920)" */
 const THIRD_PERSON_BIRTH =
   /(?:,\s*)?\b(?:who|whom)\s+(?:was|were|had been)\s+(?:born|raised)\b[^,.;!?]{0,50}/gi;
@@ -122,7 +109,7 @@ const APPOSITIVE_BORN = new RegExp(
 const PAREN_BORN = /\((?:born|b\.|d\.|died)\s*[^)]{0,24}\)/gi;
 /** a statement of today's date or of when the tape was made: not a memory */
 const RECORDING =
-  /\b(?:today\s+is|today's\s+date|the\s+date\s+(?:today\s+)?is|this\s+year\s+is|(?:recorded|recording)\s+(?:on|in|today))\b|오늘은/i;
+  /\b(?:today\s+is|today's\s+date|the\s+date\s+(?:today\s+)?is|this\s+year\s+is|(?:recorded|recording)\s+(?:on|in|today))\b/i;
 
 /** the year is the LAST thing in these, so dropping it keeps the words in front */
 const NEGATED = new RegExp(
@@ -133,14 +120,8 @@ const ATTRIBUTED = new RegExp(
   String.raw`\b(?:people|everyone|everybody|they|others)\s+(?:say|says|said|think|thinks|thought|believe[sd]?|claim(?:s|ed)?|remember(?:ed)?)\b(?:\s+[\p{L}0-9']+){0,6}?\s+(?:(?:in|on|around|about|was|were|is)\s+)*(${YEAR})(?!\d)`,
   'giu',
 );
-/** 1950년이 아니고, 1950년은 아니에요 */
-const NEGATED_KO = new RegExp(
-  String.raw`(${YEAR})(?:년)?[ \t]{0,2}(?:도|이|가|은|는)?[ \t]{0,2}(?:아니|아닌)`,
-  'g',
-);
 /** "it is 2026 now": a recent year with a present-time word right beside it is today, not a memory */
-const PRESENT =
-  /\b(?:now|nowadays|currently|these\s+days|at\s+present|right\s+now|today)\b|지금|요즘|현재|오늘날|요새|오늘/i;
+const PRESENT = /\b(?:now|nowadays|currently|these\s+days|at\s+present|right\s+now|today)\b/i;
 const THIS_YEAR = new Date().getFullYear();
 
 const YEAR4 = new RegExp(String.raw`(?<!\d)(${YEAR})(?!\d)`, 'g');
@@ -163,7 +144,6 @@ function maskNonDates(sentence: string, rivals: Rivals): string {
     });
   let t = sentence
     .replace(MONEY_SIGN, ' ')
-    .replace(WON, ' ')
     .replace(STREET, ' ')
     .replace(VISION, ' ')
     .replace(MODEL_YEAR, ' ')
@@ -179,15 +159,10 @@ function maskNonDates(sentence: string, rivals: Rivals): string {
   t = t.replace(PHONE, (hit) => (DATE_SHAPED.test(hit) ? hit : ' '));
   t = t
     .replace(IDENT, ' ')
-    .replace(IDENT_KO, ' ')
     .replace(PAREN_BORN, ' ')
     .replace(THIRD_PERSON_BIRTH, ' ')
     .replace(APPOSITIVE_BORN, ' ');
   t = noted(t, SPAN);
-  t = t.replace(SPAN_KO, (_hit, y: string) => {
-    rivals.years.add(y);
-    return ' ';
-  });
   t = t.replace(DECADE, (_hit, d: string) => {
     rivals.decades.add(d);
     return ' ';
@@ -201,10 +176,7 @@ function maskNonDates(sentence: string, rivals: Rivals): string {
 /** Years (in digits) the speaker rejects, attributes to others, or that are today or the future. */
 function dropNotMemories(text: string): string {
   const dropEnd = (hit: string) => hit.replace(/\d{4}(?!.*\d{4})/, ' ');
-  const t = text
-    .replace(NEGATED, dropEnd)
-    .replace(ATTRIBUTED, dropEnd)
-    .replace(NEGATED_KO, (hit, y: string) => ' ' + hit.slice(y.length));
+  const t = text.replace(NEGATED, dropEnd).replace(ATTRIBUTED, dropEnd);
   return t.replace(YEAR4, (y, _g, at: number) => {
     const n = Number(y);
     if (n > THIS_YEAR) return ' ';
@@ -236,12 +208,8 @@ const CLAUSE_EN =
   /\b(?:i\s+think|i\s+believe|i\s+guess|i\s+suppose|not\s+sure|if\s+i\s+(?:remember|recall))\b/i;
 const AFTER_EN =
   /^\W{0,3}(?:or\s+(?:'?\d{2}|\d{4})\b|or\s+so|or\s+thereabouts|ish\b|i\s+think|i\s+believe|i\s+guess|maybe|perhaps|probably|if\s+i\s+(?:remember|recall))\b/i;
-/** 한 only as a word of its own ("한 1962년쯤"), not the start of 한국, 한번, 한복 */
-const BEFORE_KO = /(?:아마|글쎄|대략|어림)\s*[^.!?。…]{0,6}$|(?:^|[\s,])한\s*$/;
-const AFTER_KO = /^(?:년)?\s*(?:쯤|경|무렵|정도|인가|이었나|였나|일까|던가|이었던가|맞나)/;
-
 /** Is the first mention of `year` in `text` hedged, by a word on the right side of it? */
-function hedgedNear(text: string, year: string, lang: 'en' | 'ko'): boolean {
+function hedgedNear(text: string, year: string): boolean {
   const at = text.indexOf(year);
   if (at < 0) return false;
   const before = (
@@ -251,17 +219,15 @@ function hedgedNear(text: string, year: string, lang: 'en' | 'ko'): boolean {
       .pop() ?? ''
   ).trimEnd();
   const after = text.slice(at + year.length, at + year.length + 18).split(/[.!?;。…]/)[0] ?? '';
-  return lang === 'en'
-    ? BEFORE_EN.test(before) ||
-        CLAUSE_ADVERB.test(before) ||
-        CLAUSE_EN.test(before.split(',').pop() ?? '') ||
-        AFTER_EN.test(after)
-    : BEFORE_KO.test(before.slice(-12)) || AFTER_KO.test(after);
+  return (
+    BEFORE_EN.test(before) ||
+    CLAUSE_ADVERB.test(before) ||
+    CLAUSE_EN.test(before.split(',').pop() ?? '') ||
+    AFTER_EN.test(after)
+  );
 }
 
 /* ── one sentence ────────────────────────────────────────────────────── */
-
-const HANGUL = /[가-힣]/;
 
 interface Facts {
   /** the date this sentence states as an event, and every distinct year it names */
@@ -276,11 +242,11 @@ function readSentence(sentence: string): Facts {
 
   let raw: string | null = null;
   if (all.size > 0) {
-    raw = HANGUL.test(converted) ? readFuzzyDate(converted) : readEnglishDate(converted);
+    raw = readEnglishDate(converted);
     if (raw !== null) {
       // whether the speaker hedged is decided HERE, on the right side of the year, not by the reader
       const core = raw.replace('~', '');
-      const hedge = hedgedNear(converted, core.slice(0, 4), HANGUL.test(converted) ? 'ko' : 'en');
+      const hedge = hedgedNear(converted, core.slice(0, 4));
       // "1965-06-05" says more than the bare year the readers take from it
       const iso = ISO.exec(converted);
       const more =

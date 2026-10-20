@@ -14,25 +14,15 @@ export const ANSWERS = 'ANSWERS';
 export const baseLabel = (id: string): string => id.replace(/ \([^()]{0,60}\)$/, '').trim();
 
 /**
- * Labels that SAY the speaker is the one asking: "Interviewer", "Q", "질문자"… A number may
- * follow ("Interviewer 2"). Korean oral history writes 면담자 (and folklore work 조사자) for
- * the interviewer. "면접자" is here for the readers (a file labelled only "면접자:" with
- * unlabelled answers), but the role guess reads it as AMBIGUOUS_ASKER_LABEL below.
+ * Labels that SAY the speaker is the one asking: "Interviewer", "Q", "Host"… A number may
+ * follow ("Interviewer 2").
  */
-export const ASKER_LABEL =
-  /^(?:interviewer|q|question|host|moderator|면접관|면접자|인터뷰어|질문자|진행자|면담자|조사자|채록자|질문|문)(?: ?\d{1,3})?$/i;
+export const ASKER_LABEL = /^(?:interviewer|q|question|host|moderator)(?: ?\d{1,3})?$/i;
 /**
- * Labels that SAY the speaker is the one telling. A bare "A" counts only next to a "Q". Korean
- * oral history writes 구술자 (folklore 제보자) for the person telling; English "Narrator".
+ * Labels that SAY the speaker is the one telling: "Interviewee", "Narrator"… A bare "A" counts
+ * only next to a "Q".
  */
-export const TELLER_LABEL =
-  /^(?:interviewee|narrator|a|answer|answers|respondent|응답자|인터뷰이|구술자|제보자|답|답변)(?: ?\d{1,3})?$/i;
-/**
- * "면접자" is the interviewer in some transcripts and the person interviewed in others (in a job
- * interview it is the candidate). It is read as the asker only when its turns do ask; otherwise
- * the label says nothing, and who talks and how decides.
- */
-export const AMBIGUOUS_ASKER_LABEL = /^면접자(?: ?\d{1,3})?$/;
+export const TELLER_LABEL = /^(?:interviewee|narrator|a|answer|answers|respondent)(?: ?\d{1,3})?$/i;
 
 /** Ids this code gives out itself. A speaker in a file who happens to be called this is renamed. */
 const RESERVED = new Set([QUESTIONS, UNKNOWN, ANSWERS]);

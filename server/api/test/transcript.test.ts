@@ -154,26 +154,26 @@ describe('formats a speech-to-text box really produces', () => {
     expect(speakersOf(music)).not.toContain('Music');
   });
 
-  it('Rev and Teams: Name  0:05 on a line, hours included; Korean 화자 and 참석자 headers', () => {
+  it('Rev and Teams: Name  0:05 on a line, hours included; numbered voices and participants', () => {
     const rev = parseTranscript(
       `Speaker 1  00:05\n${Q}\n\nSpeaker 2  1:02:03\n${A}\n\nSpeaker 1  1:03:40\nAnd your mother?`,
     );
     expect(rev.turns.map((x) => x.start)).toEqual([5, 3723, 3820]);
-    const ko = parseTranscript(
-      '참석자 1 00:05\n어린 시절 이야기를 들려주세요.\n참석자 2 00:12\n나는 부산에서 태어났어요.\n참석자 1 00:30\n아버지는요?\n참석자 2 00:35\n배를 고치셨어요.',
+    const teams = parseTranscript(
+      'Participant 1 00:05\nTell me about your childhood.\nParticipant 2 00:12\nI was born in Busan.\nParticipant 1 00:30\nAnd your father?\nParticipant 2 00:35\nHe repaired boats.',
     );
-    expect(speakersOf(ko)).toEqual(['참석자 1', '참석자 2']);
+    expect(speakersOf(teams)).toEqual(['Participant 1', 'Participant 2']);
   });
 
-  it('Korean labels: [화자1] text, 화자 2: text', () => {
+  it('numbered speakers: [Speaker1] text, Speaker 2: text', () => {
     const a = parseTranscript(
-      '[화자1] 아버지는 어떤 분이셨어요?\n[화자2] 배를 고치는 일을 하셨어요.\n[화자1] 어머니는요?\n[화자2] 시장에서 생선을 파셨어요.',
+      '[Speaker1] What was your father like?\n[Speaker2] He repaired boats.\n[Speaker1] And your mother?\n[Speaker2] She sold fish at the market.',
     );
-    expect(speakersOf(a)).toEqual(['화자1', '화자2']);
+    expect(speakersOf(a)).toEqual(['Speaker1', 'Speaker2']);
     const b = parseTranscript(
-      '화자 1: 아버지는 어떤 분이셨어요?\n화자 2: 배를 고치는 일을 하셨어요.',
+      'Speaker 1: What was your father like?\nSpeaker 2: He repaired boats.',
     );
-    expect(speakersOf(b)).toEqual(['화자 1', '화자 2']);
+    expect(speakersOf(b)).toEqual(['Speaker 1', 'Speaker 2']);
   });
 
   it('labels with timestamps in any position', () => {
@@ -276,7 +276,7 @@ describe('cleaning what the recogniser got wrong', () => {
     expect(same.turns[0]!.text).toBe('No. No. It was not him.');
   });
 
-  it('removes fillers in both languages', () => {
+  it('removes fillers and joins the pieces of one speaker', () => {
     const t = parseTranscript({
       segments: [
         {
@@ -285,10 +285,45 @@ describe('cleaning what the recogniser got wrong', () => {
           text: 'Um, so I, I grew up there, you know, by the water.',
           speaker: 'A',
         },
-        { start: 4, end: 8, text: '어 음 나는 통영에서 태어났어요.', speaker: 'A' },
+        { start: 4, end: 8, text: 'Uh, um, I was born in Tongyeong.', speaker: 'A' },
       ],
     });
-    expect(t.turns[0]!.text).toBe('So I grew up there by the water. 나는 통영에서 태어났어요.');
+    expect(t.turns[0]!.text).toBe('So I grew up there by the water. I was born in Tongyeong.');
+  });
+
+  it('words in another script are kept exactly as written, whatever the layout', () => {
+    const said = [
+      'Мы жили у моря, и отец чинил лодки.',
+      '我出生在釜山，我父亲是修船的。',
+      'ولدت في بوسان وكان أبي يصلح القوارب.',
+      'Γεννήθηκα στη Μπουσάν και ο πατέρας μου έφτιαχνε βάρκες.',
+    ];
+    for (const line of said) {
+      // text: one voice per line, then a labelled file, a subtitle file and JSON
+      expect(parseTranscript(line).turns.map((x) => x.text)).toEqual([line]);
+      const labelled = parseTranscript(
+        `Interviewer: Where were you born?\nGrandma: ${line}\nInterviewer: And then?\nGrandma: ${line}`,
+      );
+      expect(labelled.turns.filter((x) => x.speaker === 'Grandma').map((x) => x.text)).toEqual([
+        line,
+        line,
+      ]);
+      const srt = parseTranscript(
+        `1\n00:00:00,000 --> 00:00:04,000\n[Interviewer]: Where were you born?\n\n2\n00:00:04,000 --> 00:00:09,000\n[Grandma]: ${line}\n`,
+      );
+      expect(srt.turns[1]!.text).toBe(line);
+      const json = parseTranscript({
+        segments: [{ start: 0, end: 4, text: ` ${line} `, speaker: 'SPEAKER_00' }],
+      });
+      expect(json.turns[0]!.text).toBe(line);
+    }
+    // only ASCII punctuation structures a transcript: a full-width colon makes a plain line
+    const plain = parseTranscript('Interviewer： Where were you born?\nGrandma： In Busan.');
+    expect(plain.format).toBe('plain-text');
+    expect(plain.turns.map((x) => x.text)).toEqual([
+      'Interviewer： Where were you born?',
+      'Grandma： In Busan.',
+    ]);
   });
 });
 
@@ -327,7 +362,7 @@ describe('who spoke', () => {
       text,
       speaker,
     });
-    for (const backchannel of ['Mm-hm.', 'Yeah.', '그렇군요.']) {
+    for (const backchannel of ['Mm-hm.', 'Yeah.', 'Uh-huh.']) {
       const t = parseTranscript({
         segments: [
           seg(Q, 'Q', 0),
@@ -710,7 +745,7 @@ describe('fuzz: whatever arrives, it is read or refused cleanly, and quickly', (
     '\r\n',
     ' ',
     '  ',
-    '화자1',
+    'Speaker 1',
     'Interviewer',
     'Grandma',
     'WEBVTT',
@@ -724,9 +759,10 @@ describe('fuzz: whatever arrives, it is read or refused cleanly, and quickly', (
     'um',
     'I, I',
     'You know',
-    '어',
-    '음',
-    '한국어 문장입니다.',
+    'э',
+    'ммм',
+    'Это предложение.',
+    '这是一个句子。',
     'He repaired boats.',
     '<v A>',
     '</v>',
@@ -772,7 +808,15 @@ describe('fuzz: whatever arrives, it is read or refused cleanly, and quickly', (
       if (r < 0.2) return null;
       if (r < 0.35) return Math.floor(rnd() * 100000) / (rnd() < 0.5 ? 1 : 1000);
       if (r < 0.55)
-        return pick(['', 'hello there friend', 'SPEAKER_00', '00:01:02', '[Music]', '?', '한국어']);
+        return pick([
+          '',
+          'hello there friend',
+          'SPEAKER_00',
+          '00:01:02',
+          '[Music]',
+          '?',
+          'русский',
+        ]);
       if (r < 0.65) return [];
       if (r < 0.75) return pick([true, false, -5, 1e21, NaN]);
       return {
@@ -825,7 +869,7 @@ describe('fuzz: whatever arrives, it is read or refused cleanly, and quickly', (
       big('um, ', 399_000),
       big(', you know, ', 399_000),
       big('I mean, ', 399_000),
-      big('음 ', 399_000),
+      big('мм ', 399_000),
       big('nineteen sixty six ', 399_000),
       big('since 1934 ', 399_000),
       big('[00:12] Q: hi\n', 399_000),

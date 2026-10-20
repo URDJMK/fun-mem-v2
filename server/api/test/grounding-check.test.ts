@@ -1,18 +1,17 @@
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
-import { linkKnownTitles } from '../src/drafts';
-import { KoreanGroundingGate } from '../src/drafts-gate';
-import { checkGrounding, checkTitle, type ViolationKind } from '../src/grounding-ko';
+import { GroundingGate } from '../src/drafts-gate';
+import { checkGrounding, checkTitle, textWords, type ViolationKind } from '../src/grounding-check';
 
 /**
  * The grounding check, held to what a reviewer and a behaviour tester found it letting
  * through (each `rejects` below was ACCEPTED before), and to what it must keep accepting:
- * 46 real model proposals recorded from four interviews, and the tidy rewrites a careful
+ * 30 real model proposals recorded from two interviews, and the tidy rewrites a careful
  * model makes. A check that rejects a faithful rewrite is safe but makes the notes worse;
  * one that accepts a wrong one puts a false sentence in a dead person's record.
  */
 
-const gate = new KoreanGroundingGate();
+const gate = new GroundingGate();
 const kinds = (src: string, body: string): ViolationKind[] =>
   checkGrounding(src, body).violations.map((v) => v.kind);
 const rejects = (src: string, body: string, kind?: ViolationKind) => {
@@ -103,64 +102,7 @@ describe('meaning reversal: a negation or a hedge is kept, both ways', () => {
     );
   });
 
-  it('Korean: 없었 -> 있었, a dropped 안 / 못 / 아니 / 마라 / 몰랐, and 아마·쯤·인가·뻔·싶 are caught', () => {
-    rejects(
-      '그때는 집에 돈이 정말 하나도 없었어요. 아버지가 많이 힘드셨어요.',
-      '그때는 집에 돈이 정말 많이 있었어요. 아버지가 힘드셨어요.',
-      'negation',
-    );
-    rejects(
-      '아버지는 평생 술을 안 드셨어요. 담배도 안 피우셨어요.',
-      '아버지는 평생 술을 드셨어요. 담배도 피우셨어요.',
-      'negation',
-    );
-    rejects(
-      '그때는 집이 가난해서 학교에 못 갔어요. 대신 동생들을 돌봤어요.',
-      '그때는 집이 가난해서 학교에 갔어요. 대신 동생들을 돌봤어요.',
-      'negation',
-    );
-    rejects(
-      '그 사람은 우리 아버지가 아니었어요. 외삼촌이었어요.',
-      '그 사람은 우리 아버지였어요. 외삼촌이었어요.',
-      'negation',
-    );
-    rejects(
-      '밥 잘 챙겨 먹고, 사람한테 모질게 하지 마라.',
-      '밥 잘 챙겨 먹고, 사람한테 모질게 해라.',
-      'negation',
-    );
-    rejects(
-      '그게 마지막이 될 줄 몰랐어요. 지금도 그게 마음에 걸려요.',
-      '그게 마지막이 되었어요. 지금도 그게 마음에 걸려요.',
-      'negation',
-    );
-    rejects(
-      '아마 1946년쯤이었을 거예요. 우리가 서울로 이사 간 게요.',
-      '1946년에 우리가 서울로 이사 갔어요.',
-      'hedge',
-    );
-    rejects('막내딸은 1966년인가 잘 기억이 안 나요.', '막내딸은 1966년에 낳았어요.', 'hedge');
-    rejects(
-      '전쟁 때 오빠가 죽을 뻔했어요. 다리를 크게 다쳤어요.',
-      '전쟁 때 오빠가 죽었어요. 다리를 크게 다쳤어요.',
-      'hedge',
-    );
-    rejects(
-      '나는 서울에 있는 대학에 가고 싶었어요. 그런데 집안 형편이 어려웠어요.',
-      '나는 서울에 있는 대학에 갔어요. 그런데 집안 형편이 어려웠어요.',
-      'hedge',
-    );
-  });
-
-  it("the same negation written another way is fine: 안 갔어요 / 가지 않았어요, didn't / did not", () => {
-    accepts(
-      '그때는 학교에 안 갔어요. 집에서 동생을 봤어요.',
-      '그때는 학교에 가지 않았어요. 집에서 동생을 봤어요.',
-    );
-    accepts(
-      '그때는 학교에 못 갔어요. 집에서 동생을 봤어요.',
-      '그때는 학교에 가지 못했어요. 집에서 동생을 봤어요.',
-    );
+  it("the same negation written another way is fine: didn't / did not, no one / nobody", () => {
     accepts(
       "He didn't talk much, and he wasn't one to complain.",
       'He did not talk much, and he was not one to complain.',
@@ -230,29 +172,6 @@ describe('the wrong person: a relative, a gendered noun or a pronoun is never ad
     rejects('My brother carried me on his back.', 'My other carried me on his back.');
   });
 
-  it('Korean: 외할머니 != 할머니, 큰아버지 != 아버지, 시어머니 != 어머니, 새어머니 != 어머니', () => {
-    rejects(
-      '외할머니가 저를 키워 주셨어요. 매일 국수를 삶아 주셨어요.',
-      '할머니가 저를 키워 주셨어요. 매일 국수를 삶아 주셨어요.',
-      'person',
-    );
-    rejects(
-      '큰아버지가 부산 항구에서 배를 고치셨어요. 손이 정말 크셨어요.',
-      '아버지가 부산 항구에서 배를 고치셨어요. 손이 정말 크셨어요.',
-      'person',
-    );
-    rejects(
-      '시어머니가 시장에서 생선을 파셨어요. 새벽 네 시에 나가셨어요.',
-      '어머니가 시장에서 생선을 파셨어요. 새벽 네 시에 나가셨어요.',
-      'person',
-    );
-    rejects(
-      '새어머니가 시장에서 생선을 파셨어요. 새벽 네 시에 나가셨어요.',
-      '어머니가 시장에서 생선을 파셨어요. 새벽 네 시에 나가셨어요.',
-      'person',
-    );
-  });
-
   it('a pronoun for a person who IS named there is fine, and so is leaving one out', () => {
     accepts(
       'My father repaired boats and had big hands.',
@@ -266,13 +185,6 @@ describe('the wrong person: a relative, a gendered noun or a pronoun is never ad
       'My mother sold fish. My mother left before dawn.',
       'My mother sold fish. She left before dawn.',
     );
-    // the same person under a household word is reported, not refused
-    const r = checkGrounding(
-      '엄마가 김치 담그실 때 나도 옆에서 배추 씻었어요.',
-      '어머니가 김치를 담그실 때 나도 옆에서 배추를 씻었어요.',
-    );
-    expect(r.violations).toEqual([]);
-    expect(r.swapped).toContain('어머니가');
   });
 });
 
@@ -340,11 +252,6 @@ describe('a word is a word: never licensed by one it starts with or sits inside'
       'My father was fourteen and my brother was four.',
       'number',
     );
-    rejects(
-      '나는 1946년에 부산에서 태어났어요. 바닷가 집이었어요.',
-      '나는 1947년에 부산에서 태어났어요. 바닷가 집이었어요.',
-      'number',
-    );
   });
 
   it('a number said once is not written twice: "she was three" -> "four" when "four brothers" is there', () => {
@@ -380,14 +287,6 @@ describe('a word is a word: never licensed by one it starts with or sits inside'
     );
   });
 
-  it('Korean: 부산 does not license 부산대 (a particle is a closed list, 대 is not one)', () => {
-    rejects(
-      '나는 부산에서 학교를 다녔어요. 친구들이 많았어요.',
-      '나는 부산대에서 학교를 다녔어요. 친구들이 많았어요.',
-      'invented',
-    );
-  });
-
   it('a word hidden in a link is still a word (the retry is told the real reason)', () => {
     const r = checkGrounding(
       'My father repaired boats in the harbour.',
@@ -397,6 +296,21 @@ describe('a word is a word: never licensed by one it starts with or sits inside'
     expect(
       checkGrounding('My father repaired boats.', 'My [[Dad|father]] repaired boats.').violations,
     ).toEqual([]);
+  });
+
+  it('a word that is also the name of a built-in ("constructor", "toString", "__proto__") is a word like any other', () => {
+    // a word looked up in a plain object would find Object's own "constructor": the check threw
+    const src =
+      'My father worked as a constructor for the city. He wrote toString, valueOf, hasOwnProperty and __proto__ on the board.';
+    accepts(src, src);
+    expect(checkTitle(src, 'The constructor').violations).toEqual([]);
+    rejects(src, src.replace('constructor', 'builder'), 'invented');
+    rejects('My father was a builder.', 'My father was a constructor.', 'invented');
+    rejects(
+      'The constructor of the bridge did not come.',
+      'The constructor of the bridge did come.',
+      'negation',
+    );
   });
 });
 
@@ -467,14 +381,6 @@ describe('nothing the person said is left out', () => {
       'dropped',
     );
   });
-
-  it('Korean: a dropped sentence', () => {
-    rejects(
-      '아버지는 평생 항구에서 배를 고치셨고 어머니는 시장에서 생선을 파셨어요. 오빠는 1952년에 바다에서 죽었어요.',
-      '아버지는 평생 항구에서 배를 고치셨고 어머니는 시장에서 생선을 파셨어요.',
-      'dropped',
-    );
-  });
 });
 
 describe('what a careful tidy rewrite does still passes', () => {
@@ -524,55 +430,15 @@ describe('what a careful tidy rewrite does still passes', () => {
       'My father repaired boats.\nHe had big hands, really big, and he did not talk much at all.',
       'My father repaired boats. He had big hands, really big, and he did not talk much at all.',
     ],
-    [
-      'ko: 하셨다 -> 하셨습니다',
-      '아버지는 배를 고치는 일을 하셨다. 손이 정말 크셨다.',
-      '아버지는 배를 고치는 일을 하셨습니다. 손이 정말 크셨습니다.',
-    ],
-    [
-      'ko: spacing joined',
-      '그 일은 안 했어요. 대신 밭에 나갔어요.',
-      '그 일은 안했어요. 대신 밭에 나갔어요.',
-    ],
-    [
-      'ko: spacing split',
-      '밥상 차려주심. 아무 말도 안 하셨음.',
-      '밥상을 차려 주셨다. 아무 말도 안 하셨다.',
-    ],
-    [
-      'ko: fillers out',
-      '음, 그니까 아버지가 배를 고치셨어요. 손이 크셨어요.',
-      '아버지가 배를 고치셨어요. 손이 크셨어요.',
-    ],
-    [
-      'ko: a particle added',
-      '나 부산 살았어요. 바닷가 집이었어요.',
-      '나는 부산에서 살았어요. 바닷가 집이었어요.',
-    ],
-    [
-      'ko: sentences joined with 고',
-      '아버지는 배를 고치셨어요. 손이 크셨어요.',
-      '아버지는 배를 고치셨고 손이 크셨어요.',
-    ],
-    [
-      'ko: a stammer out',
-      '근데 한 선생님이, 한 선생님이 내 글씨가 제일 예쁘다고 하셨어요.',
-      '한 선생님이 내 글씨가 제일 예쁘다고 하셨어요.',
-    ],
-    [
-      'ko: 반말 -> 존댓말',
-      '부산에서 태어났지. 바닷가 집이었어.',
-      '부산에서 태어났어요. 바닷가 집이었어요.',
-    ],
   ])('%s', (_name, src, body) => accepts(src, body));
 });
 
-describe('the golden set: 46 real model proposals from four interviews', () => {
+describe('the golden set: 30 real model proposals from two interviews', () => {
   const golden = JSON.parse(
     readFileSync(new URL('./fixtures/grounding-golden.json', import.meta.url), 'utf8'),
   ) as Array<{ interview: string; source: string; title: string; body: string }>;
   it('are all still accepted by the gate', () => {
-    expect(golden).toHaveLength(46);
+    expect(golden).toHaveLength(30);
     const refused = golden.filter(
       (p) =>
         gate.check(
@@ -598,18 +464,6 @@ describe('titles', () => {
   });
 });
 
-describe('Korean links never land inside a word', () => {
-  it('큰[[아버지]] and 외[[할머니]] are not made; 우리 [[할머니]]가 is', () => {
-    expect(
-      linkKnownTitles('큰아버지가 배를 고치셨다. 아버지는 집에 계셨다.', ['아버지']).body,
-    ).toBe('큰아버지가 배를 고치셨다. [[아버지]]는 집에 계셨다.');
-    expect(linkKnownTitles('외할머니가 국수를 삶아 주셨다.', ['할머니']).linked).toEqual([]);
-    expect(linkKnownTitles('우리 할머니가 국수를 삶아 주셨다.', ['할머니']).body).toBe(
-      '우리 [[할머니]]가 국수를 삶아 주셨다.',
-    );
-  });
-});
-
 describe('the report', () => {
   it('names each violation by kind, keeps listing the unsupported words, and is empty when clean', () => {
     const r = checkGrounding('He did not talk much.', 'He did talk much, a captain.');
@@ -624,6 +478,108 @@ describe('the report', () => {
       retention: 1,
     });
   });
+
+  it('"mom" for "mother" is a word that was not said, never a swap', () => {
+    const r = checkGrounding('My mother sold fish.', 'My mom sold fish.');
+    expect(r.ungrounded).toEqual(['mom']);
+  });
+});
+
+/**
+ * No rule reads a word in another script, so it is held to the strictest one: the very same
+ * word, never free, kept like any content word, and in the order it was said. A copy passes;
+ * a word added, dropped, changed, moved or said again is refused.
+ */
+describe('a word in another script has no rule, so it is held to the strictest one', () => {
+  const said = [
+    'Моя бабушка родилась в Киеве в 1946 году. Мы жили у реки.',
+    'Η γιαγιά μου γεννήθηκε στη Θεσσαλονίκη το 1946. Ζούσαμε κοντά στο λιμάνι.',
+    'وُلِدَتْ جَدَّتِي فِي القَاهِرَةِ عَامَ 1946. كَانَ أَبِي يَعْمَلُ فِي المِينَاءِ.',
+    'סבתא שלי נולדה בתל אביב בשנת 1946. אבא שלי עבד בנמל.',
+    'मेरी दादी का जन्म 1946 में दिल्ली में हुआ था. मेरे पिता खदान में काम करते थे.',
+    '我的奶奶一九四六年出生在上海。我们住在河边。',
+    '祖母は1946年に大阪で生まれました。父は炭鉱で働いていました。',
+    'ยายของฉันเกิดที่กรุงเทพ',
+    'My grandmother always said борщ was better the next day.',
+  ];
+  it.each(said)('a copy of "%s" passes', (s) => {
+    accepts(s, s);
+  });
+
+  it('a word added, dropped, or changed by one letter, one mark or one digit is refused', () => {
+    rejects('Мы жили у реки.', 'Мы долго жили у реки.', 'invented');
+    rejects('My grandmother made soup.', 'My grandmother made борщ soup.', 'invented');
+    rejects('我们住在河边。', '我们一直住在河边。', 'invented');
+    // "не" is "not": a word no rule reads is still a word whose loss is a loss
+    rejects('Мы не жили у реки.', 'Мы жили у реки.', 'dropped');
+    rejects('Δεν ζούσαμε κοντά στο λιμάνι.', 'Ζούσαμε κοντά στο λιμάνι.', 'dropped');
+    rejects('Мы жили у реки.', 'Мы жили у руки.', 'invented');
+    rejects(
+      'كَانَ أَبِي يَعْمَلُ فِي المِينَاءِ.',
+      'كَانَ أَبِي يَعْمِلُ فِي المِينَاءِ.',
+      'invented',
+    );
+    rejects('我的奶奶一九四六年出生在上海。', '我的奶奶一九四七年出生在上海。', 'invented');
+    rejects('祖母は1946年に大阪で生まれました。', '祖母は1947年に大阪で生まれました。', 'invented');
+    rejects(
+      'Моя бабушка родилась в Киеве в 1946 году.',
+      'Моя бабушка родилась в Киеве в 1947 году.',
+      'number',
+    );
+  });
+
+  it('the same words moved are refused: a negation to another verb or sentence, a number to another place', () => {
+    rejects(
+      'Я не ел хлеб и пошёл в школу.',
+      'Я ел хлеб и не пошёл в школу.',
+      'unsupported_sentence',
+    );
+    rejects('Я пошёл домой. Он не плакал.', 'Я не пошёл домой. Он плакал.', 'unsupported_sentence');
+    rejects(
+      'Он вернулся в 1945 году домой.',
+      'Он вернулся домой в 1945 году.',
+      'unsupported_sentence',
+    );
+  });
+
+  it('a word said again, or a sentence split in two and turned round, is refused', () => {
+    rejects(
+      'Я не знал. Мама плакала.',
+      'Я не знал. Не знал. Мама плакала.',
+      'unsupported_sentence',
+    );
+    rejects(
+      'Я не знал, что это конец. Мама плакала.',
+      'Я не знал, что это конец. Не знал. Мама плакала.',
+      'unsupported_sentence',
+    );
+    rejects(
+      'Мама плакала и папа ушёл на шахту.',
+      'И папа ушёл на шахту. Мама плакала.',
+      'unsupported_sentence',
+    );
+  });
+
+  it('...but the same words in the same order pass: joined, split, two turns as one, case, English glue', () => {
+    accepts('Мы жили у реки. Отец работал на шахте.', 'Мы жили у реки, отец работал на шахте.');
+    accepts('Мы жили у реки, отец работал на шахте.', 'Мы жили у реки. Отец работал на шахте.');
+    accepts('Мы жили у реки.\nОтец работал на шахте.', 'Мы жили у реки. Отец работал на шахте.');
+    accepts('Мы жили у реки.', 'мы жили у реки.');
+    accepts('Мама плакала. Мама плакала. Папа ушёл.', 'Мама плакала. Папа ушёл.');
+    accepts(
+      'My grandmother always said борщ was better the next day.',
+      'My grandmother always said that борщ was better the next day.',
+    );
+  });
+
+  it('the old word splitter keeps a word in another script whole, its marks too, and English as it was', () => {
+    expect(textWords('Мы жили у реки.')).toEqual(['Мы', 'жили', 'у', 'реки']);
+    expect(textWords('وُلِدَتْ جَدَّتِي')).toEqual(['وُلِدَتْ', 'جَدَّتِي']);
+    expect(textWords('मेरी दादी')).toEqual(['मेरी', 'दादी']);
+    expect(textWords('我们住在河边。')).toEqual(['我们住在河边']);
+    expect(textWords('My grandmother said борщ.')).toEqual(['My', 'grandmother', 'said', 'борщ']);
+    expect(textWords('My father, in [[Ohio]] 1946.')).toEqual(['My', 'father', 'in', '1946']);
+  });
 });
 
 describe('time: linear, and bounded on hostile text', () => {
@@ -632,13 +588,13 @@ describe('time: linear, and bounded on hostile text', () => {
     f();
     return performance.now() - t0;
   };
-  it('a 6,000-character Korean window takes well under 500 ms', () => {
-    const ko =
-      '어머니는 새벽마다 시장에 나가서 생선을 파셨어요. 정말 부지런하셨어요. 아버지는 항구에서 배를 고치셨고 손이 크셨어요. ';
-    const big = ko.repeat(Math.ceil(6000 / ko.length)).slice(0, 6000);
+  it('a 6,000-character window takes well under 500 ms', () => {
+    const en =
+      'My mother went to the market every morning and sold fish. She worked very hard. My father repaired boats at the harbour and had big hands. ';
+    const big = en.repeat(Math.ceil(6000 / en.length)).slice(0, 6000);
     const varied = Array.from(
       { length: 200 },
-      (_, i) => `${i}년에 우리 어머니가 ${i}번째 시장에서 생선 ${i}마리를 파셨어요.`,
+      (_, i) => `In ${1900 + i} my mother sold ${i} fish at market number ${i}.`,
     )
       .join(' ')
       .slice(0, 6000);
@@ -646,9 +602,9 @@ describe('time: linear, and bounded on hostile text', () => {
     expect(ms(() => checkGrounding(varied, varied))).toBeLessThan(500);
   });
   it.each([
-    ['2,500 Hangul characters without a space', '다'.repeat(2500)],
+    ['2,500 letters of another script without a space', '我们'.repeat(1250)],
     ['400,000 characters of one unbroken Latin word', 'a'.repeat(400_000)],
-    ['100,000 Hangul syllables in one word', '가나다라마'.repeat(20_000)],
+    ['100,000 letters of another script in one word', 'абвгд'.repeat(20_000)],
     [
       '5,000 one-word sentences',
       Array.from({ length: 5000 }, (_, i) => `Word${i % 50}.`).join(' '),
@@ -661,8 +617,8 @@ describe('time: linear, and bounded on hostile text', () => {
     ],
     ['50,000 negations', Array.from({ length: 50_000 }, (_, i) => `not w${i % 997}`).join(' ')],
     [
-      '50,000 Korean negations',
-      Array.from({ length: 50_000 }, (_, i) => `안 갔${i % 997}`).join(' '),
+      '50,000 words of another script',
+      Array.from({ length: 50_000 }, (_, i) => `нет шёл${i % 997}`).join(' '),
     ],
   ])('%s: under 3 s', (_name, text) => {
     expect(ms(() => checkGrounding(text, text))).toBeLessThan(3000);
@@ -675,5 +631,27 @@ describe('time: linear, and bounded on hostile text', () => {
     let r: ReturnType<typeof checkGrounding> | null = null;
     expect(ms(() => (r = checkGrounding(src, body)))).toBeLessThan(3000);
     expect(r!.violations.map((v) => v.kind)).toContain('unsupported_sentence');
+  });
+  it('400,000 characters of sentences in another script: a copy passes and, turned round, is refused, under 3 s', () => {
+    const t = Array.from(
+      { length: 12_000 },
+      (_, i) => `Мой отец работал на шахте ${i % 50} лет.`,
+    ).join(' ');
+    expect(t.length).toBeGreaterThan(390_000);
+    const turned = t
+      .split(/(?<=[.!?])\s+/)
+      .reverse()
+      .join(' ');
+    let copy: ReturnType<typeof checkGrounding> | null = null;
+    let r: ReturnType<typeof checkGrounding> | null = null;
+    expect(
+      ms(() => {
+        copy = checkGrounding(t, t);
+        r = checkGrounding(t, turned);
+      }),
+    ).toBeLessThan(3000);
+    expect(copy!.violations).toEqual([]);
+    expect(r!.violations.map((v) => v.kind)).toContain('unsupported_sentence');
+    expect(r!.violations.length).toBeLessThan(20);
   });
 });

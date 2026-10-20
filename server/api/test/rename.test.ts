@@ -122,14 +122,14 @@ describe('FM-016 rename with link-text rewrite', () => {
     expect(before.body).toContain('^wed');
 
     const renamed = await ctx.api(s.token, 'PUT', `/v1/archives/${archive}/notes/${mom.id}`, {
-      title: 'Halmoni',
+      title: 'Grandma',
     });
     expect(renamed.status).toBe(200);
 
     // same uuid still fetches the note; the whole body is byte-identical —
     // a rename must not touch the cited note's content at all
     const resolvedAfter = await getNote(s, archive, citation.noteId);
-    expect(resolvedAfter.title).toBe('Halmoni');
+    expect(resolvedAfter.title).toBe('Grandma');
     expect(resolvedAfter.body).toBe(before.body);
     expect(resolvedAfter.body).toContain('^wed');
     // the rewritten occurrence still carries the SAME (uuid, blockId) pair
@@ -149,7 +149,7 @@ describe('FM-016 rename with link-text rewrite', () => {
     ).occurrences;
     expect(rows).toHaveLength(1);
     expect(rows[0]).toMatchObject({
-      target: 'Halmoni',
+      target: 'Grandma',
       resolvedId: citation.noteId,
       blockId: 'wed',
     });

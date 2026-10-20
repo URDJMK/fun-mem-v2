@@ -56,7 +56,7 @@ describe('every reader, 400,000 characters of the worst thing for it', () => {
       'Grandma (a b c d e f g h i j k l m n o p q r s t u v w x y z) ',
     ),
     'labelled: Q. A. lines': big('Q. where?\nA. here.\n'),
-    'labelled: bracket names': big('[할머니] 부산이요\n[손녀] 아버지는요?\n'),
+    'labelled: bracket names': big('[Grandma] In Busan\n[Granddaughter] And your father?\n'),
     'labelled: one-line paste': big(
       'Interviewer: Where were you born? Grandma: In Busan by the sea. ',
     ),
@@ -89,7 +89,9 @@ describe('every reader, 400,000 characters of the worst thing for it', () => {
     'plain: unclosed capitals': big('[AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA'),
     'plain: music notes': `♪${big(' la')}`,
     'plain: fillers': big('um, uh, mm-hm, '),
-    'plain: Korean and English fillers': big('음 um 어 uh, you know, 그 I, I 그러니까 '),
+    'plain: fillers mixed with words': big('um well uh, you know, I, I mean '),
+    'plain: Cyrillic text': big('Мы жили у моря. Отец чинил лодки. '),
+    'plain: Han text without spaces': big('我出生在釜山，父亲是修船的。'),
     'plain: stammers': big('so so, the the, I I, '),
     'plain: spoken years': big(
       'in nineteen sixty six and two thousand and twenty one paid nineteen fifty ',
@@ -121,7 +123,7 @@ describe('the helpers, alone, on 400,000 characters', () => {
     big('a. '),
     big('?'),
     big('.'),
-    big('주세요 '),
+    big('Could you tell me more? '),
     big('Tell me. '),
     big('in nineteen sixty six '),
     big('May. 1951 '),

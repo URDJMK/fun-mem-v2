@@ -546,11 +546,8 @@ describe('a private-to-author note is never shown to the judge, nor quoted (revi
 });
 
 describe('the search for passages works on every keyword leg (review-ai: the Groonga OR)', () => {
-  it('joins the words with an uppercase OR, and gives Korean words without their particles', () => {
+  it('joins the words with an uppercase OR', () => {
     expect(retrievalQuery('We sold the farm in 1984.')).toBe('sold OR farm');
-    expect(retrievalQuery('어머니는 1905년에 대구에서 태어나셨다.')).toBe(
-      '어머니 OR 대구 OR 태어나셨다',
-    );
     expect(retrievalQuery('a b c')).toBe('');
     const many = retrievalQuery(
       'apple banana cherry grape lemon mango melon peach pear plum quince',

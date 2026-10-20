@@ -104,12 +104,10 @@ export async function requireImporter(
 const TITLES_OFFERED = 500;
 /** a rarest title word seen more often than this counts as present without walking every place */
 const ANCHOR_SCAN = 500;
-const HANGUL = /[가-힣]/;
 
 /**
- * A text's words (NFC, lower case, letters and digits), and where each one is. A Korean
- * word is also filed under its first syllables, because Korean writes the particle onto the
- * word: "부산에서" is "부산" + "에서", and the title "부산" is in it.
+ * A text's words (NFC, lower case, letters and digits), and where each one is. A title is in
+ * the text when its words are, whole and in order: compared exactly, in any script.
  */
 function wordIndex(text: string): { words: string[]; at: Map<string, number[]> } {
   const words =
@@ -118,14 +116,10 @@ function wordIndex(text: string): { words: string[]; at: Map<string, number[]> }
       .toLowerCase()
       .match(/[\p{L}\p{N}]+/gu) ?? [];
   const at = new Map<string, number[]>();
-  const add = (k: string, i: number) => {
-    const list = at.get(k);
-    if (list) list.push(i);
-    else at.set(k, [i]);
-  };
   words.forEach((w, i) => {
-    add(w, i);
-    if (HANGUL.test(w)) for (let n = 1; n < Math.min(w.length, 12); n++) add(w.slice(0, n), i);
+    const list = at.get(w);
+    if (list) list.push(i);
+    else at.set(w, [i]);
   });
   return { words, at };
 }
@@ -147,9 +141,7 @@ function occursIn(index: ReturnType<typeof wordIndex>, title: string): boolean {
   });
   const places = lists[k]!;
   if (places.length > ANCHOR_SCAN) return true;
-  const fits = (w: string | undefined, p: string) =>
-    w !== undefined && (w === p || (HANGUL.test(p) && w.startsWith(p)));
-  return places.some((pk) => parts.every((p, j) => fits(index.words[pk - k + j], p)));
+  return places.some((pk) => parts.every((p, j) => index.words[pk - k + j] === p));
 }
 
 /**
@@ -417,9 +409,9 @@ function subjectOf(m: { speaker: string; speakerName?: unknown }): string | unde
 }
 
 /**
- * The words a lookup asks for, whichever way the check joins them ("a or b", "a OR b"). The
- * check may shorten a word to its stem (Korean endings), so a memory mentions a term when one
- * of its words is the term or starts with it.
+ * The words a lookup asks for, whichever way the check joins them ("a or b", "a OR b"). A
+ * memory mentions a term when one of its words is the term or starts with it ("boat" is in
+ * "boats"), as the archive's own search finds a word inside a longer one.
  */
 const termsOf = (q: string): string[] =>
   q
@@ -623,11 +615,7 @@ export async function annotateImport(
       for (const line of x.lines) markers.push({ memory: m.id, source: ref, line });
     });
     for (const r of m.conflicts) {
-      if (r.source) {
-        // in the memory's own language (a Korean answer in a mostly English interview, or the reverse)
-        const say = STRINGS[m.language ?? result.language];
-        m.notes.push(say.conflict(r.source.title, r.existing.slice(0, 160)));
-      }
+      if (r.source) m.notes.push(STRINGS.conflict(r.source.title, r.existing.slice(0, 160)));
     }
   });
   return { check: { complete, skipped, ...(reason ? { reason } : {}) }, markers };
@@ -675,7 +663,7 @@ function removeLine(body: string, line: string): string {
  * be quoted by the memories that were checked against it.
  */
 export function dropQuotesOf(
-  result: { language: IngestResult['language']; memories: ImportMemory[] },
+  result: { memories: ImportMemory[] },
   markers: MarkerLine[],
   gone: ReadonlySet<string>,
 ): boolean {
@@ -697,8 +685,9 @@ export function dropQuotesOf(
     changed = true;
     const titles = new Set(out.map((c) => normalizeTitle(c.source!.title)));
     m.body = withoutMarkersNaming(m.body, titles);
-    const say = STRINGS[m.language ?? result.language];
-    const told = new Set(out.map((c) => say.conflict(c.source!.title, c.existing.slice(0, 160))));
+    const told = new Set(
+      out.map((c) => STRINGS.conflict(c.source!.title, c.existing.slice(0, 160))),
+    );
     m.notes = m.notes.filter((n) => !told.has(n));
     m.conflicts = m.conflicts!.filter((c) => !out.includes(c));
     if (m.conflicts.length === 0) delete m.conflicts;
@@ -929,7 +918,7 @@ export async function persistImport(
           // what the check quoted of a note erased (or made private) since is not written
           // (round-3 review D2: a stale preview put erased words into a new note)
           dropQuotesOf(
-            { language: result.language, memories },
+            { memories },
             opts.markers ?? [],
             await unquotable(client, memories, opts.markers ?? [], archiveId),
           );

@@ -20,7 +20,6 @@ describe('what is NOT a date', () => {
       'We lived at 1946 Main Street for many years.',
       'The house was $2000 and the land was $1950.',
       'We walked nineteen miles to school every day.',
-      '그릇을 2000원에 샀다.',
     ]) {
       expect(readMemoryDate(t), t).toBeNull();
     }
@@ -69,8 +68,6 @@ describe('numbers that name a thing, and years nobody is dating a memory by', ()
       'Call 555-1946 if you need her.',
       'His number was 1946-2233.',
       'My phone number was 010-1946-5523.',
-      '우리 집 전화번호는 010-1946-5523이었어요.',
-      '전화번호가 1946-2233이었어요.',
       'Room 1912 at the hospital was hers.',
       'She stayed in room 1912 for a week.',
       'Flight 1946 to Seoul was delayed.',
@@ -78,10 +75,6 @@ describe('numbers that name a thing, and years nobody is dating a memory by', ()
       'She wore jersey number 1984.',
       'His prisoner number was 1944.',
       'His serial number was 1953 and he never forgot it.',
-      '방 번호가 1912호였어요.',
-      '1912호에 입원했어요.',
-      '서울시 종로구 1946번지에 살았어요.',
-      '1946번 버스를 탔어요.',
     ]) {
       expect(readMemoryDate(t), t).toBeNull();
     }
@@ -95,15 +88,13 @@ describe('numbers that name a thing, and years nobody is dating a memory by', ()
       '1950–53 were the hard years.',
       'The war was 1950-1953.',
       'Since 1975 I have lived alone.',
-      '1953년 전에는 북쪽에 살았어요.',
-      '1953년 이후로 혼자 살았어요.',
-      '1953년까지 거기 살았어요.',
-      '1953년부터 혼자 살았어요.',
-      '1953년 이전에는 몰랐어요.',
+      'We lived there until 1953.',
+      'After 1953 I lived alone.',
+      'Before 1953 we did not know.',
+      'From 1953 I lived alone.',
       'That was in the 1960s, when I was young.',
-      '1960년대에는 다들 가난했어요.',
-      '1970년대 초에 서울로 왔어요.',
-      '1990년대 말에 아버지가 돌아가셨어요.',
+      'In the early 1970s we came to the city.',
+      'In the late 1990s my father died.',
     ]) {
       expect(readMemoryDate(t), t).toBeNull();
     }
@@ -122,8 +113,6 @@ describe('numbers that name a thing, and years nobody is dating a memory by', ()
     expect(readMemoryDate('It was not 1950, it was 1951.')).toBe('1951');
     expect(readMemoryDate('People think it was 1950. It was 1951, actually.')).toBe('1951');
     expect(readMemoryDate('Everyone says 1950 but it was really 1951.')).toBe('1951');
-    expect(readMemoryDate('1950년이 아니고 1951년이에요.')).toBe('1951');
-    expect(readMemoryDate('1950년은 아니에요. 1951년이었어요.')).toBe('1951');
     expect(readMemoryDate('We did not leave in 1950. We stayed until the end.')).toBeNull();
     expect(readMemoryDate('They say it was built in 1880.')).toBeNull();
     // "No one" is not the speaker rejecting the year
@@ -132,7 +121,6 @@ describe('numbers that name a thing, and years nobody is dating a memory by', ()
     expect(readMemoryDate('It is 2026 now. I was born in 1946.')).toBe('1946');
     expect(readMemoryDate('Now in 2026 I still remember 1950.')).toBe('1950');
     expect(readMemoryDate('It is 2026 now and I am ninety.')).toBeNull();
-    expect(readMemoryDate('지금이 2026년인데 아직도 그 생각이 나요.')).toBeNull();
     // and neither is a year that has not happened
     expect(readMemoryDate('I hope to see 2049, if God lets me live that long.')).toBeNull();
   });
@@ -165,18 +153,20 @@ describe('numbers that name a thing, and years nobody is dating a memory by', ()
 });
 
 describe('round-3 review: prices, model years and times of day are not dates', () => {
-  it('a Korean price followed by a particle or a copula does not hide the real year', () => {
-    expect(readMemoryDate('그때 차비가 1950원이었는데 1960년에 올랐어요.')).toBe('1960');
-    expect(readMemoryDate('연탄 한 장이 2000원이에요. 1975년에 이사했어요.')).toBe('1975');
-    expect(readMemoryDate('용돈은 1990원씩 받았어요. 1998년 겨울이었어요.')).toBe('1998');
-    expect(readMemoryDate('월급이 1950달러였어요. 1962년에 취직했어요.')).toBe('1962');
-    expect(readMemoryDate('그 집은 1950만 원이었어요. 1970년에 샀어요.')).toBe('1970');
-    expect(readMemoryDate('1950개나 있었어요. 1960년에 팔았어요.')).toBe('1960');
-    expect(readMemoryDate('1950명이 모였어요. 1960년 봄이었죠.')).toBe('1960');
+  it('a price or a quantity followed by more words does not hide the real year', () => {
+    expect(readMemoryDate('The bus fare was 1950 won, but it went up in 1960.')).toBe('1960');
+    expect(readMemoryDate('Coal was 2000 won a sack. We moved in 1975.')).toBe('1975');
+    expect(readMemoryDate('My allowance was 1990 dollars a year. It was winter 1998.')).toBe(
+      '1998',
+    );
+    expect(readMemoryDate('Her wage was $1950 a month. She got the job in 1962.')).toBe('1962');
+    expect(readMemoryDate('The house was 1950 dollars. We bought it in 1970.')).toBe('1970');
+    expect(readMemoryDate('We had 1950 chickens. We sold them in 1960.')).toBe('1960');
+    expect(readMemoryDate('1950 people came. It was the spring of 1960.')).toBe('1960');
     for (const t of [
-      '버스 요금이 1980원이었어요.',
-      '월급이 1950달러였어요.',
-      '그 집은 1950만원이었어요.',
+      'The bus fare was 1980 won.',
+      'Her wage was 1950 dollars.',
+      'The house cost 1950 dollars.',
     ]) {
       expect(readMemoryDate(t), t).toBeNull();
     }
@@ -205,7 +195,6 @@ describe('what is a date', () => {
     expect(readMemoryDate('We sold the farm in nineteen eighty-four.')).toBe('1984');
     expect(readMemoryDate('I was born in Busan in 1946.')).toBe('1946');
     expect(readMemoryDate('My brother was born in nineteen oh five.')).toBe('1905');
-    expect(readMemoryDate('1946년에 부산에서 태어났어요.')).toBe('1946');
   });
 
   it('the 2000s and "nineteen hundred and ...", which readers kept getting wrong', () => {
@@ -219,7 +208,7 @@ describe('what is a date', () => {
   it('months, and days, when they are said', () => {
     expect(readMemoryDate('We married in June of nineteen sixty-seven.')).toBe('1967-06');
     expect(readMemoryDate('He passed away on March 15th, 1987.')).toBe('1987-03-15');
-    expect(readMemoryDate('1989년 3월에 돌아가셨어요.')).toBe('1989-03');
+    expect(readMemoryDate('He passed away in March 1989.')).toBe('1989-03');
     // a month and a year in DIFFERENT sentences are not one date
     expect(readMemoryDate('We married in May. 1951 was the year of the flood.')).not.toBe(
       '1951-05',
@@ -230,8 +219,6 @@ describe('what is a date', () => {
     expect(readMemoryDate('It was maybe nineteen fifty-eight.')).toBe('~1958');
     expect(readMemoryDate('I think we moved in 1960.')).toBe('~1960');
     expect(readMemoryDate('That was about nineteen sixty-two.')).toBe('~1962');
-    expect(readMemoryDate('그때 1948년이었나?')).toBe('~1948');
-    expect(readMemoryDate('아마 1946년쯤이었을 거예요.')).toBe('~1946');
     expect(readMemoryDate('We sold the farm in 1984 and I still dream about that barn.')).toBe(
       '1984',
     );
@@ -241,11 +228,6 @@ describe('what is a date', () => {
     expect(readMemoryDate('We were maybe ten families in 1950.')).toBe('1950');
     expect(readMemoryDate('We were about to leave in 1950.')).toBe('1950');
     expect(readMemoryDate('The war was over around Christmas 1950.')).toBe('1950');
-    // 한 hedges only as a word of its own, not at the start of 한국, 한번, 한복
-    expect(readMemoryDate('한 1962년쯤 서울에 갔어요.')).toBe('~1962');
-    expect(readMemoryDate('한국에 1975년에 왔어요.')).toBe('1975');
-    expect(readMemoryDate('한번은 1962년에 서울에 갔어요.')).toBe('1962');
-    expect(readMemoryDate('어머니가 한복을 입으신 1965년 설날이었어요.')).toBe('1965');
     // "1946 or 47": the speaker is not sure which
     expect(readMemoryDate('I was born in 1946 or 47, my mother never wrote it down.')).toBe(
       '~1946',
@@ -285,6 +267,19 @@ describe('what is a date', () => {
   });
 });
 
+describe('text in another script is read by the same rules, and is never dropped', () => {
+  it('a date, a year or a phone number means the same in any text', () => {
+    expect(readMemoryDate('Мы поженились 1965-06-05.')).toBe('1965-06-05');
+    expect(readMemoryDate('Я родилась в 1946 году.')).toBe('1946');
+    expect(readMemoryDate('Звони 555-1946, если что.')).toBeNull();
+  });
+
+  it('a memory with nothing that looks like a year has no date, whatever it is written in', () => {
+    expect(readMemoryDate('Мы продали ферму и переехали в город.')).toBeNull();
+    expect(readMemoryDate('我们卖了农场，搬到了城里。')).toBeNull();
+  });
+});
+
 describe('it is fast on hostile text', () => {
   it('400,000 characters of number words, of dollars and of digits', () => {
     const shapes = [
@@ -301,10 +296,11 @@ describe('it is fast on hostile text', () => {
       'not '.repeat(80_000),
       'people said '.repeat(40_000),
       'room' + ' '.repeat(400_000),
-      '1946' + ' '.repeat(400_000) + '아니',
+      '1946' + ' '.repeat(400_000) + 'not',
       '1950-'.repeat(60_000),
       ', born '.repeat(50_000),
-      '1950년 '.repeat(60_000),
+      'в 1946 году '.repeat(40_000),
+      '1950年'.repeat(60_000),
       '555-1946 '.repeat(40_000),
       'number was '.repeat(30_000),
     ];

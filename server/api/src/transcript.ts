@@ -1,7 +1,7 @@
 /**
  * Transcript intake: whatever the speech-to-text box produced -> one clean shape.
  *
- *   text  ──prepare──► one kind of line break, no invisible characters, NFC, ASCII brackets
+ *   text  ──prepare──► one kind of line break, no invisible characters, NFC
  *         ──sniff────► raw segments (transcript-formats.ts)
  *   JSON  ──────────► raw segments
  *         ──normalize──► Turn[]  +  warnings the person should hear about
@@ -14,7 +14,7 @@
  *
  * THE PROMISE: nothing the relative said is lost, and nothing is invented. So:
  *   - only KNOWN sound notes are removed ("[Music]", "(laughs)", "♪ la la ♪", "[INAUDIBLE]");
- *     any other bracketed words ("[Busan]", "[sic]", "[그 당시에는]") stay
+ *     any other bracketed words ("[Busan]", "[sic]", "[at that time]") stay
  *   - a recogniser stuck in a loop is collapsed, but only the SAME speaker saying the same
  *     thing four times or more ("I miss her." said four times by a grieving person stays)
  *   - a turn that is only "Mm-hm." stays "Mm-hm.": it is often the answer "yes"
@@ -43,7 +43,6 @@ import { capitalizeSentences, cleanSpeech } from './speech';
 import { TranscriptError } from './transcript-error';
 import {
   ANNOTATION_WORDS,
-  KOREAN_SOUND_WORDS,
   STRICT_LABEL_ANY_CASE,
   parseHeaderText,
   parseJson,
@@ -120,7 +119,7 @@ export interface ParsedTranscript {
 }
 
 export const MAX_TRANSCRIPT_CHARS = 400_000;
-/** a JSON transcript as text: under the 8 MB request limit even after Korean text is encoded */
+/** a JSON transcript as text: larger than plain text, it repeats every word with its timing */
 export const MAX_JSON_CHARS = 6_000_000;
 export const MAX_SEGMENTS = 50_000;
 /** A turn longer than this is split: one model call must be able to hold it. */
@@ -137,20 +136,6 @@ const CONTROL = /[\u0000-\u0008\u000E-\u001F\u007F-\u0084\u0086-\u009F]/g;
 // zero-width and direction marks, soft hyphen, word joiner, BOM: invisible, and they break labels
 const INVISIBLE = /[\u00AD\u180E\u200B-\u200F\u202A-\u202E\u2060-\u2064\u2066-\u2069\uFEFF]/g;
 const SPACES = /[\t\u00A0\u1680\u2000-\u200A\u202F\u205F\u3000]/g;
-/**
- * Full-width brackets and colon, as typed on a Korean, Japanese or Chinese keyboard, read as
- * their ASCII twins so "［할머니］：" is a label. Only these, and only for the readers: her own
- * "，！；？" stay in her words (the question cues and sentence ends understand them as they are).
- */
-const FULL_WIDTH: Record<string, string> = {
-  '［': '[',
-  '］': ']',
-  '（': '(',
-  '）': ')',
-  '：': ':',
-  '【': '[',
-  '】': ']',
-};
 
 /** The same cleaning for every string from a file: no control or invisible characters, NFC. */
 export function cleanString(s: string): string {
@@ -164,12 +149,11 @@ export function cleanString(s: string): string {
 
 /**
  * Text as the readers expect it: one kind of line break, no control or invisible characters,
- * NFC, ASCII brackets and colons, every run of blanks one space, lines trimmed. An email
- * reply (most lines quoted with ">") loses its quote marks first.
+ * NFC, every run of blanks one space, lines trimmed. An email reply (most lines quoted with
+ * ">") loses its quote marks first.
  */
 export function prepareText(input: string): string {
   let t = cleanString(input.replace(/^\uFEFF/, ''))
-    .replace(/[［］（）：【】]/g, (c) => FULL_WIDTH[c]!)
     .replace(/ {2,}/g, ' ')
     .replace(/^ | $/gm, '');
   const lines = t.split('\n');
@@ -194,7 +178,7 @@ const MORE_SOUND_WORDS =
   'groans?|groaning|moans?|sneez(?:es|ing)|yawn(?:s|ing)?|whisper(?:s|ing)|mumbl(?:es|ing)|gasps?|' +
   'screams?|shouting|sniffl(?:es|ing)|weep(?:s|ing)|humming|whistl(?:es|ing)|snor(?:es|ing)|' +
   'hiccups?|footsteps|knock(?:s|ing)|typing|sounds?|sound effects?|foreign|door (?:opens|closes|slams)';
-const SOUND = `(?:${ANNOTATION_WORDS}|${MORE_SOUND_WORDS}|${KOREAN_SOUND_WORDS})(?: ${TS})?`;
+const SOUND = `(?:${ANNOTATION_WORDS}|${MORE_SOUND_WORDS})(?: ${TS})?`;
 const SOUND_PATTERNS: Array<{ re: RegExp; counts: boolean; keep?: (m: string) => boolean }> = [
   { re: new RegExp(String.raw`\[${SOUND}\]`, 'gi'), counts: true },
   { re: new RegExp(String.raw`\(${SOUND}\)`, 'gi'), counts: true },
@@ -239,7 +223,7 @@ export function stripSoundNotes(t: string): { text: string; removed: number } {
   return { text: out, removed };
 }
 
-/** `[Music]`, `(laughs)`, `*sighs*`, `♪ … ♪`, `(웃음)`: sounds, not words. Other brackets stay. */
+/** `[Music]`, `(laughs)`, `*sighs*`, `♪ … ♪`: sounds, not words. Other brackets stay. */
 export function stripAnnotations(t: string): string {
   return stripSoundNotes(t).text;
 }
@@ -251,10 +235,6 @@ const HALLUCINATIONS = new Set([
   'please subscribe',
   'please subscribe to my channel',
   'subtitles by the amara org community',
-  '시청해주셔서 감사합니다',
-  '시청해 주셔서 감사합니다',
-  '구독과 좋아요 부탁드립니다',
-  '다음 영상에서 만나요',
 ]);
 
 const keyOf = (s: string): string =>
@@ -272,7 +252,7 @@ const wordCount = (key: string): number => (key === '' ? 0 : key.split(' ').leng
  */
 const loopRun = (key: string): number => (wordCount(key) >= 4 ? 4 : 8);
 
-const SENTENCE_BREAK = /(?<=[.!?。…？！])\s+/;
+const SENTENCE_BREAK = /(?<=[.!?…])\s+/;
 
 /**
  * "Thank you. Thank you. Thank you. … " looped inside one segment -> one. Emphasis is not a
@@ -323,22 +303,21 @@ function neutralize(text: string): string {
     .join('\n');
 }
 
-/** Only a sound of listening or agreeing, nothing else: "Mm-hm.", "Yeah.", "네." (question-cues.ts) */
+/** Only a sound of listening or agreeing, nothing else: "Mm-hm.", "Yeah." (question-cues.ts) */
 export { isBackchannel };
 
 /**
- * Only a sound of LISTENING ("Oh.", "I see.", "그렇구나."), never a word of agreement ("Yes.",
- * "맞아요.") and never "Mm-hm." / "Uh-huh.": after "So you were born in Busan, in 1946." those
- * are her "yes", as much as "Yes." is.
+ * Only a sound of LISTENING ("Oh.", "I see."), never a word of agreement ("Yes.") and never
+ * "Mm-hm." / "Uh-huh.": after "So you were born in Busan, in 1946." those are her "yes", as
+ * much as "Yes." is.
  */
-const LISTENING = /^(?:hmm+|oh|ah|wow|i see|really|음|아|그렇군요|그렇구나)[.!?…,\s]*$/i;
+const LISTENING = /^(?:hmm+|oh|ah|wow|i see|really)[.!?…,\s]*$/i;
 /** a teller turn that opens by contradicting what was just said: the interjection before it is what she answers */
-const CONTRADICTS =
-  /^(?:no\b|nope\b|not\b|never\b|nah\b|wrong\b|actually\b|아니|아뇨|안\s|그게 아니|그건 아니)/i;
+const CONTRADICTS = /^(?:no\b|nope\b|not\b|never\b|nah\b|wrong\b|actually\b)/i;
 const isListening = (t: string): boolean => t.length <= 40 && LISTENING.test(t.trim());
 
-const isQuestion = (t: string): boolean => t.length < 150 && /[?？]["”’')\]]*$/.test(t);
-const endsSentence = (t: string): boolean => /[.!?。…？！]["'”’)\]]*$/.test(t.slice(-12));
+const isQuestion = (t: string): boolean => t.length < 150 && /\?["”’')\]]*$/.test(t);
+const endsSentence = (t: string): boolean => /[.!?…]["'”’)\]]*$/.test(t.slice(-12));
 const hasWords = (t: string): boolean => /[\p{L}\p{N}]/u.test(t);
 
 /* ── normalizing ─────────────────────────────────────────────────────── */
@@ -777,8 +756,8 @@ export function parseTranscript(input: unknown): ParsedTranscript {
  *     and the two parts become one turn
  *   - a teller's pure "mm-hm" between two turns of the interviewer is dropped only when the
  *     interviewer was not asking anything (then it is listening); after a question it is an
- *     ANSWER ("Mm-hm." = yes) and stays. A word of agreement ("Yes.", "Right.", "맞아요.")
- *     from a teller always stays: after "Mom said you were born in Busan." it confirms a fact
+ *     ANSWER ("Mm-hm." = yes) and stays. A word of agreement ("Yes.", "Right.") from a
+ *     teller always stays: after "Mom said you were born in Busan." it confirms a fact
  *   - every other turn is kept as it was; indices are renumbered 0..n-1
  *
  * `named` (the interviewee the caller or the file named) defaults to the file's own.

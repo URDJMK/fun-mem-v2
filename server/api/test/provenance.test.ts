@@ -66,7 +66,7 @@ describe('FM-039 revision provenance', () => {
     }
 
     const renamed = await ctx.api(s.token, 'PUT', `/v1/archives/${archive}/notes/${target.id}`, {
-      title: `Halmoni ${RUN}`,
+      title: `Grandma ${RUN}`,
       body: target.body,
     });
     expect(renamed.status).toBe(200);

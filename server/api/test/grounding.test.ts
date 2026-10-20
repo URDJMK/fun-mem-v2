@@ -51,10 +51,10 @@ describe('FM-026 grounded retrieval', () => {
   it('search reports which leg found each hit', async () => {
     const s = await ctx.realSession(`gr1-${RUN}@test.local`);
     const archive = await ctx.provisionArchive(s, `GR1 ${RUN}`);
-    await makeNote(s, archive, `할머니 ${RUN}`, '할머니는 1943년에 부산에서 태어나셨다.');
+    await makeNote(s, archive, `Grandma ${RUN}`, 'Grandma was born in Busan in 1943.');
 
     const res = await ctx.app.request(
-      `/v1/archives/${archive}/search?q=${encodeURIComponent('부산')}`,
+      `/v1/archives/${archive}/search?q=${encodeURIComponent('Busan')}`,
       { headers: { authorization: `Bearer ${s.token}` } },
     );
     expect(res.status).toBe(200);
@@ -81,7 +81,7 @@ describe('FM-026 grounded retrieval', () => {
     const member = await ctx.realSession(`gr2b-${RUN}@test.local`);
     const archive = await ctx.provisionArchive(owner, `GR2 ${RUN}`);
     const secret = `ZZSECRET${RUN}`;
-    const noteId = await makeNote(owner, archive, `비밀 ${RUN}`, `${secret} 특별한 이야기`);
+    const noteId = await makeNote(owner, archive, `Secret ${RUN}`, `${secret} a special story`);
     await addMember(archive, member.userId);
     await restrict(archive, noteId);
 

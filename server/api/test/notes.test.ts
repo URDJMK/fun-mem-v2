@@ -74,7 +74,7 @@ async function api(token: string, method: string, path: string, body?: unknown):
 async function provisionArchive(s: RealSession, name: string): Promise<string> {
   const res = await api(s.token, 'POST', '/v1/provision', {
     subjectName: name,
-    jurisdiction: 'KR',
+    jurisdiction: 'US',
   });
   if (res.status !== 201) throw new Error(`provision failed: ${res.status}`);
   const { archiveId } = (await res.json()) as { archiveId: string };

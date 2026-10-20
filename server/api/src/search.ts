@@ -11,7 +11,9 @@ import { visibleSql } from './views';
  *
  * Legs (each ranked inside `allowed`, top-50, RRF k=60, per-leg weights
  * defaulting to 1.0 — the escape hatch Elastic/OpenSearch grew, shipped
- * without behavior change): tsvector (`simple`), pgroonga (Korean bigrams),
+ * without behavior change): tsvector (`simple`), pgroonga (partial words, and
+ * the parts of words `simple` keeps whole, like `Mom/Dad`; a partial word is
+ * found only while the word typed is not itself a word in the index),
  * pgvector (model_version-pinned — cross-model cosine is meaningless), note
  * TITLE (person + alias classes), and `occurred` date prefix for date-shaped
  * queries. Quoted queries are the FR-080 "exact" class: keyword legs switch
@@ -40,7 +42,7 @@ interface ParsedQuery {
 export function parseQuery(raw: string): ParsedQuery {
   const q = raw.normalize('NFC').trim();
   const quoted = /^"(.+)"$/s.exec(q);
-  const date = /^(\d{4})(?:-(\d{2})(?:-(\d{2}))?)?년?$/.exec(q);
+  const date = /^(\d{4})(?:-(\d{2})(?:-(\d{2}))?)?$/.exec(q);
   return {
     q,
     phrase: quoted ? quoted[1]!.trim() : null,

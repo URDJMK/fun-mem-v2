@@ -38,48 +38,17 @@ describe('the labels say who asks', () => {
     expect(r.reasons).toContain('label_says_interviewer');
   });
 
-  it('Korean: 면접자 talks far more, its prompts end in 주세요 / 좋겠습니다 with no question mark', () => {
-    const r = rolesOf(
-      [
-        '면접자: 오늘 시간 내 주셔서 정말 감사드립니다. 힘드시면 언제든지 말씀해 주시고요, 천천히 기억나시는 대로 이야기해 주시면 됩니다. 먼저 어린 시절 살던 집에 대해서 이야기해 주세요.',
-        '최말순: 초가집이었어. 방이 두 개.',
-        '면접자: 그 집에서 가족들이 어떻게 지내셨는지, 아침에 일어나서 밤에 잠들 때까지 하루가 어땠는지 자세히 말씀해 주세요.',
-        '최말순: 새벽에 엄마가 불을 때고 우리는 이불 속에서 기다렸지. 밥 냄새가 나면 일어났어.',
-        '면접자: 아버지에 대한 기억도 이야기해 주세요. 어떤 분이셨고 무슨 일을 하셨는지 말씀해 주시면 좋겠습니다.',
-        '최말순: 장작을 패셨어. 힘이 장사였지.',
-      ].join('\n'),
-    );
-    expect(r).toMatchObject({ interviewees: ['최말순'], confidence: 'high' });
-  });
-
   it('labels the turns contradict (the "interviewer" only tells, the other only asks) are not trusted', () => {
     const r = assignRoles(
       turns(
-        ['질문자', '저는 부산에서 태어났어요. 바닷가 작은 집이었지요.'],
-        ['손녀', '아버지는 어떤 분이셨어요?'],
-        ['질문자', '배를 고치셨어요. 손이 크셨지요.'],
-        ['손녀', '어머니는요? 말씀해 주세요.'],
+        ['Interviewer', 'I was born in Busan, in a small house by the sea.'],
+        ['Granddaughter', 'What was your father like?'],
+        ['Interviewer', 'He repaired boats. He had big hands.'],
+        ['Granddaughter', 'And your mother? Tell me about her.'],
       ),
     );
     expect(r).toMatchObject({ confidence: 'low', needsConfirmation: true });
     expect(r.reasons).toContain('prompts_like_questions');
-  });
-
-  it('"면접자" names the asker in some files and the relative in others: the turns decide', () => {
-    // the relative labelled 면접자, the grandchild's questions with no "?" (speech-to-text):
-    // once the grandchild was "the relative" at HIGH, and the saved memory was three questions
-    const r = rolesOf(
-      [
-        '노아: 어디서 태어나셨어요',
-        '면접자: 부산에서 태어났어요. 바닷가 작은 집이었어요. 아버지는 배를 고치셨어요.',
-        '노아: 아버지는 어떤 분이셨어요',
-        '면접자: 말씀이 별로 없으셨지. 그래도 우리한테는 다정하셨어요.',
-        '노아: 형제는 몇이었어요',
-        '면접자: 오빠가 넷이었어요. 내가 막내였지.',
-      ].join('\n'),
-    );
-    expect(r.interviewees).toEqual(['면접자']);
-    expect(r.reasons).not.toContain('label_says_interviewer');
   });
 
   it('"A" means the answerer only next to "Q": AssemblyAI calls its speakers A, B, C', () => {
@@ -290,7 +259,7 @@ describe('applyRoles: interjections folded only once the roles are sure', () => 
 
   it('a word of agreement from the teller always stays; a mere listening sound after a statement goes', () => {
     expect(applyRoles(interview('Yes.')).turns.map((x) => x.text)).toContain('Yes.');
-    expect(applyRoles(interview('맞아요.')).turns.map((x) => x.text)).toContain('맞아요.');
+    expect(applyRoles(interview('Right.')).turns.map((x) => x.text)).toContain('Right.');
     // after "Mom said you were born in Tongyeong…", "Mm-hm." / "Uh-huh." is her yes, like "Yes."
     expect(applyRoles(interview('Mm-hm.')).turns.map((x) => x.text)).toContain('Mm-hm.');
     expect(applyRoles(interview('Uh-huh.')).turns.map((x) => x.text)).toContain('Uh-huh.');
@@ -351,13 +320,91 @@ describe('applyRoles: interjections folded only once the roles are sure', () => 
   });
 });
 
+describe('text in a script the question cues cannot read is never a sure answer', () => {
+  // The cues read English. In another script nothing in the text "asks", so a single unlabelled
+  // voice could be an interviewer and a relative the file did not tell apart: the person is asked.
+  const lines: Record<string, string[]> = {
+    Cyrillic: [
+      'Где вы родились',
+      'Я родился в Пусане, в маленьком доме у моря.',
+      'А ваш отец',
+      'Он чинил лодки и мало говорил.',
+    ],
+    Han: [
+      '你在哪里出生？',
+      '我出生在釜山，在海边的一座小房子里。',
+      '你父亲呢？',
+      '他是修船的，他的手很大。',
+    ],
+    Arabic: ['أين ولدت؟', 'ولدت في بوسان في بيت صغير قرب البحر.', 'وأبوك؟', 'كان يصلح القوارب.'],
+    Greek: [
+      'Πού γεννηθήκατε;',
+      'Γεννήθηκα στη Μπουσάν, σε ένα μικρό σπίτι δίπλα στη θάλασσα.',
+      'Και ο πατέρας σας;',
+      'Έφτιαχνε βάρκες και μιλούσε λίγο.',
+    ],
+  };
+
+  it.each(Object.keys(lines))('%s: one voice with no labels asks, and says why', (script) => {
+    const r = rolesOf(lines[script]!.join('\n'));
+    expect(r).toMatchObject({ confidence: 'medium', needsConfirmation: true });
+    expect(r.reasons).toEqual(['monologue', 'script_not_read']);
+  });
+
+  it.each(Object.keys(lines))(
+    '%s: every word is still kept, and the voice is still a teller',
+    (script) => {
+      const r = applyRoles(parseTranscript(lines[script]!.join('\n')));
+      expect(r.turns.map((t) => t.text)).toEqual(lines[script]);
+      expect(r.roles.interviewees).toHaveLength(1);
+    },
+  );
+
+  it('English stays a sure monologue, and a few words in another script do not change that', () => {
+    expect(
+      rolesOf('I was born in Busan.\nMy father repaired boats.\nWe had one stove for six people.'),
+    ).toMatchObject({ confidence: 'high', needsConfirmation: false, reasons: ['monologue'] });
+    const named = rolesOf(
+      'My mother was called 金顺子 and she sold fish at the market.\nShe never complained, not once.\nWe lived near the harbour.',
+    );
+    expect(named).toMatchObject({ confidence: 'high', needsConfirmation: false });
+    expect(named.reasons).toEqual(['monologue']);
+  });
+
+  it('an English role label still says who asks, whatever script the words are in', () => {
+    const r = rolesOf(
+      [
+        'Interviewer: Где вы родились?',
+        'Grandma: Я родился в Пусане, в маленьком доме у моря.',
+        'Interviewer: А ваш отец?',
+        'Grandma: Он чинил лодки и мало говорил.',
+      ].join('\n'),
+    );
+    expect(r).toMatchObject({ interviewees: ['Grandma'], confidence: 'high' });
+    expect(r.reasons).toContain('label_says_interviewer');
+  });
+
+  it('two voices that are only names, with questions the cues cannot see, are asked about', () => {
+    const r = rolesOf(
+      [
+        'Анна: Где вы родились',
+        'Мария: Я родилась в Пусане, в маленьком доме у моря, где отец чинил лодки.',
+        'Анна: А ваша мать',
+        'Мария: Она продавала рыбу на рынке каждое утро до рассвета.',
+      ].join('\n'),
+    );
+    expect(r.needsConfirmation).toBe(true);
+  });
+});
+
 describe('the demo samples are sure answers: the import is not interrupted', () => {
-  for (const f of ['grandma-sunja-en.txt', 'grandma-sunja-en.json']) {
+  for (const f of [
+    'samples/grandma-sunja-en.txt',
+    'samples/grandma-sunja-en.json',
+    'sample-whisperx.json',
+  ]) {
     it(f, () => {
-      const raw = readFileSync(
-        new URL(`../../../docs/ingest/samples/${f}`, import.meta.url),
-        'utf8',
-      );
+      const raw = readFileSync(new URL(`../../../docs/ingest/${f}`, import.meta.url), 'utf8');
       const r = applyRoles(parseTranscript(raw)).roles;
       expect(r).toMatchObject({ confidence: 'high', needsConfirmation: false });
       expect(r.interviewees).toHaveLength(1);

@@ -1,12 +1,5 @@
 import { isBackchannel, looksLikeAsking } from './question-cues';
-import {
-  AMBIGUOUS_ASKER_LABEL,
-  ASKER_LABEL,
-  QUESTIONS,
-  TELLER_LABEL,
-  UNKNOWN,
-  baseLabel,
-} from './speaker-ids';
+import { ASKER_LABEL, QUESTIONS, TELLER_LABEL, UNKNOWN, baseLabel } from './speaker-ids';
 import type { Turn } from './transcript';
 
 /**
@@ -27,13 +20,17 @@ import type { Turn } from './transcript';
  * and any contradiction is LOW. Both are confirmed by a person before saving.
  *
  * Nothing anybody TOLD may be dropped without a person seeing it. A speaker who is not the
- * teller but says something at length (a misread label, "Halmoni:" once among "Grandma:", or
+ * teller but says something at length (a misread label, "Granny:" once among "Grandma:", or
  * an answer the diarizer gave the interviewer's id), or a third voice who answers the
  * questions ("Grandpa: Nineteen sixty."), makes the guess LOW: "others may tell".
  *
  * "Asking" is measured by `looksLikeAsking`: a question mark, a question word in front, or
- * an invitation ("Tell me about…", "…말씀해 주세요"), because Korean speech-to-text rarely
- * writes a question mark and many interviewers prompt with statements.
+ * an invitation ("Tell me about…"), because speech-to-text may leave out the question mark
+ * and many interviewers prompt with statements.
+ *
+ * Those cues read English. Words in any other script are plain text to them: nothing in them
+ * asks, so "this voice never asks" cannot be known, and a single unlabelled voice of such
+ * text is never a sure answer (the interviewer's questions would be filed as testimony).
  */
 
 export interface SpeakerSummary {
@@ -55,7 +52,7 @@ export type RoleReason =
   | 'close_call'
   | 'asks_more_questions'
   | 'many_speakers'
-  /** the labels say who asks ("Interviewer", "Q", "질문자") and so who tells */
+  /** the labels say who asks ("Interviewer", "Q") and so who tells */
   | 'label_says_interviewer'
   /** the speaker picked, or the one the labels call the teller, mostly asks or prompts */
   | 'prompts_like_questions'
@@ -65,7 +62,9 @@ export type RoleReason =
   | 'labels_unclear'
   /** words with no speaker label (a tape that starts mid-answer, an answer the diarizer left
    * unattributed) were given to the teller: right in most files, but a person must see it */
-  | 'unlabelled_to_teller';
+  | 'unlabelled_to_teller'
+  /** most of the words are in a script the question cues cannot read: whether the voice asks is unknown */
+  | 'script_not_read';
 
 export interface RoleDecision {
   speakers: SpeakerSummary[];
@@ -106,7 +105,7 @@ interface Stat {
   remarks: number;
   /** passages that STATE something at length (not the preface of the speaker's own question) */
   statements: number;
-  /** turns that are only "Mm-hm.", "I see.", "네." */
+  /** turns that are only "Mm-hm.", "I see." */
   backchannels: number;
   /** where the speaker first speaks, and what */
   first: number;
@@ -118,10 +117,8 @@ type Role = 'asker' | 'teller';
 
 /** A non-top speaker who tells at this length, in two turns or more, may be a second relative. */
 const OTHER_TELLER_CHARS = 40;
-/** A passage of this many words that states rather than asks is something a speaker TOLD… */
+/** A passage of this many words that states rather than asks is something a speaker TOLD */
 const STATEMENT_WORDS = 12;
-/** …or this many Hangul syllables (a Korean word is two or three of them) */
-const STATEMENT_HANGUL = 30;
 /** a third voice's turn of this many words that does not ask may be testimony */
 const REMARK_WORDS = 4;
 /** "Interviewee: Sunja Kim" at the top of a file is a header, not a turn of speech */
@@ -130,15 +127,34 @@ const HEADER_WORDS = 8;
 const MAX_HEADERS = 8;
 /** talk about the recording itself is nobody's testimony */
 const META =
-  /\b(?:record(?:s|ed|ing|er)?|microphone|mic|tape|camera|interview(?:s|ed|ing)?|battery|batteries)\b|녹음|녹화|인터뷰|마이크|카메라|촬영/i;
+  /\b(?:record(?:s|ed|ing|er)?|microphone|mic|tape|camera|interview(?:s|ed|ing)?|battery|batteries)\b/i;
 
-const SENTENCES = /(?<=[.!?。…？！])\s+|\n+/;
+const SENTENCES = /(?<=[.!?…])\s+|\n+/;
 const wordsIn = (s: string): number => s.split(/\s+/).filter((w) => /[\p{L}\p{N}]/u.test(w)).length;
-const hangulIn = (s: string): number => {
-  let n = 0;
-  for (const ch of s) if (ch >= '가' && ch <= '힣') n++;
-  return n;
-};
+
+/** how many letters are looked at to tell what script a voice is written in */
+const SCRIPT_SAMPLE = 20_000;
+const LETTER = /\p{L}/u;
+const LATIN = /\p{Script=Latin}/u;
+
+/**
+ * Are most of the letters outside the Latin alphabet? The question cues read English; in another
+ * script they find nothing, so the absence of questions proves nothing. Looks at the first
+ * SCRIPT_SAMPLE letters, so a long transcript costs no more than a short one.
+ */
+function mostlyOtherScript(texts: string[]): boolean {
+  let letters = 0;
+  let other = 0;
+  for (const text of texts) {
+    for (const ch of text) {
+      if (!LETTER.test(ch)) continue;
+      letters++;
+      if (!LATIN.test(ch)) other++;
+      if (letters >= SCRIPT_SAMPLE) return other * 2 > letters;
+    }
+  }
+  return other * 2 > letters;
+}
 
 /**
  * Passages of a turn that STATE something at length: runs of sentences that do not ask, of
@@ -154,7 +170,7 @@ function statementsIn(text: string): number {
   const close = (askingFollows: boolean) => {
     if (run.length === 0) return;
     const said = run.join(' ');
-    const long = wordsIn(said) >= STATEMENT_WORDS || hangulIn(said) >= STATEMENT_HANGUL;
+    const long = wordsIn(said) >= STATEMENT_WORDS;
     if (long && !(runStartsTurn && askingFollows) && !META.test(said)) found++;
     run = [];
   };
@@ -185,14 +201,13 @@ const tokensOf = (s: string): string[] =>
 const headerName = (text: string): string => text.split(/[(,;:–—]| - /)[0]!.trim();
 
 /**
- * Who a header's names refer to: "Sunja" or "Kim Sunja" for "Sunja Kim", "순자" for "김순자". Built
- * once over every candidate speaker, so a file of 40,000 one-line "speakers" stays linear (an
- * index per token, then a handful of header names looked up in it).
+ * Who a header's names refer to: "Sunja" or "Kim Sunja" for "Sunja Kim". Built once over every
+ * candidate speaker, so a file of 40,000 one-line "speakers" stays linear (an index per token,
+ * then a handful of header names looked up in it).
  */
 function nameIndex(candidates: string[]): (name: string) => string | null {
   const tokensById = new Map<string, string[]>();
   const byToken = new Map<string, string[]>();
-  const hangul: string[] = [];
   for (const id of candidates) {
     const have = tokensOf(baseLabel(id));
     if (have.length === 0) continue;
@@ -202,7 +217,6 @@ function nameIndex(candidates: string[]): (name: string) => string | null {
       if (ids) ids.push(id);
       else byToken.set(w, [id]);
     }
-    if (/[가-힣]/.test(have.join(''))) hangul.push(id);
   }
   return (name: string) => {
     const want = tokensOf(name);
@@ -215,14 +229,6 @@ function nameIndex(candidates: string[]): (name: string) => string | null {
           hits.add(id);
       }
     }
-    // Korean names are written without a space: "순자" is in "김순자"
-    const b = want.join('');
-    if (/[가-힣]/.test(b)) {
-      for (const id of hangul) {
-        const a = tokensById.get(id)!.join('');
-        if (a.length >= 2 && (b.includes(a) || a.includes(b))) hits.add(id);
-      }
-    }
     return hits.size === 1 ? [...hits][0]! : null;
   };
 }
@@ -232,40 +238,33 @@ const ROLE_IN_PARENS = /^\s*([^()]{1,40}?)\s*\(([^()]{1,20})\)\s*$/;
 
 /* ── words above the first label ─────────────────────────────────────── */
 
-/** "Interview date: March 1, 2024", "Date of birth: …", "일시: 2026년 5월": a header field, never speech */
+/** "Interview date: March 1, 2024", "Date of birth: …": a header field, never speech */
 const KEY_VALUE = /^[\p{Lu}\p{Lo}][\p{L}\p{N} '’.&/()-]{0,30}:\s*\S/u;
 /** an e-mail address or attribution, a "Speaker 1 = Noah" legend, a rule of dashes: never speech */
-const MAIL_SHAPE = /@[\w-]+\.\w|\bwrote:|님이 작성|-{3,}|\b\w+[ \t]?\d*[ \t]?=[ \t]?\S/iu;
+const MAIL_SHAPE = /@[\w-]+\.\w|\bwrote:|-{3,}|\b\w+[ \t]?\d*[ \t]?=[ \t]?\S/iu;
 /** on a short line: a time, a duration, a weekday date, an all-capitals heading ("45m 12s", "Tue, 5/12 9:15AM") */
 const TIME_SHAPE =
   /\b\d{1,2}:\d{2}(?::\d{2})?\b|\b\d+[ \t]?(?:h|hr|hrs|m|min|mins|s|sec|secs)\b|\b(?:mon|tue|wed|thu|fri|sat|sun)[a-z]*\.?,[ \t]|^[\p{Lu}\s]{6,}$/iu;
 /** "Okay, so, …" in front of what an interviewer opens with */
 const OPENER = String.raw`(?:(?:okay|ok|alright|all right|so|well|right|um|uh|now|and)[,.!\s]+)*`;
-/** what an interviewer calls the relative: "Grandma, …", "할머니, …" */
-const KIN = String.raw`(?:grandma|grandmother|granny|nana|grandpa|grandfather|papa|mom|mother|dad|father|aunt\w*|uncle\w*|halmoni|halmeoni|harabeoji)`;
+/** what an interviewer calls the relative: "Grandma, …" */
+const KIN = String.raw`(?:grandma|grandmother|granny|nana|grandpa|grandfather|papa|mom|mother|dad|father|aunt\w*|uncle\w*)`;
 /** the interviewer opening the session: a greeting, thanks, a sound check, "today is…", "this is…" */
 const INTRO = new RegExp(
   String.raw`^${OPENER}(?:${KIN}[,!\s]+)?(?:hello|hi|hey|good (?:morning|afternoon|evening|day)|welcome|thank(?:s| you)|testing|test\b|can you hear|are you ready|ready when you are|is (?:this|it) (?:on|working|recording)|today(?: is|,| we| i\b)|this is\b|i(?:'m| am) here with|we(?:'re| are) here\b|my name is|let'?s (?:start|begin|get started|do this)|shall we (?:start|begin)|let me (?:start|check|turn)|(?:we(?:'re| are)|i(?:'m| am)) (?:recording|starting|going to start|good to go|ready|all set|rolling|live)\b|for the (?:family|record|archive))`,
   'i',
 );
-const KO_INTRO =
-  /^(?:(?:자|네|그럼|음|어|예)[,.\s]+)*(?:안녕하세요|안녕|감사합니다|고맙습니다|반갑습니다|시작하겠습니다|시작할게요|시작합니다|시작해 볼게요|오늘은|오늘 |녹음|녹화|인터뷰|테스트|들리세요|잘 들려|이제 시작)/;
-const VOCATIVE = new RegExp(
-  String.raw`^${OPENER}(?:${KIN}|할머니|할아버지|외할머니|외할아버지|어머니|아버지|엄마|아빠|이모|고모|삼촌)\s?[,!]`,
-  'i',
-);
-/** how a tape that began mid-answer starts: "and that is why…", "…because", "그래서 우리 아버지가…" */
+const VOCATIVE = new RegExp(String.raw`^${OPENER}${KIN}\s?[,!]`, 'i');
+/** how a tape that began mid-answer starts: "and that is why…", "…because" */
 const CUT_START =
   /^(?:\.{2,}|…|(?:and|but|so|because|cause|'cause|then|or|which|who|that|when|while|after|before|until|till|since|though|although|anyway|also|plus)\b)/i;
-const KO_CUT_START =
-  /^(?:그래서|그리고|그런데|근데|그러니까|그러니|그래가지고|그래갖고|그러고|그러다가|그러다|그래도|그러면|하지만|그랬더니|그랬는데|그러자|그 뒤로|그 후로|그다음에)/;
 /** words a sentence is made of: a lower-case passage with these is speech cut short, not a title */
 const FUNCTION_WORD =
   /\b(?:the|a|an|was|were|is|are|we|i|he|she|they|my|his|her|our|their|to|of|in|at|on|had|did|would)\b/i;
 
 /**
  * What a passage with no speaker ABOVE the first label is. Only a passage cut off mid-answer
- * ("and that is why we never went back…", "그래서 우리 아버지가…") may be the teller's; an
+ * ("and that is why we never went back…") may be the teller's; an
  * interviewer's greeting ("Hello Grandma, thank you…"), a sound check, an intro ("Today is March
  * 1st and I am here with…"), a header field, an e-mail attribution or a question never is. Those
  * were filed as her memory at HIGH confidence once (round 3), dated and titled with the header.
@@ -278,14 +277,14 @@ export function leadKind(text: string, teller: string): 'not' | 'cut' | 'unclear
   const cutWh =
     /^\p{Ll}/u.test(t) &&
     /^(?:what|where|when|which|who|why|how|and|so|then)\b/i.test(t) &&
-    !/[?？]/.test(t) &&
+    !t.includes('?') &&
     !/\byou(?:r|rs|'re|'ve|'d)?\b/i.test(t.split(/\s+/).slice(0, 8).join(' '));
   if (looksLikeAsking(t) && !cutWh) return 'not';
   if (KEY_VALUE.test(t) || MAIL_SHAPE.test(t) || (wordsIn(t) <= 10 && TIME_SHAPE.test(t)))
     return 'not';
   const head = t.slice(0, 120);
-  if (INTRO.test(head) || KO_INTRO.test(head) || VOCATIVE.test(head)) return 'not';
-  if (cutWh || CUT_START.test(t) || KO_CUT_START.test(t)) return 'cut';
+  if (INTRO.test(head) || VOCATIVE.test(head)) return 'not';
+  if (cutWh || CUT_START.test(t)) return 'cut';
   if (/^\p{Ll}/u.test(t) && wordsIn(t) >= 6 && FUNCTION_WORD.test(t)) return 'cut';
   // a title or a line about her ("Grandma Sunja's story", "family history project grandma sunja")
   const names = tokensOf(baseLabel(teller));
@@ -355,7 +354,7 @@ export function assignRoles(
     };
     s.turns++;
     s.chars += t.text.length;
-    if (/[?？]/.test(t.text)) s.questions++;
+    if (t.text.includes('?')) s.questions++;
     if (asking[i]) {
       s.prompts++;
     } else {
@@ -398,12 +397,12 @@ export function assignRoles(
   const real = [...stats.keys()].filter((id) => id !== QUESTIONS);
   const byChars = (ids: string[]) => [...ids].sort((a, b) => stat(b).chars - stat(a).chars);
 
-  // what the label itself says: "Interviewer", "Q", 면담자 ask; "Interviewee", "A" next to "Q", 구술자 tell
+  // what the label itself says: "Interviewer", "Q" ask; "Interviewee", "A" next to "Q" tell
   const hasQ = real.some((id) => /^q$/i.test(baseLabel(id)));
   const labelRole = (id: string): Role | null => {
     const b = baseLabel(id);
     if (TELLER_LABEL.test(b) && (b.toLowerCase() !== 'a' || hasQ)) return 'teller';
-    if (ASKER_LABEL.test(b) && (!AMBIGUOUS_ASKER_LABEL.test(b) || asks(id))) return 'asker';
+    if (ASKER_LABEL.test(b)) return 'asker';
     return null;
   };
   // The top of a file may hold a header: "Interviewee: Sunja Kim", "Consent: yes, recorded with
@@ -480,7 +479,7 @@ export function assignRoles(
 
   let interviewees: string[];
   let confidence: Confidence;
-  // 2a. labels that say who asks ("Interviewer", "Q", "질문자") or who tells ("A" next to "Q")
+  // 2a. labels that say who asks ("Interviewer", "Q") or who tells ("A" next to "Q")
   const askers = voices.filter((id) => roleOf(id) === 'asker');
   const tellers = voices.filter((id) => roleOf(id) === 'teller');
   const labelled =
@@ -493,7 +492,7 @@ export function assignRoles(
     interviewees = tellers.length > 0 ? tellers : others.filter((id) => !asks(id));
     if (interviewees.length === 0)
       interviewees = byChars(others.length > 0 ? others : voices).slice(0, 1);
-    // the turns must not contradict the labels (a file that calls the relative "질문자")
+    // the turns must not contradict the labels (a file that calls the relative "Interviewer")
     const contradicts =
       interviewees.some((id) => asks(id) && stat(id).turns >= 2) &&
       askers.some((id) => tells(id) && stat(id).turns >= 2);
@@ -521,6 +520,10 @@ export function assignRoles(
         // one voice that asks: an interviewer and a relative the file did not tell apart
         confidence = 'medium';
         because('monologue', 'prompts_like_questions');
+      } else if (mostlyOtherScript(turns.filter((t) => t.speaker === top).map((t) => t.text))) {
+        // the cues cannot read this script: "never asks" is not known, so a person must say
+        confidence = 'medium';
+        because('monologue', 'script_not_read');
       } else {
         confidence = 'high';
         because('monologue');
@@ -608,7 +611,7 @@ export function assignRoles(
       }
       // a speaker the labels call the asker may make remarks of their own
       if (roleOf(id) === 'asker') return false;
-      // something told at length: a misread label ("Halmoni:" once), or an answer under the interviewer's id
+      // something told at length: a misread label ("Granny:" once), or an answer under the interviewer's id
       if (s.statements > 0) return true;
       // a third voice who answers the questions, or tells: a second relative
       if (id !== principal && (s.answers > 0 || s.remarks > 0)) return true;

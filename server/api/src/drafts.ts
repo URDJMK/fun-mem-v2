@@ -8,7 +8,6 @@ import {
 import type { PoolClient, Pool } from 'pg';
 import type { App, AppDeps } from './app';
 import { isMember } from './membership';
-import { isNounTail } from './grounding-ko';
 import { readEnglishDate } from './speech';
 import { visibleSql } from './views';
 
@@ -61,7 +60,7 @@ export interface DraftResult {
   type: EntityType;
   occurred: string | null;
   body: string;
-  /** what was done, in Korean, shown to the contributor BEFORE they accept */
+  /** what was done, shown to the contributor BEFORE they accept */
   notes: string[];
 }
 
@@ -73,31 +72,23 @@ export interface DraftProvider {
 /* ── date ────────────────────────────────────────────────────────────── */
 
 /**
- * A fuzzy date lifted out of Korean prose, or null.
+ * A fuzzy date lifted out of the contributor's words, or null.
  *
- * NULL IS A FIRST-CLASS ANSWER and the common one. "할머니가 국수를 삶아
- * 주셨다" has no date, and the honest record of that is an undated memory, not
+ * NULL IS A FIRST-CLASS ANSWER and the common one. "Grandma boiled the noodles
+ * for us" has no date, and the honest record of that is an undated memory, not
  * a guess at a decade. FR-062's whole point is that a year-only memory must
  * never sprout a month.
  *
- * The `~` prefix is emitted ONLY when the contributor hedged in their own words
- * (쯤 / 무렵 / 경 / 대략 / 아마 / 년대). It marks THEIR uncertainty, never ours;
- * this function has no confidence of its own to express.
+ * A date written in digits ("1994-07-15", "1994.07.15", "1962") is read as it
+ * is written. Anything else is English prose for `readEnglishDate` ("June of
+ * nineteen sixty-seven"), which adds the `~` prefix only where the contributor
+ * hedged beside the date: THEIR uncertainty, never ours.
  *
  * Everything returned is re-parsed by `parseFuzzyDate` before it leaves, so a
  * pattern that produces `1987-13` is dropped rather than stored.
  */
 export function readFuzzyDate(text: string): string | null {
-  const approx = /(쯤|무렵|경에|년대|대략|아마|어림)/.test(text) ? '~' : '';
-
   const patterns: Array<[RegExp, (m: RegExpExecArray) => string]> = [
-    // 1987년 3월 15일  /  1987년 3월  /  1987년
-    [
-      /(\d{4})\s*년\s*(\d{1,2})\s*월\s*(\d{1,2})\s*일/,
-      (m) => `${m[1]}-${pad(m[2]!)}-${pad(m[3]!)}`,
-    ],
-    [/(\d{4})\s*년\s*(\d{1,2})\s*월/, (m) => `${m[1]}-${pad(m[2]!)}`],
-    [/(\d{4})\s*년/, (m) => m[1]!],
     // 1987-03-15 / 1987.03.15 / 1987/03/15
     [/(\d{4})[-./](\d{1,2})[-./](\d{1,2})/, (m) => `${m[1]}-${pad(m[2]!)}-${pad(m[3]!)}`],
     [/(\d{4})[-./](\d{1,2})(?![-./\d])/, (m) => `${m[1]}-${pad(m[2]!)}`],
@@ -106,29 +97,26 @@ export function readFuzzyDate(text: string): string | null {
      * to earn its place with two bounds.
      *
      * The RANGE bound rejects numbers that could not be a life at all, which
-     * covers "1234번지".
+     * covers "house number 1234".
      *
-     * The SUFFIX bound rejects a number that some other word has claimed. A
-     * Korean counter attaches directly to its digits with no space — 2000원,
-     * 3000명, 1500미터 — so digits immediately followed by a Hangul syllable
-     * are a quantity, not a date. A year in prose is written either with 년
-     * (caught by the patterns above) or standing alone. Latin letters are
-     * excluded for the same reason (2000km).
-     *
-     * Found by the test: "그릇을 2000원에 샀다" was being filed under the year
-     * 2000, which would have put a bowl on the timeline.
+     * The SUFFIX bound rejects a number that some other word has claimed: a unit
+     * written onto its digits with no space ("2000km") is a quantity, not a
+     * date, and so are digits glued to a word in another script.
      */
-    [/(?<!\d)(1[89]\d{2}|20[0-4]\d)(?![\d가-힣A-Za-z])/, (m) => m[1]!],
+    [
+      /(?<!\d)(1[89]\d{2}|20[0-4]\d)(?![\dA-Za-z]|(?![\p{Script=Latin}\p{Script=Common}\p{Script=Inherited}])\p{L})/u,
+      (m) => m[1]!,
+    ],
   ];
 
   for (const [re, build] of patterns) {
     const m = re.exec(text);
     if (!m) continue;
-    const raw = approx + build(m);
+    const raw = build(m);
     // the parser is the arbiter, not the regex above it
     if (parseFuzzyDate(raw)) return raw;
   }
-  // nothing in Korean form: try English prose ("June of nineteen sixty-seven")
+  // nothing in digits: try English prose ("June of nineteen sixty-seven")
   const english = readEnglishDate(text);
   return english !== null && parseFuzzyDate(english) ? english : null;
 }
@@ -138,21 +126,16 @@ const pad = (n: string) => n.padStart(2, '0');
 /* ── type ────────────────────────────────────────────────────────────── */
 
 /**
- * Guess the entity type from the contributor's words.
+ * The entity type of a draft: `event`, unless there are no words at all.
  *
  * `event` is the default because a memory is usually something that HAPPENED,
  * and because guessing `person` wrongly is the expensive mistake: a person note
  * is a hub other memories link INTO, so a mislabelled one distorts the sky and
  * the people list at once. A mislabelled event is a wrong colour on one star.
+ * The words are not used to guess (a keyword guess types a trip to a town a
+ * "place"); the contributor chooses another type if one fits better.
  */
 export function readType(text: string, hasPhoto: boolean): EntityType {
-  const cue: Array<[EntityType, RegExp]> = [
-    ['place', /(집|고향|마을|동네|학교|병원|시장|바닷가|산소|고을|읍|면|리)\b|에서 살/],
-    ['period', /(시절|무렵|년대|어린 시절|젊었을|말년|전쟁 통|피난)/],
-    ['object', /(반지|시계|사진첩|편지|옷|그릇|가방|자전거|재봉틀|물건)/],
-    ['person', /(아버지|어머니|할머니|할아버지|아들|딸|남편|아내|형|누나|동생|이모|삼촌)$/],
-  ];
-  for (const [type, re] of cue) if (re.test(text)) return type;
   // A photograph with no words of its own is a SOURCE — a piece of evidence
   // rather than an account of an event. That matches what the upload path
   // already mints, so accepting a draft cannot silently retype the note.
@@ -191,7 +174,7 @@ export function readTitle(text: string, filename: string | null): string {
 
   // cut at a sentence end if there is one early enough, so a title is a phrase
   // rather than a truncated paragraph
-  const stop = cleaned.search(/[.!?。…]|\s(그리고|그런데|그래서)\s/u);
+  const stop = cleaned.search(/[.!?…]/);
   const cut = stop > 6 && stop <= TITLE_MAX ? cleaned.slice(0, stop) : cleaned.slice(0, TITLE_MAX);
 
   const title = canonicalTitle(cut.trim());
@@ -200,15 +183,32 @@ export function readTitle(text: string, filename: string | null): string {
 
 /* ── links ───────────────────────────────────────────────────────────── */
 
+/** A letter of a script other than the Latin alphabet (letters every script shares, like "µ", are not counted). */
+const OTHER_SCRIPT = /(?![\p{Script=Latin}\p{Script=Common}\p{Script=Inherited}])\p{L}/u;
+const LETTER_OR_DIGIT = /[\p{L}\p{N}]/u;
+/** The character that ends just before `i` (a whole character, not half of a surrogate pair), or ' '. */
+const charBefore = (s: string, i: number): string =>
+  Array.from(s.slice(Math.max(0, i - 2), i)).at(-1) ?? ' ';
+/** The character that starts at `i`, or ' '. */
+const charAt = (s: string, i: number): string => {
+  const c = s.codePointAt(i);
+  return c === undefined ? ' ' : String.fromCodePoint(c);
+};
+/** Two touching characters are one word when both are letters or digits and either is in another script. */
+const glued = (a: string, b: string): boolean =>
+  LETTER_OR_DIGIT.test(a) &&
+  LETTER_OR_DIGIT.test(b) &&
+  (OTHER_SCRIPT.test(a) || OTHER_SCRIPT.test(b));
+
 /**
  * Wrap mentions of notes the archive ALREADY HOLDS as `[[wikilinks]]`.
  *
  * This is the one place the draft adds characters the contributor did not type,
  * and it is safe for a specific reason: it only ever links to a title that
  * exists, never invents a target, and never changes a word. If it is wrong, it
- * is wrong by linking "어머니" to the wrong 어머니 — visible, and one edit away.
+ * is wrong by linking "Mom" to the wrong Mom — visible, and one edit away.
  *
- * LONGEST TITLE FIRST, so "김순자 할머니" is not eaten by "김순자". Matching is
+ * LONGEST TITLE FIRST, so "Grandma Sunja" is not eaten by "Grandma". Matching is
  * done on a masked copy so an earlier match cannot be re-matched inside, and so
  * a `[[…]]` the contributor typed themselves is left alone.
  */
@@ -230,24 +230,21 @@ export function linkKnownTitles(
   for (const title of ordered) {
     if (title.length < 2) continue; // a one-character title matches everywhere
     const norm = normalizeTitle(title);
+    const chars = Array.from(title);
+    const [head, tail] = [chars[0]!, chars.at(-1)!];
     let from = 0;
     for (;;) {
       const at = body.indexOf(title, from);
       if (at === -1) break;
       from = at + title.length;
       if (mask.slice(at, at + title.length).includes('#')) continue;
-      // a title is only a mention when it stands as a word: not mid-token in a
-      // Latin word; for a Korean title, not after another syllable of the same
-      // word ("큰[[아버지]]", "외[[할머니]]"), and followed by nothing but particles
-      // or the copula ("[[아버지]]가", "[[김순자]]씨가"). "[[이모]]부가" would point
-      // the aunt's husband at the aunt, "[[아들]]딸" a daughter at a son.
-      if (/[A-Za-z0-9]/.test(body[at - 1] ?? ' ')) continue;
-      if (/[A-Za-z0-9]/.test(body[at + title.length] ?? ' ')) continue;
-      if (/[가-힣]$/.test(title)) {
-        if (/[가-힣]/.test(body[at - 1] ?? ' ')) continue;
-        const rest = /^[가-힣]*/.exec(body.slice(at + title.length, at + title.length + 13))![0];
-        if (!isNounTail(rest)) continue;
-      } else if (/^[가-힣]/.test(title) && /[가-힣]/.test(body[at - 1] ?? ' ')) continue;
+      // a title is only a mention when it stands as a word: not mid-token in a Latin word, and
+      // not glued to a word in another script, whose words are compared exactly ("Москва" is
+      // not mentioned in "Москвабад")
+      const before = charBefore(body, at);
+      const after = charAt(body, at + title.length);
+      if (/[A-Za-z0-9]/.test(before) || /[A-Za-z0-9]/.test(after)) continue;
+      if (glued(before, head) || glued(tail, after)) continue;
       for (let i = at; i < at + title.length; i++) mask[i] = '#';
       edits.push({ at, len: title.length, title });
       if (!linked.some((l) => normalizeTitle(l) === norm)) linked.push(title);
@@ -263,6 +260,19 @@ export function linkKnownTitles(
 }
 
 /* ── the default provider ────────────────────────────────────────────── */
+
+/** What a draft tells the contributor about how it was made (shared by the composers). */
+export const DRAFT_NOTES = {
+  titleNone: 'Could not make a title from what you wrote. Please write one.',
+  title: (t: string) => `Title taken from your first sentence: “${t}”`,
+  date: (d: string) => `Found a date in what you wrote: ${d}`,
+  dateNone: 'No date given. It is fine if it is not remembered.',
+  linked: (titles: string[]) =>
+    `Linked to notes that already exist: ${titles.map((l) => `[[${l}]]`).join(', ')}`,
+  photoIn: 'The photograph is placed in the text.',
+  photoLater: 'The photograph will be attached to this memory when it is saved.',
+  asWritten: 'The text is exactly what you wrote. Nothing was added that you did not write.',
+} as const;
 
 export class DeterministicComposer implements DraftProvider {
   readonly providerVersion = 'composer-deterministic-1';
@@ -282,12 +292,10 @@ export class DeterministicComposer implements DraftProvider {
     const notes: string[] = [];
 
     const title = readTitle(text, req.media?.filename ?? null);
-    if (title === '') notes.push('제목을 짓지 못했습니다. 직접 적어 주세요.');
-    else notes.push(`첫 문장에서 제목을 옮겼습니다: “${title}”`);
+    notes.push(title === '' ? DRAFT_NOTES.titleNone : DRAFT_NOTES.title(title));
 
     const occurred = readFuzzyDate(text);
-    if (occurred) notes.push(`글에서 날짜를 찾았습니다: ${occurred}`);
-    else notes.push('날짜는 비워 두었습니다. 기억나지 않아도 괜찮습니다.');
+    notes.push(occurred ? DRAFT_NOTES.date(occurred) : DRAFT_NOTES.dateNone);
 
     const type = readType(text, req.media !== null);
 
@@ -300,15 +308,13 @@ export class DeterministicComposer implements DraftProvider {
      * break the moment the note is read by the other one.
      */
     const embed = req.media?.contentHash ? `![[${req.media.contentHash}]]\n\n` : '';
-    if (req.media?.contentHash) notes.push('사진을 본문에 넣었습니다.');
-    else if (req.media) notes.push('사진은 저장할 때 이 기억에 붙습니다.');
+    if (req.media?.contentHash) notes.push(DRAFT_NOTES.photoIn);
+    else if (req.media) notes.push(DRAFT_NOTES.photoLater);
 
     const { body, linked } = linkKnownTitles(text, req.titles);
-    if (linked.length > 0) {
-      notes.push(`이미 있는 기록과 연결했습니다: ${linked.map((l) => `[[${l}]]`).join(', ')}`);
-    }
+    if (linked.length > 0) notes.push(DRAFT_NOTES.linked(linked));
 
-    notes.push('내용은 적어 주신 말 그대로입니다. 없는 이야기는 만들지 않았습니다.');
+    notes.push(DRAFT_NOTES.asWritten);
 
     return { title, type, occurred, body: embed + body, notes };
   }

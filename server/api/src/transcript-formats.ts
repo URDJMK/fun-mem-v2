@@ -14,17 +14,17 @@ import { TranscriptError } from './transcript-error';
  *             AssemblyAI / Deepgram style (`utterances`, `words`), Rev.ai (`monologues`),
  *             Speechmatics (`results` of words)
  *   SRT/VTT   WhisperX writes `[SPEAKER_00]: text` inside each cue; `<v Name>` voice tags
- *   labelled  `Interviewer: …`, `[SPEAKER_01]: …`, `[화자1] …`, `Speaker 1 (0:05): …`,
- *             `Zoë (Noah's grandma): …`, `Kim, Sunja: …`, `Q. …` / `A. …`, `[할머니] …`
+ *   labelled  `Interviewer: …`, `[SPEAKER_01]: …`, `[Speaker 1] …`, `Speaker 1 (0:05): …`,
+ *             `Zoë (Noah's grandma): …`, `Kim, Sunja: …`, `Q. …` / `A. …`, `[Grandma] …`
  *   headers   Otter / Rev / Teams `Speaker 1  0:05`, Zoom `[Speaker 1] 00:00:05`: a line, then the words
  *   stamped   `[00:12] text` with no speakers
  *   plain     one turn per line
  *
  * Text arrives here already PREPARED (`prepareText` in transcript.ts): one kind of line
- * break, no control or invisible characters, NFC, ASCII brackets and colons, and runs of
- * blanks squeezed to one space. So the patterns below can use a single optional space where
- * a raw reader would need `\s*`, which is what keeps every one of them linear: no pattern
- * here has two unbounded quantifiers that can share characters.
+ * break, no control or invisible characters, NFC, and runs of blanks squeezed to one space.
+ * So the patterns below can use a single optional space where a raw reader would need `\s*`,
+ * which is what keeps every one of them linear: no pattern here has two unbounded quantifiers
+ * that can share characters.
  */
 
 export type RawFormat =
@@ -48,7 +48,7 @@ export interface ReaderNotices {
   /** lines of speech before the first speaker label, kept with no speaker (UNKNOWN) */
   unlabelledStart?: number;
   /**
-   * lines left out: above the first speaker turn, a title, header fields (Date:, 제목:, From:),
+   * lines left out: above the first speaker turn, a title, header fields (Date:, Title:, From:),
    * an e-mail's attribution, a date or duration line, Otter's summary blocks; anywhere, a
    * transcriber's "Note: …"; text before the first cue; Otter's closing "Transcribed by" line
    */
@@ -81,15 +81,14 @@ const STRICT =
   String.raw`(?:SPEAKER[_ -]?\d{1,3}|Speaker[_ -]?\d{1,3}|speaker[_ -]?\d{1,3}|SPK[_ -]?\d{1,3}|` +
   // how transcription tools name a voice they could not identify: "Voice 3", "Person 2", "Participant 4"
   String.raw`(?:[Vv]oice|VOICE|[Pp]erson|PERSON|[Pp]articipant|PARTICIPANT|[Gg]uest|GUEST)[_ -]?\d{1,3}|` +
-  String.raw`화자 ?\d{1,3}|발화자 ?\d{1,3}|참석자 ?\d{1,3}|Interviewer|Interviewee|Host|Guest|Moderator|` +
-  String.raw`Narrator|면접관|인터뷰어|인터뷰이|진행자|질문자|응답자|Q|A)`;
+  String.raw`Interviewer|Interviewee|Host|Guest|Moderator|Narrator|Q|A)`;
 const STRICT_FULL = new RegExp(`^${STRICT}$`);
 /** the same, in any case: "[INTERVIEWER]" is a speaker, never a sound note */
 export const STRICT_LABEL_ANY_CASE = new RegExp(`^${STRICT}$`, 'i');
 
 // A word of a name, in any script: letters, marks (accents), digits, ' ’ . - _
 const W = String.raw`[\p{L}\p{M}\p{N}_'’.\-]`;
-// A name or a role of up to four words ("Grandma", "Zoë Park", "김 선생님", "Mary Ann de Souza")
+// A name or a role of up to four words ("Grandma", "Zoë Park", "Mary Ann de Souza")
 const NAME = String.raw`\p{L}${W}{0,23}(?: ${W}{1,24}){0,3}`;
 // "Kim, Sunja": family name, comma, given name, both capitalised (or in a script without case)
 const COMMA_NAME = String.raw`[\p{Lu}\p{Lt}\p{Lo}]${W}{0,23}, [\p{Lu}\p{Lt}\p{Lo}]${W}{0,23}`;
@@ -104,10 +103,8 @@ export const ANNOTATION_WORDS =
   'noise|background noise|static|silence|long pause|pauses?|inaudible|unintelligible|indistinct|' +
   'unclear|crosstalk|cross talk|overlapping(?: speech)?|cough(?:s|ing)?|sigh(?:s|ing)?|sniff(?:s|ing)?|' +
   'breathing|crying|cries|sobbing|sobs|singing|clapping|beep|ringing|phone ringing|blank[_ ]audio|' +
-  'no speech|no audio|background[^)\\]\\n]{0,20}|foreign language|speaking (?:in )?(?:korean|english)';
-export const KOREAN_SOUND_WORDS =
-  '웃음|웃음소리|박수|음악|기침|한숨|침묵|잡음|울음|흐느낌|정적|소음|알아들을 수 없음|불명확';
-const SOUND_NOTE = new RegExp(`^(?:${ANNOTATION_WORDS}|${KOREAN_SOUND_WORDS})$`, 'i');
+  'no speech|no audio|background[^)\\]\\n]{0,20}|foreign language|speaking (?:in )?english';
+const SOUND_NOTE = new RegExp(`^(?:${ANNOTATION_WORDS})$`, 'i');
 
 // A sentence that merely contains a colon ("He said: no.", "My father: he…") is not a speaker label.
 const STOP_FIRST =
@@ -115,19 +112,17 @@ const STOP_FIRST =
 // "Grandma said: eat first." is prose
 const SAYS =
   / (?:said|says|asked|asks|told|tells|replied|replies|answered|wrote|writes|shouted|yelled|whispered|added|explained|thought|remembered|recalled|used to say|would say|always said)$/i;
-const SAYS_KO =
-  /(?:말했다|말했어요|말씀하셨다|말씀하셨어요|하셨다|했다|그랬다|그러셨다|물었다|대답했다|외쳤다)$/u;
 
 /** a transcriber's or editor's note on its own line: dropped, never attached to testimony */
 const NOTE_LINE =
-  /^[[(]?(?:note|nb|n\.b\.|editor'?s note|transcriber'?s note|translator'?s note|interviewer'?s note|편집자 ?주|녹취자 ?주|역자 ?주) ?:/i;
+  /^[[(]?(?:note|nb|n\.b\.|editor'?s note|transcriber'?s note|translator'?s note|interviewer'?s note) ?:/i;
 
 export interface Labelled {
   label: string;
   start: number | null;
   end: number | null;
   text: string;
-  /** a speaker id format we trust anywhere (SPEAKER_00, 화자1, Interviewer, Q…) */
+  /** a speaker id format we trust anywhere (SPEAKER_00, Speaker 1, Interviewer, Q…) */
   strict: boolean;
 }
 
@@ -135,7 +130,7 @@ export interface Labelled {
 export interface LabelModes {
   /** "Q. …" / "A. …" lines: only when both recur */
   qa?: boolean;
-  /** "[할머니] …" with no colon: only when a few such names start many lines */
+  /** "[Grandma] …" with no colon: only when a few such names start many lines */
   bracket?: boolean;
   /** header keys this document uses as speaker labels ("subject"), lower-cased */
   allow?: Set<string>;
@@ -157,7 +152,7 @@ function nameLabelOk(label: string, after: string): boolean {
   if (label.length > 40 || !NAME_FULL.test(label)) return false;
   if (notALabel(label) || SOUND_NOTE.test(label)) return false;
   const base = baseLabel(label);
-  if (SAYS.test(base) || SAYS_KO.test(base)) return false;
+  if (SAYS.test(base)) return false;
   // "At 5:30 we walked": a time of day, not "At 5" speaking
   if (/\p{N}$/u.test(base) && /^\p{N}/u.test(after)) return false;
   // "https://…"
@@ -176,7 +171,7 @@ function looksLikeName(label: string): boolean {
     return false;
   }
   // A script without capitals: a name is one or two words, a phrase is longer. A word without
-  // capitals among capitalised ones counts too ("ZQ12 어디서 태어나셨어요 김" is a sentence).
+  // capitals among capitalised ones counts too ("Aunt 2 Mae" is not a name).
   return isCased(base) || words.length <= 2;
 }
 
@@ -186,7 +181,7 @@ const DIGIT_NAME = /^\p{Lu}\p{L}{0,15}\p{N}{1,2}$/u;
 const PARTICLE =
   /^(?:de|da|das|do|dos|du|del|della|der|den|des|di|van|von|la|le|bin|binti|ibn|al|el|ten|ter|zu|y)$/;
 
-/** every word of the label is written in a script with capitals ("Noah Kim", not "할머니") */
+/** every word of the label has a letter with a case ("Noah Kim", not "Noah 2") */
 const isCased = (label: string): boolean =>
   label.split(' ').every((w) => /[\p{Lu}\p{Ll}]/u.test(w));
 
@@ -196,7 +191,7 @@ const LEAD_TS = new RegExp(String.raw`^(?:[[(] ?${TSRANGE} ?[\])] ?|${TSRANGE} )
 const BRACKET_SQUARE = /^\[ ?([^[\]\n]{1,60}?) ?\]( ?:)? ?(.*)$/;
 const BRACKET_ROUND = /^\( ?([^()\n]{1,40}?) ?\)( ?:)? ?(.*)$/;
 const ZOOM_TS = new RegExp(String.raw`^(${TS})(?: (.*))?$`);
-const QA = /^(Q|A|문|답)[.)] (.*)$/;
+const QA = /^(Q|A)[.)] (.*)$/;
 const BARE_STRICT = new RegExp(String.raw`^(${STRICT})(?: ?[[(] ?${TSRANGE} ?[\])])? ?: ?(.*)$`);
 const BARE_TIMED = new RegExp(String.raw`^(${NAME}) (${TS}) ?: ?(.*)$`, 'u');
 const BARE_NAME = new RegExp(
@@ -206,10 +201,10 @@ const BARE_NAME = new RegExp(
 
 /**
  * If a line starts with a speaker label, split it off:
- *   `[SPEAKER_01]: text`   `SPEAKER_00 [01:02 - 01:10]: text`   `[00:12] 김순자: text`
- *   `[화자1] text`         `Speaker 1 (0:05): text`             `00:05 Grandma: text`
+ *   `[SPEAKER_01]: text`   `SPEAKER_00 [01:02 - 01:10]: text`   `[00:12] Sunja Kim: text`
+ *   `[Speaker 1] text`     `Speaker 1 (0:05): text`             `00:05 Grandma: text`
  *   `Zoë (grandma): text`  `Kim, Sunja: text`                   `Speaker 1 00:05: text`
- * plus, in the modes a whole document switched on, `Q. text` and `[할머니] text`.
+ * plus, in the modes a whole document switched on, `Q. text` and `[Grandma] text`.
  * The line must already be prepared (see the file comment).
  */
 export function splitLabel(line: string, modes: LabelModes = {}): Labelled | null {
@@ -224,7 +219,7 @@ export function splitLabel(line: string, modes: LabelModes = {}): Labelled | nul
     rest = rest.slice(lead[0].length);
   }
 
-  // bracketed: [SPEAKER_01]: text  |  [화자1] text  |  (Speaker 1) text  |  [Grandma]: text
+  // bracketed: [SPEAKER_01]: text  |  [Speaker 1] text  |  (Speaker 1) text  |  [Grandma]: text
   if (rest.startsWith('[') || rest.startsWith('(')) {
     const br = (rest.startsWith('[') ? BRACKET_SQUARE : BRACKET_ROUND).exec(rest);
     if (!br) return null;
@@ -299,7 +294,7 @@ export function splitLabel(line: string, modes: LabelModes = {}): Labelled | nul
 
 /*
  * A paste that lost its line breaks ("Interviewer: Where were you born? Grandma: In Busan.
- * Interviewer: …") and a subtitle cue holding two speakers ("[Host]: … [할머니]: …") have the
+ * Interviewer: …") and a subtitle cue holding two speakers ("[Host]: … [Grandma]: …") have the
  * same problem: where does a turn start? Taking the first label-shaped words a pattern finds
  * does not work. "Very poor. Interviewer:" would be one four-word "label", and the real one
  * after it is never looked at again, so the interviewer's question lands inside the relative's
@@ -316,7 +311,7 @@ function wordsHold(label: string): boolean {
   const words = baseLabel(label).split(' ');
   for (let i = 0; i < words.length - 1; i++) {
     const w = words[i]!;
-    if (/[.!?…。;?]$/.test(w) && !ABBREVIATION.test(w)) return false;
+    if (/[.!?…;]$/.test(w) && !ABBREVIATION.test(w)) return false;
     // a comma only in "Kim, Sunja"
     if (w.endsWith(',') && !(i === 0 && words.length === 2)) return false;
   }
@@ -324,11 +319,10 @@ function wordsHold(label: string): boolean {
 }
 
 /**
- * What comes just before a label: how sure we can be that a turn starts there. 'hangul': a
- * Korean word, as speech-to-text ends a Korean question (with no "?"). 'label': the colon of
- * another label, so this one is the first word of that turn, never a turn of its own.
+ * What comes just before a label: how sure we can be that a turn starts there. 'label': the
+ * colon of another label, so this one is the first word of that turn, never a turn of its own.
  */
-type Boundary = 'start' | 'question' | 'sentence' | 'hangul' | 'space' | 'label';
+type Boundary = 'start' | 'question' | 'sentence' | 'space' | 'label';
 
 interface Candidate {
   /** where the label starts (where the turn would start) */
@@ -348,7 +342,7 @@ interface Candidate {
 type Slot = Candidate[];
 
 const CLOSERS = new Set(['"', '”', '’', "'", ')', ']']);
-const SENTENCE_ENDS = new Set(['.', '!', '…', '。']);
+const SENTENCE_ENDS = new Set(['.', '!', '…']);
 
 function boundaryAt(text: string, at: number): Boundary {
   if (at === 0 || text[at - 1] === '\n') return 'start';
@@ -357,9 +351,8 @@ function boundaryAt(text: string, at: number): Boundary {
   let i = at - 2; // text[at - 1] is the space before the label
   while (i >= 0 && CLOSERS.has(text[i]!)) i--;
   const c = text[i];
-  if (c === '?' || c === '？') return 'question';
+  if (c === '?') return 'question';
   if (c !== undefined && SENTENCE_ENDS.has(c)) return 'sentence';
-  if (c !== undefined && /\p{Script=Hangul}/u.test(c)) return 'hangul';
   return 'space';
 }
 
@@ -414,7 +407,7 @@ function slotAt(text: string, end: number, bracketOnly: boolean): Slot {
     });
   };
 
-  // [SPEAKER_00]: / [Grandma]: / [화자1] (a strict id needs no colon)
+  // [SPEAKER_00]: / [Grandma]: / [Speaker 1] (a strict id needs no colon)
   if (back.endsWith(']')) {
     const open = back.lastIndexOf('[');
     if (open >= 0 && separated(open) && back.length - open <= 62) {
@@ -456,7 +449,7 @@ function slotsOf(text: string): Slot[] {
     const s = slotAt(text, i, false);
     if (s.length > 0) slots.push(s);
   }
-  // "[화자1] 어디서 … [화자2] 부산이요": a strict id in brackets needs no colon
+  // "[Speaker 1] Where … [Speaker 2] In Busan": a strict id in brackets needs no colon
   for (let i = text.indexOf('] '); i >= 0; i = text.indexOf('] ', i + 1)) {
     const s = slotAt(text, i + 1, true);
     if (s.length > 0) slots.push(s);
@@ -470,14 +463,12 @@ function slotsOf(text: string): Slot[] {
  * brackets; and, in a paste that lost its line breaks, every label used twice or more, and
  * lower-case words that take turns ("noah: … grandma: … noah: …"). `once`: names used once
  * that may start a turn, but only on a line that lost its breaks (it already holds two firm
- * turns): "…born? Grandma: In Busan.", a name once after a Korean question with no "?", a
- * one-word Korean name. In a file whose labels start its lines, a colon inside a sentence
- * ("…생선을 파셨어요: 힘들다고…", "Why did we leave? Hunger: that was the reason") is never a
- * speaker. In a script without capitals a longer label is dropped when the shorter one inside
- * it is also used on its own: "태어나셨어요 할머니" twice and "할머니" alone three more times
- * means the label is "할머니" and the other word ends the question. (Capitals already tell
- * "Noah Kim" and "Sunja Kim" from a sentence, and a family shares its last name, so those are
- * never pruned.)
+ * turns): "…born? Grandma: In Busan.". In a file whose labels start its lines, a colon inside
+ * a sentence ("Why did we leave? Hunger: that was the reason") is never a speaker. In a script
+ * without capitals a longer label is dropped when the shorter one inside it is also used on its
+ * own: the label is the shorter one, and the word before it ends the question. (Capitals
+ * already tell "Noah Kim" and "Sunja Kim" from a sentence, and a family shares its last name,
+ * so those are never pruned.)
  */
 interface LabelSets {
   firm: Set<string>;
@@ -518,11 +509,11 @@ function labelSetOf(slots: Slot[]): LabelSets {
     for (const slot of slots) {
       for (const c of slot) {
         if (c.weak || firm.has(c.key)) continue;
-        // Once, in a script without capitals, only the one-word label is safe: "어땠어요
-        // 외할머니" is the end of the question and a name, and nothing says which.
+        // Once, a longer label is safe only when every word of it has a case ("Noah Kim"): in a
+        // script without capitals, or with a bare number ("Speaker 2"), nothing says where the
+        // question ends and the name begins.
         if (!isCased(c.label) && c.words > 1) continue;
-        if (c.boundary === 'question' || c.boundary === 'hangul') once.add(c.key);
-        else if (c.words === 1 && /^[\p{Script=Hangul}]+$/u.test(c.label)) once.add(c.key);
+        if (c.boundary === 'question') once.add(c.key);
       }
     }
   }
@@ -818,7 +809,7 @@ function gatherWords(words: Word[]): RawSeg[] {
     const start: number | null = w.start ?? lastEnd;
     if (run) {
       const gap = start !== null && run.end !== null ? start - run.end : 0;
-      const sentenceEnd = /[.!?。…]["'”’)\]]*$/.test(run.words[run.words.length - 1]!.slice(-12));
+      const sentenceEnd = /[.!?…]["'”’)\]]*$/.test(run.words[run.words.length - 1]!.slice(-12));
       if (
         speaker !== run.speaker ||
         gap >= PAUSE_BREAK_S ||
@@ -985,7 +976,7 @@ const VOICE_TAG = /<v(?:\.[^ <>]{0,50})? ([^<>]{1,100})>/g;
 const TAG = /<[^<>]{0,200}>/g;
 const STYLE = /\{\\[^{}\n]{0,200}\}/g;
 
-/** A line of a cue cut before every label of the file's speaker set (P1: "[Host]: … [할머니]: …"). */
+/** A line of a cue cut before every label of the file's speaker set (P1: "[Host]: … [Grandma]: …"). */
 function cutAtLabels(line: string, sets: LabelSets): string[] {
   if (sets.firm.size === 0) return [line];
   const starts = lineStarts(line, slotsOf(line), sets)
@@ -1140,28 +1131,27 @@ export function parseSubtitles(text: string): RawParse | null {
  * decides whose it is.
  */
 
-/** "Date: …", "Title: …", "제목: …", an e-mail's "From: / Sent: / To: / Cc: / Subject:" */
+/** "Date: …", "Title: …", an e-mail's "From: / Sent: / To: / Cc: / Subject:" */
 const META_KEY =
-  /^(?:date|time|title|location|place|topic|subject|session|tape|file|duration|language|transcriber|translator|from|sent|to|cc|bcc|reply-to|recorded(?: on| at| by)?|transcribed by|interview(?:er|ee)?'?s? ?(?:date|name|location|place)|날짜|일시|시간|장소|제목|주제|녹취|녹음|녹취자|면담 ?일시|면담 ?장소|대담 ?일시|보낸 ?사람|받는 ?사람|참조) ?:/iu;
+  /^(?:date|time|title|location|place|topic|subject|session|tape|file|duration|language|transcriber|translator|from|sent|to|cc|bcc|reply-to|recorded(?: on| at| by)?|transcribed by|interview(?:er|ee)?'?s? ?(?:date|name|location|place)) ?:/iu;
 /** "Interview with Grandma", "Recorded March 1, 2024", "-----Original Message-----", Otter's "SUMMARY KEYWORDS" */
 const META_PHRASE =
   /^(?:interview(?:ed)? (?:with|by|of) |recorded (?:on |at |in |by |for |(?=\p{Lu}|\d))|transcribed (?:by|on|from|with) |transcript(?:ion)? (?:of|by) |https?:\/\/|www\.|copyright |©|-{2,} ?(?:original message|forwarded message)|(?:summary )?keywords$|speakers$|summary$|outline$|action items$)/iu;
-/** an e-mail's attribution line: "On Mon, May 4, 2026 at 9:12 AM Noah <…> wrote:", "… 님이 작성:" */
-const ATTRIBUTION = /^(?:on .{6,160} wrote:|.{6,160}님이 작성:)$/iu;
+/** an e-mail's attribution line: "On Mon, May 4, 2026 at 9:12 AM Noah <…> wrote:" */
+const ATTRIBUTION = /^on .{6,160} wrote:$/iu;
 /** Otter's blocks above the turns: the heading, then lines up to a blank line */
 const BLOCK_HEAD = /^(?:SUMMARY KEYWORDS|KEYWORDS|SPEAKERS|SUMMARY|OUTLINE|ACTION ITEMS)$/;
 /** "Speaker 1 = Noah Kim, Speaker 2 = Sunja Kim": who the numbered voices are */
-const MAPPING =
-  /^(?:(?:speaker|voice|person|화자|참석자)[_ ]?\d{1,3} ?= ?[^,;=\n]{1,40}(?:[,;] ?|$)){1,8}$/iu;
-const MAPPING_PAIR = /((?:speaker|voice|person|화자|참석자)[_ ]?\d{1,3}) ?= ?([^,;=\n]{1,40})/giu;
+const MAPPING = /^(?:(?:speaker|voice|person)[_ ]?\d{1,3} ?= ?[^,;=\n]{1,40}(?:[,;] ?|$)){1,8}$/iu;
+const MAPPING_PAIR = /((?:speaker|voice|person)[_ ]?\d{1,3}) ?= ?([^,;=\n]{1,40})/giu;
 
 /**
  * The words a pure date, time or duration is made of: "Tue, 5/12 9:15AM • 45:30", "45m 12s",
- * "May 3, 2026, 3:21PM", "2024년 3월 1일 (금) 녹음". Whatever is left after taking them away
+ * "May 3, 2026, 3:21PM". Whatever is left after taking them away
  * is a clause, and a line with a clause is speech ("March 3rd, 1946, in Busan").
  */
 const TIME_WORD =
-  /^(?:jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|june?|july?|aug(?:ust)?|sep(?:t(?:ember)?)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?|mon(?:day)?|tue(?:s(?:day)?)?|wed(?:nesday)?|thu(?:r(?:s(?:day)?)?)?|fri(?:day)?|sat(?:urday)?|sun(?:day)?|[ap]\.?m\.?|at|오전|오후|녹음|녹취|recorded|recording|요일|[월화수목금토일]|\d{1,4}(?:st|nd|rd|th|h|hrs?|hours?|m|mins?|minutes?|s|secs?|seconds?|[ap]\.?m\.?|년|월|일|시|분|초)?)$/iu;
+  /^(?:jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|june?|july?|aug(?:ust)?|sep(?:t(?:ember)?)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?|mon(?:day)?|tue(?:s(?:day)?)?|wed(?:nesday)?|thu(?:r(?:s(?:day)?)?)?|fri(?:day)?|sat(?:urday)?|sun(?:day)?|[ap]\.?m\.?|at|recorded|recording|\d{1,4}(?:st|nd|rd|th|h|hrs?|hours?|m|mins?|minutes?|s|secs?|seconds?|[ap]\.?m\.?)?)$/iu;
 
 /** Whole words only: "that 1946" is not a date because "that" is not a word of one. */
 function isPureTime(l: string): boolean {
@@ -1171,9 +1161,9 @@ function isPureTime(l: string): boolean {
     .every((t) => t === '' || TIME_WORD.test(t.replace(/\.$/, '')));
 }
 
-/** "Tape 2, side A", "Part 2", "Session 3 of 4", "제2부", "테이프 1": where the recording is */
+/** "Tape 2, side A", "Part 2", "Session 3 of 4": where the recording is */
 const SECTION_PART =
-  /^(?:(?:tape|side|part|session|reel|cassette|disc|disk|track|chapter|interview|day|테이프|세션|면담|녹음)\.? ?(?:#|no\.? ?)?(?:\d{1,3}|[a-d]|[ivx]{1,4})(?: of \d{1,3})?|제? ?\d{1,3} ?(?:부|회차|회|편|차))$/iu;
+  /^(?:(?:tape|side|part|session|reel|cassette|disc|disk|track|chapter|interview|day)\.? ?(?:#|no\.? ?)?(?:\d{1,3}|[a-d]|[ivx]{1,4})(?: of \d{1,3})?)$/iu;
 
 function isSection(l: string): boolean {
   if (l.length > 40) return false;
@@ -1181,11 +1171,9 @@ function isSection(l: string): boolean {
   return parts.length <= 3 && parts.every((p) => SECTION_PART.test(p.trim()));
 }
 
-/** what a title names: "Grandma's Story", "할머니 구술" */
+/** what a title names: "Grandma's Story" */
 const TITLE_WORD =
-  /(?:^|[^a-z])(?:interview|transcript|story|stories|memories|memoir|recording|conversation|oral history|life|history|biography)(?:$|[^a-z])|구술|녹취|인터뷰|이야기|기록|대담|회고/iu;
-/** how a Korean sentence ends: "…해 드릴게요" is speech, "할머니 구술" a title */
-const KO_SENTENCE_END = /(?:요|다|죠|까|네|지|고|어|아|게|데|야|며|면|서)$/u;
+  /(?:^|[^a-z])(?:interview|transcript|story|stories|memories|memoir|recording|conversation|oral history|life|history|biography)(?:$|[^a-z])/iu;
 
 /** A line of the lead block that says it is a header, not speech. */
 const isMeta = (l: string): boolean =>
@@ -1198,19 +1186,19 @@ const isMeta = (l: string): boolean =>
 
 /**
  * The first line, as a title: short, no sentence end, followed by a blank line or a header
- * field, naming what it is ("Interview", "Story", "구술"), and shaped like a title: Title Case,
- * or in Korean not ending like a sentence. "Hi Grandma" and "I will tell you the story" are
- * speech. Above a full date ("Tue, 5/12 9:15AM • 45:30", as Otter writes its header) a title
- * may be in any case ("Grandma Sunja's story"), but never starts like a sentence ("I", "We").
+ * field, naming what it is ("Interview", "Story"), and shaped like a title: Title Case. "Hi
+ * Grandma" and "I will tell you the story" are speech. Above a full date ("Tue, 5/12 9:15AM •
+ * 45:30", as Otter writes its header) a title may be in any case ("Grandma Sunja's story"),
+ * but never starts like a sentence ("I", "We").
  */
 function isTitle(l: string, breakAfter: boolean, dateAfter: boolean): boolean {
-  if (!breakAfter || l.length >= 70 || /[.!?…。"”’,]$/.test(l) || !TITLE_WORD.test(l)) return false;
+  if (!breakAfter || l.length >= 70 || /[.!?…"”’,]$/.test(l) || !TITLE_WORD.test(l)) return false;
   const words = l.split(' ');
   if (words.length > 8) return false;
   if (dateAfter && !STOP_FIRST.test(words[0]!)) return true;
   const long = words.filter((w) => /^\p{L}{4,}/u.test(w));
   if (long.some((w) => /^[\p{Lu}\p{Ll}]/u.test(w))) return long.every((w) => /^\p{Lu}/u.test(w));
-  return !KO_SENTENCE_END.test(l);
+  return true;
 }
 
 /**
@@ -1347,10 +1335,10 @@ const OTTER_FOOTER = /^transcribed by https?:\/\/[^ ]{1,80}$/i;
 
 /* ── labelled lines ──────────────────────────────────────────────────── */
 
-const QA_LINE = /^(Q|A|문|답)[.)] \S/;
+const QA_LINE = /^(Q|A)[.)] \S/;
 const BRACKET_LEAD = /^\[([^[\]\n]{1,60})\] \S/;
 /** a sentence end: what a wrapped question line does NOT end with */
-const ENDS_SENTENCE = /[.!?。…"”’)]$/;
+const ENDS_SENTENCE = /[.!?…"”’)]$/;
 
 /*
  * Label styles people type. "**Noah:**" (markdown bold) and "- Noah:" (a list) are labels
@@ -1425,18 +1413,18 @@ function restyle(lines: string[]): string[] {
   return out;
 }
 
-/** A role named in a header block above the transcript: "Interviewee: Sunja Kim", "면담자: 김노아". */
+/** A role named in a header block above the transcript: "Interviewee: Sunja Kim", "Interviewer: Noah Kim". */
 const HEADER_ROLE =
-  /^(?:interviewer|interviewee|narrator|respondent|host|guest|moderator|transcriber|translator|recorder|구술자|면담자|면접관|면접자|인터뷰어|인터뷰이|질문자|응답자|진행자|녹취자|기록자)$/i;
+  /^(?:interviewer|interviewee|narrator|respondent|host|guest|moderator|transcriber|translator|recorder)$/i;
 /** the roles that say who is TELLING: their name may pick the interviewee */
-const TELLER_ROLE = /^(?:interviewee|narrator|respondent|구술자|인터뷰이|응답자)$/i;
+const TELLER_ROLE = /^(?:interviewee|narrator|respondent)$/i;
 /** a person's name as a header value: short, no sentence */
 const NAME_VALUE = (v: string): boolean =>
-  v !== '' && v.length <= 50 && v.split(' ').length <= 6 && !/[?!。]|\.$/.test(v);
+  v !== '' && v.length <= 50 && v.split(' ').length <= 6 && !/[?!]|\.$/.test(v);
 
 /**
  * Lines that start with a speaker label. The whole document is looked at first, because a
- * line alone cannot say whether "Q." is a label, whether "[할머니]" is a name, or whether
+ * line alone cannot say whether "Q." is a label, whether "[Grandma]" is a name, or whether
  * "My father:" begins a sentence:
  *
  *   - "Q. …" / "A. …" are labels only when both recur
@@ -1446,7 +1434,7 @@ const NAME_VALUE = (v: string): boolean =>
  *     ("Rule one:", "Interview date:") is part of the sentence it starts
  *   - when the ONLY labels are the interviewer's ("Q:", "Interviewer:"), the unlabelled
  *     lines between them are the answers (speaker ANSWERS), not more of the question
- *   - a header block above the transcript ("Interviewee: Sunja Kim", "Date: …", "제목: …")
+ *   - a header block above the transcript ("Interviewee: Sunja Kim", "Date: …", "Title: …")
  *     and transcriber's notes are left out, and counted; "Interviewee: Sunja Kim" names the
  *     interviewee when exactly one speaker is that person
  *   - words before the first label are speech unless they say they are a header or a title
@@ -1463,7 +1451,7 @@ export function parseLabelled(text: string): RawParse | null {
     if (line !== '') nonEmpty++;
     const qa = QA_LINE.exec(line);
     if (qa) {
-      if (qa[1] === 'Q' || qa[1] === '문') q++;
+      if (qa[1] === 'Q') q++;
       else a++;
     }
     const b = BRACKET_LEAD.exec(line);
@@ -1532,7 +1520,7 @@ export function parseLabelled(text: string): RawParse | null {
 
   // The lead block: the rows above the first speaker turn. Only there can a line be a header:
   // "Interviewee: Sunja Kim" / "Interviewer: Noah Kim" (each role used once, its value a
-  // name), a field such as "제목: 할머니 구술" or "Sent: Monday" used once. A label used again
+  // name), a field such as "Title: Grandma's story" or "Sent: Monday" used once. A label used again
   // is a speaker wherever it is. It names people; it is nobody's words.
   let named: string | null = null;
   for (const r of rows) {
@@ -1649,9 +1637,8 @@ export function parseLabelled(text: string): RawParse | null {
   };
 }
 
-/** a question going on onto its next line: it ends with a question mark, or a Korean request */
-const ASKS_AT_END =
-  /(?:[?？]["”’')\]]*|(?:주세요|주시겠어요|주실래요|말씀해 ?주세요|들려주세요|해 ?보세요)[.!…]*)$/u;
+/** a question going on onto its next line: it ends with a question mark */
+const ASKS_AT_END = /\?["”’')\]]*$/u;
 
 /**
  * Header keys that are a speaker's label here: used at the start of two lines or more, with
@@ -1666,7 +1653,7 @@ function keysUsedAsLabels(lines: string[]): Set<string> {
     const u = uses.get(key) ?? { n: 0, speech: 0 };
     u.n++;
     const value = m[2]!;
-    if (!isPureTime(value) && (value.split(' ').length >= 3 || /[.!?…。]$/.test(value))) u.speech++;
+    if (!isPureTime(value) && (value.split(' ').length >= 3 || /[.!?…]$/.test(value))) u.speech++;
     uses.set(key, u);
   }
   return new Set([...uses].filter(([, u]) => u.n >= 2 && u.speech * 2 >= u.n).map(([k]) => k));

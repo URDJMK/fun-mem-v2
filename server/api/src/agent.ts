@@ -29,8 +29,8 @@ import {
   type Recorded,
   type Retrieve,
 } from './conflicts';
-import { checkGrounding } from './grounding-ko';
-import { acceptTitle, detectLang } from './ingest-lang';
+import { checkGrounding } from './grounding-check';
+import { acceptTitle } from './ingest-lang';
 import { memberRole, UUID_RE } from './membership';
 import { ApiError, createNoteCore, updateNoteCore, WRITE_ROLES } from './notes';
 import { hybridQuery } from './search';
@@ -561,7 +561,7 @@ function buildTools(run: Run) {
 
   const checkTitle = (target: string, raw: unknown): { error: string } | { title?: string } => {
     if (typeof raw !== 'string' || raw.trim() === '') return {};
-    const t = acceptTitle(raw, detectLang(run.evidence.join(' ')));
+    const t = acceptTitle(raw);
     if (t !== null) return { title: t };
     return refuse(
       run,

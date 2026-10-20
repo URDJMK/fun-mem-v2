@@ -124,10 +124,10 @@ describe('parseStream', () => {
       type: 'result',
       subtype: 'success',
       is_error: false,
-      result: '{"title":"국수"}',
+      result: '{"title":"Noodles"}',
       total_cost_usd: 0.01,
     });
-    expect(parseStream(`{"type":"partial\n${good}\n`, 0, '').text).toBe('{"title":"국수"}');
+    expect(parseStream(`{"type":"partial\n${good}\n`, 0, '').text).toBe('{"title":"Noodles"}');
   });
   it('notices a rate_limit_event without failing the call', () => {
     const good = JSON.stringify({
@@ -155,22 +155,22 @@ describe('parseStream', () => {
 });
 
 describe('coerceDraft', () => {
-  const req = { text: '할머니가 국수를 삶아 주셨다', media: null, titles: [] };
+  const req = { text: 'Grandma boiled noodles for us', media: null, titles: [] };
   it('reads a fenced object and keeps the contributor body when the model omits one', () => {
     const d = coerceDraft(
-      '```json\n{"title":"국수","type":"nonsense","occurred":"1987-03"}\n```',
+      '```json\n{"title":"Noodles","type":"nonsense","occurred":"1987-03"}\n```',
       req,
     )!;
-    expect(d.title).toBe('국수');
+    expect(d.title).toBe('Noodles');
     expect(d.type).toBe('event'); // unknown type is not trusted
     expect(d.occurred).toBe('1987-03'); // RAW; parseFuzzyDate is the arbiter downstream
     expect(d.body).toBe(req.text);
   });
   it('returns null rather than a half-draft on garbage', () => {
-    expect(coerceDraft('죄송합니다, 도와드릴 수 없습니다.', req)).toBeNull();
+    expect(coerceDraft('Sorry, I cannot help with that.', req)).toBeNull();
   });
   it('strips smuggled codepoints out of a model title', () => {
-    expect(coerceDraft('{"title":"국​수"}', req)!.title).toBe('국수');
+    expect(coerceDraft('{"title":"Noo\u{200B}dles"}', req)!.title).toBe('Noodles');
   });
 });
 

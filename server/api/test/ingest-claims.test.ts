@@ -20,9 +20,9 @@ describe("what an import compares with the archive: the relative's words only", 
     expect(claimsOf(body).join(' ')).toContain('apples');
   });
 
-  it('Korean Short answers lines too', () => {
+  it('Short answers lines in another script are cut the same way', () => {
     const body =
-      '- 어디서 태어나셨어요? — 부산이에요.\n- 학교는요? — 네.\n\n> “녹취”에서 옮김 · 김순자님 말씀 (0:03–1:10)';
-    expect(claimsOf(body)).toEqual(['부산이에요.', '네.']);
+      '- Где вы родились? — В Одессе.\n- А школа? — Да.\n\n> From “запись” · told by Grandma (0:03–1:10)';
+    expect(claimsOf(body)).toEqual(['В Одессе.', 'Да.']);
   });
 });

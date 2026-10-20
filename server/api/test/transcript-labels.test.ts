@@ -83,10 +83,10 @@ describe('labels the reader used to miss', () => {
     ).toBe('plain-text');
   });
 
-  it('NFD Hangul, zero-width characters, a BOM mid-file, NBSP, full-width brackets and colon, CR and U+2028', () => {
-    const ko =
-      '질문자: 어디서 태어나셨어요?\n할머니: 부산에서 태어났어요. 바닷가 작은 집이었지요.\n질문자: 아버지는요?\n할머니: 배를 고치셨어요.';
-    expect(who(ko.normalize('NFD'))).toEqual(['질문자', '할머니', '질문자', '할머니']);
+  it('NFD accents, zero-width characters, a BOM mid-file, NBSP, CR and U+2028', () => {
+    const accented =
+      'Interviewer: Where were you born?\nZoë: I was born in Busan, in a small house by the sea.\nInterviewer: And your father?\nZoë: He repaired boats.';
+    expect(who(accented.normalize('NFD'))).toEqual(['Interviewer', 'Zoë', 'Interviewer', 'Zoë']);
     const en =
       'Interviewer: Where were you born?\nGrandma: I was born in Busan.\nInterviewer: And your father?\nGrandma: He repaired boats.';
     const expected = ['Interviewer', 'Grandma', 'Interviewer', 'Grandma'];
@@ -95,23 +95,17 @@ describe('labels the reader used to miss', () => {
     expect(who(en.replace(/: /g, ' : '))).toEqual(expected);
     expect(who(en.replace(/\n/g, '\r'))).toEqual(expected);
     expect(who(en.replace(/\n/g, ' '))).toEqual(expected);
-    expect(who(en.replace(/: /g, '： '))).toEqual(expected);
-    expect(
-      who(
-        '［화자1］ 어디서 태어나셨어요?\n［화자2］ 부산에서 태어났어요.\n［화자1］ 아버지는요?\n［화자2］ 배를 고치셨어요.',
-      ),
-    ).toEqual(['화자1', '화자2', '화자1', '화자2']);
   });
 
-  it('"[할머니] text": a bracketed name with no colon, when a few names start most lines', () => {
+  it('"[Grandma] text": a bracketed name with no colon, when a few names start most lines', () => {
     const t = parseTranscript(
-      '[할머니] 부산에서 태어났어요.\n[손녀] 아버지는요?\n[할머니] 배를 고치셨어요.\n[손녀] 어머니는요?',
+      '[Grandma] I was born in Busan.\n[Granddaughter] And your father?\n[Grandma] He repaired boats.\n[Granddaughter] And your mother?',
     );
     expect(t.turns.map((x) => [x.speaker, x.text])).toEqual([
-      ['할머니', '부산에서 태어났어요.'],
-      ['손녀', '아버지는요?'],
-      ['할머니', '배를 고치셨어요.'],
-      ['손녀', '어머니는요?'],
+      ['Grandma', 'I was born in Busan.'],
+      ['Granddaughter', 'And your father?'],
+      ['Grandma', 'He repaired boats.'],
+      ['Granddaughter', 'And your mother?'],
     ]);
     // a clarification in brackets is never taken for a speaker
     const clar = parseTranscript(
@@ -139,9 +133,9 @@ describe('labels the reader used to miss', () => {
       '[SPEAKER_01]: Where were you born? [SPEAKER_00]: In Busan, by the sea. [SPEAKER_01]: Tell me about your father. [SPEAKER_00]: He repaired boats.';
     expect(who(wx)).toEqual(['SPEAKER_01', 'SPEAKER_00', 'SPEAKER_01', 'SPEAKER_00']);
     expect(codes(wx)).not.toContain('annotations_removed');
-    const ko =
-      '[화자1] 어디서 태어나셨어요? [화자2] 부산이요. 바닷가였지요.\n[화자1] 아버지는요? [화자2] 배를 고치셨어요.';
-    expect(said(ko, '화자2')).toBe('부산이요. 바닷가였지요. 배를 고치셨어요.');
+    const ids =
+      '[Speaker 1] Where were you born? [Speaker 2] In Busan, by the sea.\n[Speaker 1] And your father? [Speaker 2] He repaired boats.';
+    expect(said(ids, 'Speaker 2')).toBe('In Busan, by the sea. He repaired boats.');
     // one colon in a sentence never splits it
     expect(parseTranscript('He said: no. She said: yes. We left the next day.').turns).toHaveLength(
       1,

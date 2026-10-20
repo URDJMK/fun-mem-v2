@@ -1,17 +1,9 @@
 import { describe, expect, it } from 'vitest';
-import {
-  acceptTitle,
-  cleanLabel,
-  detectLang,
-  fallbackTitle,
-  honorific,
-  isPersonLabel,
-  languageOf,
-} from '../src/ingest-lang';
+import { acceptTitle, cleanLabel, fallbackTitle, isPersonLabel } from '../src/ingest-lang';
 import { checkTitleFacts } from '../src/title-check';
 
 /**
- * Titles, labels and language for interview notes: pure functions, no transcript reading.
+ * Titles and labels for interview notes: pure functions, no transcript reading.
  * (The pipeline-level behaviour is in ingest-pipeline.test.ts.)
  */
 
@@ -19,7 +11,7 @@ const SAID =
   'My father repaired boats in the harbour, and every Sunday he took me down to the pier with him.';
 
 describe('a fallback title is a phrase from what was said (A3)', () => {
-  const en = (s: string) => fallbackTitle(s, 'en');
+  const en = (s: string) => fallbackTitle(s);
 
   it('skips a leading "Yes." / "No." / "Well." when more follows', () => {
     expect(
@@ -66,29 +58,10 @@ describe('a fallback title is a phrase from what was said (A3)', () => {
     ).not.toMatch(/\b(?:the|and|with|my)$/i);
   });
 
-  it('Korean: the sentence after "네.", or the last clause boundary within 28 syllables', () => {
-    expect(
-      fallbackTitle(
-        '네. 2019년 봄에 아버지가 갑자기 쓰러지셨어요. 병원에 갔더니 폐암 말기라고 하더라고요. 의사 선생님이 석 달 정도 남았다고 했는데, 아버지는 그 말을 듣고도 아무 말씀이 없으셨어요.',
-        'ko',
-      ),
-    ).toBe('2019년 봄에 아버지가 갑자기 쓰러지셨어요');
-    const cut = fallbackTitle(
-      '그 뭐냐 어머니가 시장에서 생선을 파시던 그 가게는 아직도 거기에 있는데 내가 어릴 적에는 매일 거기서 놀았어요',
-      'ko',
-    );
-    expect(cut.replace(/\s/g, '').length).toBeLessThanOrEqual(28);
-    expect(cut.startsWith('어머니가')).toBe(true);
-    expect(cut).toMatch(/있는데$/);
-    expect(fallbackTitle('네. 네. 그랬죠. 아버지가요, 배를 고치셨어요.', 'ko')).toBe(
-      '아버지가요, 배를 고치셨어요',
-    );
-  });
-
   it('is never a link, a heading or markup, and a link reads as its words', () => {
-    const t = fallbackTitle('# My [[Dad]] was the #1 fan of the Yankees | always', 'en');
+    const t = fallbackTitle('# My [[Dad]] was the #1 fan of the Yankees | always');
     expect(t).not.toMatch(/[[\]#|]/);
-    expect(fallbackTitle('We lived by the [[Busan Harbour|harbour]] for years.', 'en')).toBe(
+    expect(fallbackTitle('We lived by the [[Busan Harbour|harbour]] for years.')).toBe(
       'We lived by the harbour for years',
     );
   });
@@ -108,7 +81,7 @@ describe('a model title may use new words, never new facts (A3)', () => {
       'Sundays at the pier with Grandma',
       'Sundays at the',
     ]) {
-      expect(acceptTitle(bad, 'en', SAID), bad).toBeNull();
+      expect(acceptTitle(bad, SAID), bad).toBeNull();
     }
   });
 
@@ -119,19 +92,17 @@ describe('a model title may use new words, never new facts (A3)', () => {
       'Sundays with Dad at the harbour',
       'Father and the boats',
     ]) {
-      expect(acceptTitle(good, 'en', SAID), good).toBe(good);
+      expect(acceptTitle(good, SAID), good).toBe(good);
     }
-    expect(acceptTitle('"Sundays at the pier."', 'en', SAID)).toBe('Sundays at the pier');
-    expect(acceptTitle('Yes My father repaired boats', 'en', SAID)).toBe(
-      'My father repaired boats',
-    );
+    expect(acceptTitle('"Sundays at the pier."', SAID)).toBe('Sundays at the pier');
+    expect(acceptTitle('Yes My father repaired boats', SAID)).toBe('My father repaired boats');
   });
 
   it('heavy facts and numbers are allowed when the speaker said them', () => {
     const said = 'My brother Tom drowned in 1952, the year the war ended for us.';
-    expect(acceptTitle('The year Tom drowned', 'en', said)).toBe('The year Tom drowned');
-    expect(acceptTitle('Tom, 1952', 'en', said)).toBe('Tom, 1952');
-    expect(acceptTitle('After the war', 'en', said)).toBe('After the war');
+    expect(acceptTitle('The year Tom drowned', said)).toBe('The year Tom drowned');
+    expect(acceptTitle('Tom, 1952', said)).toBe('Tom, 1952');
+    expect(acceptTitle('After the war', said)).toBe('After the war');
     expect(checkTitleFacts('Two boys and a girl', 'Three. Two boys and a girl.').ok).toBe(true);
     expect(checkTitleFacts('The winter of nineteen fifty-eight', 'That was 1958.').ok).toBe(true);
   });
@@ -140,85 +111,27 @@ describe('a model title may use new words, never new facts (A3)', () => {
     const said = 'My mother sold fish at the market and came home after sunset.';
     expect(checkTitleFacts("Mom's fish stall", said).ok).toBe(true);
     expect(checkTitleFacts("Grandma's fish stall", said).ok).toBe(false);
-    expect(checkTitleFacts('외할머니의 생선 가게', '어머니가 시장에서 생선을 파셨어요.').ok).toBe(
-      false,
-    );
-    expect(checkTitleFacts('엄마의 생선 가게', '어머니가 시장에서 생선을 파셨어요.').ok).toBe(true);
-  });
-
-  it('Korean: an invented name or heavy fact is refused, ordinary words are not', () => {
-    const said = '나는 부산에서 태어났어요. 어릴 때 바닷가 집에서 살았어요.';
-    expect(acceptTitle('부산의 바닷가 집', 'ko', said)).toBe('부산의 바닷가 집');
-    expect(acceptTitle('어린 시절의 기억', 'ko', said)).toBe('어린 시절의 기억');
-    expect(acceptTitle('서울에서 보낸 날들', 'ko', said)).toBeNull();
-    expect(acceptTitle('철수의 바닷가', 'ko', said)).toBeNull();
-    expect(acceptTitle('바닷가 집의 비밀', 'ko', said)).toBeNull();
-    expect(acceptTitle('아버지의 감옥 생활', 'ko', said)).toBeNull();
   });
 
   it('the old shape rules still hold', () => {
-    expect(acceptTitle('아버지의 배 수리', 'en', SAID)).toBeNull();
-    expect(acceptTitle('My father', 'ko', SAID)).toBeNull();
-    expect(acceptTitle('x'.repeat(61), 'en')).toBeNull();
-    expect(acceptTitle('Visit www.evil.example now', 'en', SAID)).toBeNull();
-    expect(acceptTitle('', 'en')).toBeNull();
-    expect(acceptTitle(42, 'en')).toBeNull();
+    expect(acceptTitle('Отец и лодки', SAID)).toBeNull();
+    expect(acceptTitle('x'.repeat(61))).toBeNull();
+    expect(acceptTitle('Visit www.evil.example now', SAID)).toBeNull();
+    expect(acceptTitle('')).toBeNull();
+    expect(acceptTitle(42)).toBeNull();
   });
 });
 
-describe('Korean honorifics (B8)', () => {
-  it('no 님 after a word that already carries respect or cannot take it; 선생 becomes 선생님', () => {
-    for (const n of [
-      '언니',
-      '오빠',
-      '누나',
-      '형',
-      '큰언니',
-      '큰누나',
-      '이모',
-      '고모',
-      '삼촌',
-      '할매',
-      '막내 삼촌',
-      '엄마',
-    ]) {
-      expect(honorific(n), n).toBe(n);
-    }
-    expect(honorific('김 선생')).toBe('김 선생님');
-    expect(honorific('막내 형')).toBe('막내 형');
-    expect(honorific('큰형')).toBe('큰형');
-    // a given name that ends like a kinship word is a name
-    expect(honorific('박준형')).toBe('박준형님');
-    expect(honorific('김순자 할머니')).toBe('김순자 할머니');
-    expect(honorific('김순자')).toBe('김순자님');
-    expect(honorific('김순자 (할머니)')).toBe('김순자 (할머니)');
-  });
-
+describe('labels (B8)', () => {
   it('is total: a non-string is empty, never a crash', () => {
-    expect(honorific(undefined)).toBe('');
-    expect(honorific(Object.prototype.toString)).toBe('');
     expect(cleanLabel(Object.prototype.constructor)).toBe('');
     expect(cleanLabel(null)).toBe('');
   });
 });
 
-describe('language detection weighs a Hangul syllable as the letters it is worth (B1)', () => {
-  it('decides by what dominates, with a fallback for digits alone', () => {
-    expect(detectLang('나는 LA에서 오래 살았어요')).toBe('ko');
-    expect(detectLang('We came to Los Angeles in 1975, 부산에서')).toBe('en');
-    // 5 syllables are worth 12.5 letters, more than the 8 of "Kim Sunja"
-    expect(detectLang('우리 어머니 Kim Sunja')).toBe('ko');
-    // 8 syllables against the 10 letters of "Los Angeles": counted one for one, this was "English"
-    expect(detectLang('Los Angeles에서 오래 살았어요')).toBe('ko');
-    expect(detectLang('Los Angeles에서 오래')).toBe('en');
-    expect(detectLang('1946.', 'ko')).toBe('ko');
-    expect(detectLang('I was born in 부산')).toBe('en');
-  });
-});
-
 describe('a speaker label is a name unless it names a voice (A4)', () => {
   it('tells "Grandpa Tae" from "SPEAKER_01"', () => {
-    for (const name of ['Grandpa Tae', '김순자', 'Mom', 'Grandma', 'constructor (speaker)']) {
+    for (const name of ['Grandpa Tae', 'Sunja Kim', 'Mom', 'Grandma', 'constructor (speaker)']) {
       expect(isPersonLabel(name), name).toBe(true);
     }
     for (const voice of [
@@ -235,9 +148,6 @@ describe('a speaker label is a name unless it names a voice (A4)', () => {
       'Q',
       'A',
       'B',
-      '화자 1',
-      '화자1',
-      '참석자 2',
       'Voice 3',
       '1',
       '',
@@ -248,36 +158,26 @@ describe('a speaker label is a name unless it names a voice (A4)', () => {
 });
 
 describe('invented facts in model titles are refused (round 2, G2-4)', () => {
-  const refused: Array<[string, 'en' | 'ko', string]> = [
-    ["Sunja's kitchen", 'en', 'My mother cooked every day in a tiny kitchen behind the shop.'],
-    ['Tom and the boat', 'en', 'My brother loved the boat more than anything.'],
-    ['Busan days', 'en', 'We lived by the sea when I was small.'],
-    ['Her second marriage', 'en', 'She married my father in the spring, in a small church.'],
-    ['Our third house', 'en', 'We moved into the house on the hill when I was ten.'],
-    ['The sixties in the city', 'en', 'When I was young we lived in the city.'],
-    ['A dozen children', 'en', 'There were many children in the village.'],
-    ['Twins in the family', 'en', 'My sister had two babies in one year.'],
-    ['Mother in the hospital', 'en', 'My mother was very tired that year.'],
-    ["Father's escape from the north", 'en', 'My father came south with nothing.'],
-    ['The fire that took the house', 'en', 'We lost the house that winter.'],
-    ['Half a century at the market', 'en', 'She sold fish at the market for forty years.'],
-    ['Six of us, and a seventh', 'en', 'There were six of us.'],
-    ['mr. park the teacher', 'en', 'Our teacher was very strict.'],
-    ['순자 이모의 집', 'ko', '이모가 저를 키워 주셨어요.'],
-    ['철수 삼촌과의 여름', 'ko', '삼촌이랑 바닷가에서 여름을 보냈어요.'],
-    ['영수와 바다', 'ko', '동생이랑 바다에 갔어요.'],
-    ['서울로 간 날', 'ko', '우리는 큰 도시로 이사를 갔어요.'],
-    ['부산 피난 시절', 'ko', '전쟁 때 남쪽으로 피난을 갔어요.'],
-    ['열 남매 중 셋째', 'ko', '형제가 여섯이었어요. 제가 둘째였어요.'],
-    ['두 번째 결혼', 'ko', '어머니는 아버지와 결혼하셨어요.'],
-    ['육십년대의 시장', 'ko', '젊을 때 시장에서 일했어요.'],
-    ['아버지의 병', 'ko', '아버지가 많이 피곤해 하셨어요.'],
-    ['박 선생님', 'ko', '선생님이 엄하셨어요.'],
+  const refused: Array<[string, string]> = [
+    ["Sunja's kitchen", 'My mother cooked every day in a tiny kitchen behind the shop.'],
+    ['Tom and the boat', 'My brother loved the boat more than anything.'],
+    ['Busan days', 'We lived by the sea when I was small.'],
+    ['Her second marriage', 'She married my father in the spring, in a small church.'],
+    ['Our third house', 'We moved into the house on the hill when I was ten.'],
+    ['The sixties in the city', 'When I was young we lived in the city.'],
+    ['A dozen children', 'There were many children in the village.'],
+    ['Twins in the family', 'My sister had two babies in one year.'],
+    ['Mother in the hospital', 'My mother was very tired that year.'],
+    ["Father's escape from the north", 'My father came south with nothing.'],
+    ['The fire that took the house', 'We lost the house that winter.'],
+    ['Half a century at the market', 'She sold fish at the market for forty years.'],
+    ['Six of us, and a seventh', 'There were six of us.'],
+    ['mr. park the teacher', 'Our teacher was very strict.'],
   ];
-  for (const [title, lang, said] of refused) {
+  for (const [title, said] of refused) {
     it(`refuses ${JSON.stringify(title)}`, () => {
       expect(checkTitleFacts(title, said).ok).toBe(false);
-      expect(acceptTitle(title, lang, said)).toBeNull();
+      expect(acceptTitle(title, said)).toBeNull();
     });
   }
 
@@ -290,14 +190,6 @@ describe('invented facts in model titles are refused (round 2, G2-4)', () => {
       ],
       ['The sixties in Seoul', 'We moved to Seoul in 1964 and stayed for ten years.'],
       ['Her second marriage', 'Her second marriage was to a fisherman from Busan.'],
-      ['자녀 아들 둘 딸 하나', '아들 둘에 딸 하나예요.'],
-      ['세 자녀 모두 대학 보낸 자랑', '세 아이가 다 대학에 간 거요. 아이들은 꼭 보내고 싶었어요.'],
-      ['남편 1999년 겨울 별세', '남편이 1999년 겨울에 돌아가셨을 때예요.'],
-      ['손주들에게 당부', '밥 잘 챙겨 먹고, 엄마 아빠한테 전화 자주 해라.'],
-      [
-        '아버지의 배 수리 일과 일요일 부두 구경',
-        '아버지는 배를 고치셨어요. 일요일마다 부두에 데리고 가서 배 구경을 시켜 주셨어요.',
-      ],
     ] as const) {
       expect(checkTitleFacts(title, said), title).toEqual({ ok: true });
     }
@@ -310,55 +202,23 @@ describe('invented facts in model titles are refused (round 2, G2-4)', () => {
       );
     const t0 = Date.now();
     expect(checkTitleFacts('Winters by the sea in 1946', said).ok).toBe(true);
-    expect(fallbackTitle(said, 'en')).toBe('In 1946 we lived by the sea');
+    expect(fallbackTitle(said)).toBe('In 1946 we lived by the sea');
     expect(Date.now() - t0).toBeLessThan(3000);
   });
 });
 
-describe('Korean footers and the language of each memory (round 2, G2-7)', () => {
-  it('no 님 after a name written in Latin letters, or after a dialect or household word', () => {
-    for (const n of [
-      'Grandma',
-      'Mom',
-      'Aunt Mae',
-      'Sunja Kim',
-      'Halmoni',
-      'Grace',
-      '어무이',
-      '엄니',
-      '아부지',
-      '아줌마',
-      '막내',
-      '둘째',
-    ]) {
-      expect(honorific(n), n).toBe(n);
-    }
-    expect(honorific('김순자')).toBe('김순자님');
-    expect(honorific('박준형')).toBe('박준형님');
-    expect(honorific('김 선생')).toBe('김 선생님');
-  });
-
-  it('a code-switching memory is Korean when Hangul carries two fifths of it; an English one with a Korean word stays English', () => {
+describe('the title of a memory with words in another script (round 2, G2-7)', () => {
+  it('the fallback title is a sentence these rules can read, when there is one', () => {
     expect(
-      languageOf(
-        '1975년에 LA로 갔어요. 우리 큰딸 Jenny가 그때 세 살이었어요. We lived on Western Avenue for two years, and then we moved.',
+      fallbackTitle(
+        'В 1975 году мы приехали в Лос-Анджелес. We lived on Western Avenue for two years.',
       ),
-    ).toBe('ko');
-    expect(
-      languageOf('We ate 김치 and 떡국 every New Year at my grandmother’s house in Busan.'),
-    ).toBe('en');
-    expect(languageOf('1946.', 'ko')).toBe('ko');
-  });
-
-  it('the fallback title is a sentence in the memory’s own language', () => {
-    expect(
-      fallbackTitle('1975년에 LA로 갔어요. We lived on Western Avenue for two years.', 'en'),
     ).toBe('We lived on Western Avenue for two years');
   });
 });
 
 describe('fallback titles end on a whole phrase and say something (round 2, G2-5)', () => {
-  const en = (s: string) => fallbackTitle(s, 'en');
+  const en = (s: string) => fallbackTitle(s);
 
   it('a long sentence is never cut mid-phrase, in English or another language', () => {
     expect(
@@ -409,31 +269,24 @@ describe('fallback titles end on a whole phrase and say something (round 2, G2-5
         'Let me think. It was the summer my mother opened the noodle shop on the corner by the station.',
       ),
     ).toBe('It was the summer my mother opened the noodle shop');
-    expect(fallbackTitle('저기 그 사진 좀 줘 봐. 이게 우리 아버지야.', 'ko')).toBe(
-      '이게 우리 아버지야',
-    );
-  });
-
-  it('Latin letters in a Korean sentence are not counted as syllables', () => {
-    expect(fallbackTitle('아버지는 LA downtown에서 grocery store를 하셨어요.', 'ko')).toBe(
-      '아버지는 LA downtown에서 grocery store를 하셨어요',
+    expect(en('Pass me the photo. This is my father in front of the shop he opened.')).toBe(
+      'This is my father in front of the shop he opened',
     );
   });
 
   it('is at most 60 characters', () => {
     for (const s of [
       'Supercalifragilisticexpialidocious '.repeat(4),
-      '아주아주아주아주아주아주아주아주아주아주아주아주아주아주아주아주아주아주아주아주아주아주아주아주아주아주아주아주아주아주아주 일이었어요.',
+      'Мы жили в маленьком доме у моря, и каждое утро отец уходил чинить лодки в порту до самого вечера.',
       'Mi abuela, que vivía en el pueblo de al lado con sus siete hermanos y sus padres, siempre cantaba.',
     ]) {
-      expect(fallbackTitle(s, /[가-힣]/.test(s) ? 'ko' : 'en').length).toBeLessThanOrEqual(60);
+      expect(fallbackTitle(s).length).toBeLessThanOrEqual(60);
     }
   });
 });
 
 describe('fallback titles read through abbreviations, skip a bare answer, are never empty (round 3, G2-B6, G2-F6)', () => {
-  const en = (s: string) => fallbackTitle(s, 'en');
-  const ko = (s: string) => fallbackTitle(s, 'ko');
+  const en = (s: string) => fallbackTitle(s);
 
   it('a period after an abbreviation does not end the sentence', () => {
     expect(en('We moved to St. Louis in 1952 and my father opened a shop on the corner.')).toBe(
@@ -490,22 +343,29 @@ describe('fallback titles read through abbreviations, skip a bare answer, are ne
     expect(en("I don't think so. We never went back to the village after the war.")).toBe(
       'We never went back to the village after the war',
     );
-    expect(ko('아니요, 전혀요. 선생님이 자로 때리셨어요.')).toBe('선생님이 자로 때리셨어요');
-    expect(ko('절대 아니에요. 아버지는 한 번도 손을 안 대셨어요.')).toBe(
-      '아버지는 한 번도 손을 안 대셨어요',
-    );
     // said alone, the answer is all there is, and it is the title
     expect(en('No, not at all.')).toBe('Not at all');
-    expect(ko('아니요, 전혀요.')).toBe('아니요, 전혀요');
   });
 
   it('is never empty, never punctuation alone and never invisible', () => {
-    for (const s of ['?!', '...', '— —', '', '   ', '"', '()', '…', '!!!', '「」', '[[ ]]', '​']) {
+    for (const s of [
+      '?!',
+      '...',
+      '— —',
+      '',
+      '   ',
+      '"',
+      '()',
+      '…',
+      '!!!',
+      '「」',
+      '[[ ]]',
+      '\u{200B}',
+    ]) {
       expect(en(s)).toBe('A memory');
-      expect(ko(s)).toBe('기억');
     }
-    expect(fallbackTitle(null, 'en')).toBe('A memory');
-    expect(fallbackTitle(undefined, 'ko')).toBe('기억');
+    expect(fallbackTitle(null)).toBe('A memory');
+    expect(fallbackTitle(undefined)).toBe('A memory');
   });
 
   it('stays linear on 400k characters of periods, abbreviations and closing quotes', () => {
@@ -518,21 +378,16 @@ describe('fallback titles read through abbreviations, skip a bare answer, are ne
     ]) {
       const t0 = performance.now();
       expect(en(s).length).toBeGreaterThan(0);
-      expect(ko(s).length).toBeGreaterThan(0);
       expect(performance.now() - t0).toBeLessThan(2000);
     }
   });
 });
 
-describe('title facts: places in an order, one-syllable Korean words, denials, plain-word facts (round 3, G2-B8)', () => {
+describe('title facts: places in an order, denials, plain-word facts (round 3, G2-B8)', () => {
   const S1 =
     'My father repaired fishing boats in Busan harbour. He worked from before dawn until after dark, and on Sundays he took us to church. I was the third of five children. My mother sold fish at the market and her hands always smelled of salt. In 1952 we moved to Daegu because my uncle found work for him at a textile factory.';
-  const S2 =
-    '우리 아버지는 부산 부두에서 배를 고치셨어요. 새벽부터 밤까지 일하셨고 일요일에는 우리를 교회에 데리고 가셨어요. 저는 오 남매 중에 셋째였어요. 어머니는 시장에서 생선을 파셨는데 손에서 늘 소금 냄새가 났어요. 1952년에 삼촌이 대구 방직공장에 일자리를 구해 주셔서 이사를 갔어요.';
   const S3 =
     'Mi madre vendía pescado en el mercado de Valparaíso. Mi padre arreglaba barcos. Éramos cinco hermanos y yo era el tercero.';
-  const S5 =
-    '저는 학교에 못 갔어요. 집에 돈이 없었거든요. 아버지는 술을 좋아하셨는데 쉰 살에 끊으셨어요.';
   const S6 =
     "My father lost his job at the mill in 1958 and we didn't have money for school. My brother went missing in the war and never came back. Mom said he was lost at sea.";
 
@@ -547,11 +402,6 @@ describe('title facts: places in an order, one-syllable Korean words, denials, p
       ['Lost in the market', S1],
       ['Mi abuela y el mercado', S3],
       ['Mi padre, el héroe', S3],
-      ['아버지가 술을 끊은 날', S2],
-      ['아버지의 술', S2],
-      ['어머니의 빚', S2],
-      ['우리 집 개', S2],
-      ['두번째 결혼', S2],
     ] as const) {
       expect(checkTitleFacts(title, said).ok, title).toBe(false);
     }
@@ -562,15 +412,7 @@ describe('title facts: places in an order, one-syllable Korean words, denials, p
       ['The third of five children', S1],
       ['Third of five children', S1],
       ['Five children', S1],
-      ['오 남매 중 셋째', S2],
-      ['세 번째 아이', S2],
-      ['고향의 봄', S2],
-      ['집 안 풍경', S2],
-      ['대구로 간 해', S2],
       ['Mi madre y el mercado', S3],
-      ['아버지가 술을 끊은 날', S5],
-      ['학교에 못 간 이야기', S5],
-      ['돈이 없던 시절', S5],
       ['How my father lost his job', S6],
       ['A brother lost at sea', S6],
       ['My brother never came back', S6],
@@ -580,26 +422,47 @@ describe('title facts: places in an order, one-syllable Korean words, denials, p
     }
   });
 
-  it('a denial needs a denial: "집 안" is inside, "안 간" is not going', () => {
-    for (const title of ['교회에 안 간 일요일', '교회에 못 간 일요일', '교회에 가지 않은 일요일']) {
-      expect(checkTitleFacts(title, S2), title).toEqual({ ok: false, reason: 'denial' });
-    }
-    expect(checkTitleFacts('교회에 간 일요일', S2).ok).toBe(true);
+  it('a denial needs a denial', () => {
     expect(checkTitleFacts('Father worked without rest', S1)).toEqual({
       ok: false,
       reason: 'denial',
     });
-    expect(checkTitleFacts('배 안에서', S2).ok).toBe(true);
-    expect(checkTitleFacts('학교에 가지 않은 날', S5).ok).toBe(true);
   });
 
   it('reads a 400,000-character source in linear time', () => {
     const said = 'My father worked at the harbour and we lived by the sea in 1952. '.repeat(6200);
     const t0 = Date.now();
     expect(checkTitleFacts('My father never lost his job at sea', said).ok).toBe(false);
-    expect(
-      checkTitleFacts('우리 집 안 풍경', `${'아버지는 부두에서 일하셨어요. '.repeat(25000)}`).ok,
-    ).toBe(true);
+    expect(checkTitleFacts('Отец в порту', 'Отец работал в порту. '.repeat(18000)).ok).toBe(true);
     expect(Date.now() - t0).toBeLessThan(3000);
+  });
+});
+
+describe('words in a script these rules do not read are opaque: kept as said, never trusted (English only)', () => {
+  it('a model title holding a letter of another script is never used, even one the speaker said', () => {
+    expect(acceptTitle('Москва days', 'We lived in Москва.')).toBeNull();
+    expect(acceptTitle('Ирина and the boat', 'My sister Ирина loved the boat.')).toBeNull();
+    expect(acceptTitle('Отец и лодки', 'Отец чинил лодки.')).toBeNull();
+  });
+
+  it('the facts check allows such a word only when the speaker said that very word', () => {
+    expect(checkTitleFacts('Ирина and the boat', 'My sister loved the boat.')).toEqual({
+      ok: false,
+      reason: 'word Ирина',
+    });
+    expect(checkTitleFacts('Ирина and the boat', 'My sister Ирина loved the boat.')).toEqual({
+      ok: true,
+    });
+    // another form of the word is another word: compared exactly
+    expect(checkTitleFacts('Ирины boat', 'My sister Ирина loved the boat.').ok).toBe(false);
+    expect(checkTitleFacts('Отец в порту', 'Мать работала в порту.').ok).toBe(false);
+  });
+
+  it('a memory told entirely in another script is titled with its own first words', () => {
+    expect(fallbackTitle('Мы жили у моря. Отец чинил лодки.')).toBe('Мы жили у моря');
+  });
+
+  it('a speaker label in another script is a name, written as it was given', () => {
+    expect(isPersonLabel('Ирина')).toBe(true);
   });
 });

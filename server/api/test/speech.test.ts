@@ -65,9 +65,8 @@ describe('English dates', () => {
     expect(readEnglishDate('I may go in March')).toBeNull();
   });
 
-  it('is what readFuzzyDate falls back to, and Korean still wins when present', () => {
+  it('is what readFuzzyDate reads in a sentence of English', () => {
     expect(readFuzzyDate('We married in June of nineteen sixty-seven.')).toBe('1967-06');
-    expect(readFuzzyDate('1987년 3월에 결혼했다')).toBe('1987-03');
   });
 });
 
@@ -113,9 +112,16 @@ describe('cleanSpeech', () => {
     );
   });
 
-  it('removes standalone Korean fillers only', () => {
-    expect(cleanSpeech('어 음 나는 부산에서 태어났어요.')).toBe('나는 부산에서 태어났어요.');
-    expect(cleanSpeech('어머니는 음식을 잘 하셨어요.')).toBe('어머니는 음식을 잘 하셨어요.');
+  it('leaves words in another script exactly as they were written', () => {
+    for (const said of [
+      'Мы жили у моря. Отец чинил лодки.',
+      'Ну, э-э, мы жили у моря.',
+      '我出生在釜山。我父亲是修船的。',
+      'ولدت في بوسان. كان أبي يصلح القوارب.',
+      'Γεννήθηκα στη Μπουσάν. Ο πατέρας μου έφτιαχνε βάρκες.',
+    ]) {
+      expect(cleanSpeech(said)).toBe(said);
+    }
   });
 });
 
@@ -175,6 +181,21 @@ describe('English dates: more forms, fewer guesses', () => {
     'She turned 1946 days old.',
     'We paid two thousand dollars for that first house.',
   ])('%s -> null', (text) => expect(readEnglishDate(text)).toBeNull());
+
+  it('a number glued to a letter of any script is not a year; a space makes it one again', () => {
+    for (const glued of [
+      'The 1960s were hard.',
+      'В 1946г родился брат.',
+      '我们有1946个。',
+      'Το 1946ος ήταν δύσκολος.',
+      'ولد في 1946م.',
+    ]) {
+      expect(readEnglishDate(glued)).toBeNull();
+    }
+    expect(readEnglishDate('В 1946 родился брат.')).toBe('1946');
+    expect(readEnglishDate('我们有 1946 个。')).toBe('1946');
+    expect(readEnglishDate('It was 1946, in the spring.')).toBe('1946');
+  });
 });
 
 describe('cleanSpeech never changes what a word means', () => {
@@ -187,7 +208,7 @@ describe('cleanSpeech never changes what a word means', () => {
 
   it('what is only a filler stays as it was said, unless the caller asks for nothing back', () => {
     expect(cleanSpeech('Mm-hm.')).toBe('Mm-hm.');
-    expect(cleanSpeech('음.')).toBe('음.');
+    expect(cleanSpeech('Um.')).toBe('Um.');
     expect(cleanSpeech('Mm-hm.', { keepFillerOnly: false })).toBe('');
     expect(cleanSpeech(' and then we went', { capitalize: false })).toBe('and then we went');
   });
@@ -203,13 +224,13 @@ describe('cleanSpeech is linear: no long run of anything makes it slow', () => {
     newlines: `a${'\n'.repeat(N)}b`,
     'alternating whitespace': `a${' \n'.repeat(N / 2)}b`,
     'one long word': 'a'.repeat(N),
-    'one long Korean word': '가'.repeat(N),
+    'one long word in another script': 'я'.repeat(N),
     'um um um': 'um '.repeat(N / 3),
     'um, um, um,': 'um, '.repeat(N / 4),
     'you know,': ', you know, '.repeat(N / 12),
     'I, I, I,': 'I, '.repeat(N / 3),
     commas: ','.repeat(N),
-    'korean fillers': '음 '.repeat(N / 3),
+    'short words in another script': 'да '.repeat(N / 3),
     sentences: 'a. '.repeat(N / 3),
   };
   for (const [name, text] of Object.entries(cases)) {

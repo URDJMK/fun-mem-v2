@@ -2,20 +2,23 @@ import { randomUUID } from 'node:crypto';
 import { afterAll, describe, expect, it } from 'vitest';
 import { ingestTranscript, parseProposals, type ChatModel } from '../src/ingest';
 import { assignRoles, parseTranscript, toSeconds } from '../src/transcript';
-import { acceptTitle, detectLang, fallbackTitle, honorific } from '../src/ingest-lang';
-import { checkGrounding } from '../src/grounding-ko';
+import { acceptTitle, fallbackTitle } from '../src/ingest-lang';
+import { checkGrounding } from '../src/grounding-check';
 import { testContext } from './helpers';
+
+/** a letter of a script other than the Latin alphabet */
+const OTHER_SCRIPT = /(?![\p{Script=Latin}\p{Script=Common}\p{Script=Inherited}])\p{L}/u;
 
 /* ── parsing: pure, no database ──────────────────────────────────────── */
 
 describe('transcript parsing', () => {
   it('reads WhisperX segments JSON and merges back-to-back turns by one speaker', () => {
     const t = parseTranscript({
-      language: 'ko',
+      language: 'en',
       segments: [
-        { start: 0, end: 4.2, text: ' 어머니는 어디서 태어나셨어요?', speaker: 'SPEAKER_01' },
-        { start: 4.2, end: 9, text: ' 부산에서 태어나셨지.', speaker: 'SPEAKER_00' },
-        { start: 9, end: 14, text: ' 바닷가 집이었어.', speaker: 'SPEAKER_00' },
+        { start: 0, end: 4.2, text: ' Where was your mother born?', speaker: 'SPEAKER_01' },
+        { start: 4.2, end: 9, text: ' She was born in Busan.', speaker: 'SPEAKER_00' },
+        { start: 9, end: 14, text: ' In a house by the sea.', speaker: 'SPEAKER_00' },
       ],
     });
     expect(t.format).toBe('segments-json');
@@ -24,45 +27,47 @@ describe('transcript parsing', () => {
       speaker: 'SPEAKER_00',
       start: 4.2,
       end: 14,
-      text: '부산에서 태어나셨지. 바닷가 집이었어.',
+      text: 'She was born in Busan. In a house by the sea.',
     });
   });
 
   it('reads the same JSON as a string, and a bare array', () => {
-    const seg = [{ start: 1, end: 2, text: '안녕', speaker: 'A' }];
+    const seg = [{ start: 1, end: 2, text: 'Hello', speaker: 'A' }];
     expect(parseTranscript(JSON.stringify({ segments: seg })).turns).toHaveLength(1);
     expect(parseTranscript(JSON.stringify(seg)).turns).toHaveLength(1);
   });
 
   it('uses one anonymous voice when diarization did not run', () => {
-    const t = parseTranscript({ segments: [{ start: 0, end: 1, text: '혼자 말합니다' }] });
+    const t = parseTranscript({ segments: [{ start: 0, end: 1, text: 'I am talking to myself' }] });
     expect(t.turns[0]!.speaker).toBe('SPEAKER_00');
   });
 
   it('reads labelled text with timestamps, and treats unlabelled lines as continuations', () => {
     const t = parseTranscript(
       [
-        '[00:05] 인터뷰어: 그때 몇 살이셨어요?',
-        '[00:09] 김순자: 열일곱이었지.',
-        '그해 겨울에 시집을 갔어.',
-        'SPEAKER_00 [01:02 - 01:10]: 또 있어',
+        '[00:05] Interviewer: How old were you then?',
+        '[00:09] Sunja Kim: Seventeen.',
+        'I got married that winter.',
+        'SPEAKER_00 [01:02 - 01:10]: There is more',
       ].join('\n'),
     );
     expect(t.format).toBe('labelled-text');
-    expect(t.turns.map((x) => x.speaker)).toEqual(['인터뷰어', '김순자', 'SPEAKER_00']);
-    expect(t.turns[1]).toMatchObject({ start: 9, text: '열일곱이었지. 그해 겨울에 시집을 갔어.' });
+    expect(t.turns.map((x) => x.speaker)).toEqual(['Interviewer', 'Sunja Kim', 'SPEAKER_00']);
+    expect(t.turns[1]).toMatchObject({ start: 9, text: 'Seventeen. I got married that winter.' });
     expect(t.turns[2]).toMatchObject({ start: 62, end: 70 });
   });
 
   it('does not mistake one colon in prose for a transcript', () => {
-    const t = parseTranscript('그날 일이 기억나요: 비가 왔어요.\n그리고 아버지가 오셨어요.');
+    const t = parseTranscript(
+      'I remember that day: it was raining.\nAnd then my father came home.',
+    );
     expect(t.format).toBe('plain-text');
     expect(t.turns).toHaveLength(2);
   });
 
   it('rejects empty and oversized input', () => {
     expect(() => parseTranscript('   ')).toThrow();
-    expect(() => parseTranscript('가'.repeat(400_001))).toThrow();
+    expect(() => parseTranscript('a'.repeat(400_001))).toThrow();
     expect(() => parseTranscript({ segments: [] })).toThrow();
   });
 
@@ -76,11 +81,11 @@ describe('transcript parsing', () => {
 
   it('picks the interviewee by who talked most, unless told otherwise', () => {
     const { turns } = parseTranscript(
-      '질문자: 어디서 태어나셨어요?\n할머니: 부산에서 태어났고 바닷가에서 자랐어요 정말 오래전 이야기예요',
+      'Interviewer: Where were you born?\nGrandma: I was born in Busan and grew up by the sea, it is a very old story now',
     );
-    expect(assignRoles(turns).interviewee).toBe('할머니');
-    expect(assignRoles(turns, '질문자').interviewee).toBe('질문자');
-    expect(assignRoles(turns, '없는사람').interviewee).toBe('할머니');
+    expect(assignRoles(turns).interviewee).toBe('Grandma');
+    expect(assignRoles(turns, 'Interviewer').interviewee).toBe('Interviewer');
+    expect(assignRoles(turns, 'Nobody').interviewee).toBe('Grandma');
   });
 });
 
@@ -101,10 +106,10 @@ describe('model output parsing', () => {
 /* ── the pipeline, with a fake model ─────────────────────────────────── */
 
 const TRANSCRIPT = [
-  '질문자: 어린 시절 이야기를 들려주세요.',
-  '할머니: 나는 부산에서 태어났어요. 어릴 때 바닷가 집에서 살았어요.',
-  '질문자: 어머니는 어떤 분이셨어요?',
-  '할머니: 어머니는 국수를 잘 삶으셨어요. 여름마다 마당에서 국수를 삶아 주셨어요.',
+  'Interviewer: Tell me about your childhood.',
+  'Grandma: I was born in Busan. When I was little we lived in a house by the sea.',
+  'Interviewer: What was your mother like?',
+  'Grandma: My mother was good at boiling noodles. Every summer she boiled noodles for us in the yard.',
 ].join('\n');
 
 const fakeChat = (
@@ -119,13 +124,15 @@ const fake = (reply: string): ChatModel => ({ id: 'fake', complete: async () => 
 describe('ingest pipeline', () => {
   it("without a model, groups the speaker's own words by the question that prompted them", async () => {
     const r = await ingestTranscript(TRANSCRIPT, {}, { chat: null, titles: [] });
-    expect(r.interviewee).toBe('할머니');
+    expect(r.interviewee).toBe('Grandma');
     expect(r.memories).toHaveLength(2);
     expect(r.memories.every((m) => m.method === 'verbatim')).toBe(true);
-    expect(r.memories[0]!.body).toContain('부산에서 태어났어요');
+    expect(r.memories[0]!.body).toContain('I was born in Busan');
     // the interviewer is never testimony: only the labelled question line in the footer
-    expect(r.memories.map((m) => m.body.split('\n\n> ')[0]).join(' ')).not.toContain('들려주세요');
-    expect(r.memories[0]!.body).toContain('> 질문: “어린 시절 이야기를 들려주세요.”');
+    expect(r.memories.map((m) => m.body.split('\n\n> ')[0]).join(' ')).not.toContain(
+      'Tell me about your childhood',
+    );
+    expect(r.memories[0]!.body).toContain('> Question: “Tell me about your childhood.”');
   });
 
   it("keeps a model rewrite that is provable from the speaker's words", async () => {
@@ -134,21 +141,21 @@ describe('ingest pipeline', () => {
         memories: [
           {
             turns: [1],
-            title: '부산의 바닷가 집',
-            body: '나는 부산에서 태어났어요. 어릴 때 바닷가 집에서 살았어요.',
+            title: 'A house by the sea in Busan',
+            body: 'I was born in Busan. When I was little we lived in a house by the sea.',
           },
           {
             turns: [3],
-            title: '어머니의 국수',
-            body: '어머니는 국수를 잘 삶으셨어요. 여름마다 마당에서 국수를 삶아 주셨어요.',
+            title: "My mother's noodles",
+            body: 'My mother was good at boiling noodles. Every summer she boiled noodles for us in the yard.',
           },
         ],
       }),
     );
     const r = await ingestTranscript(TRANSCRIPT, {}, { chat, titles: [] });
     expect(r.memories.map((m) => m.method)).toEqual(['ai-grounded', 'ai-grounded']);
-    expect(r.memories[0]!.title).toBe('부산의 바닷가 집');
-    expect(r.memories[0]!.body).toContain('인터뷰 녹취에서 옮김');
+    expect(r.memories[0]!.title).toBe('A house by the sea in Busan');
+    expect(r.memories[0]!.body).toContain('From the interview transcript');
   });
 
   it('throws away a rewrite that invents something, and keeps what was said', async () => {
@@ -157,21 +164,21 @@ describe('ingest pipeline', () => {
         memories: [
           {
             turns: [1],
-            title: '부산',
-            body: '나는 부산에서 태어났어요. 아버지는 선장이었고 폭풍우 속에서 돌아가셨어요.',
+            title: 'Busan',
+            body: 'I was born in Busan. My father was a captain and died in a storm.',
           },
           {
             turns: [3],
-            title: '국수',
-            body: '어머니는 국수를 잘 삶으셨어요. 여름마다 마당에서 국수를 삶아 주셨어요.',
+            title: 'Noodles',
+            body: 'My mother was good at boiling noodles. Every summer she boiled noodles for us in the yard.',
           },
         ],
       }),
     );
     const r = await ingestTranscript(TRANSCRIPT, {}, { chat, titles: [] });
     expect(r.memories[0]!.method).toBe('verbatim');
-    expect(r.memories[0]!.body).not.toContain('선장');
-    expect(r.memories[0]!.body).toContain('바닷가 집에서 살았어요');
+    expect(r.memories[0]!.body).not.toContain('captain');
+    expect(r.memories[0]!.body).toContain('a house by the sea');
     expect(r.memories[1]!.method).toBe('ai-grounded');
   });
 
@@ -181,15 +188,15 @@ describe('ingest pipeline', () => {
         memories: [
           {
             turns: [1],
-            title: '부산',
-            body: '나는 부산에서 태어났어요. 어릴 때 바닷가 집에서 살았어요.',
+            title: 'Busan',
+            body: 'I was born in Busan. When I was little we lived in a house by the sea.',
           },
         ],
       }),
     );
     const r = await ingestTranscript(TRANSCRIPT, {}, { chat: partial, titles: [] });
     expect(r.memories).toHaveLength(2);
-    expect(r.memories[1]!.body).toContain('국수를 잘 삶으셨어요');
+    expect(r.memories[1]!.body).toContain('good at boiling noodles');
 
     const broken: ChatModel = {
       id: 'broken',
@@ -205,11 +212,13 @@ describe('ingest pipeline', () => {
   it('ignores turn numbers the model made up or took from the interviewer', async () => {
     const chat = fake(
       JSON.stringify({
-        memories: [{ turns: [0, 99], title: '질문', body: '어린 시절 이야기를 들려주세요.' }],
+        memories: [{ turns: [0, 99], title: 'Question', body: 'Tell me about your childhood.' }],
       }),
     );
     const r = await ingestTranscript(TRANSCRIPT, {}, { chat, titles: [] });
-    expect(r.memories.map((m) => m.body.split('\n\n> ')[0]).join(' ')).not.toContain('들려주세요');
+    expect(r.memories.map((m) => m.body.split('\n\n> ')[0]).join(' ')).not.toContain(
+      'Tell me about your childhood',
+    );
     expect(r.memories).toHaveLength(2);
   });
 
@@ -217,11 +226,11 @@ describe('ingest pipeline', () => {
     const r = await ingestTranscript(
       {
         segments: [
-          { start: 0, end: 3, text: '어디서 태어나셨어요?', speaker: 'Q' },
+          { start: 0, end: 3, text: 'Where were you born?', speaker: 'Q' },
           {
             start: 3,
             end: 20,
-            text: '나는 부산에서 태어나서 바닷가 집에서 자랐어요 정말 그랬어요.',
+            text: 'I was born in Busan and grew up in a house by the sea, that is how it was.',
             speaker: 'A',
           },
         ],
@@ -251,25 +260,18 @@ const EN = [
   },
 ];
 
-describe("language: the output is in the speaker's language", () => {
-  it('detects Korean and English', () => {
-    expect(detectLang('나는 부산에서 태어났어요')).toBe('ko');
-    expect(detectLang('I was born in Busan')).toBe('en');
-    expect(detectLang('I was born in 부산')).toBe('en');
-  });
-
+describe('language: the notes are English, and a title is never a translation', () => {
   it('writes an English interview with an English footer and English notes', async () => {
     const r = await ingestTranscript({ segments: EN }, {}, { chat: null, titles: [] });
-    expect(r.language).toBe('en');
     expect(r.memories).toHaveLength(2);
     for (const m of r.memories) {
       expect(m.body).toContain('From the interview transcript');
-      expect(m.body).not.toMatch(/[가-힣]/);
-      expect(m.notes.join(' ')).not.toMatch(/[가-힣]/);
+      expect(m.body).not.toMatch(OTHER_SCRIPT);
+      expect(m.notes.join(' ')).not.toMatch(OTHER_SCRIPT);
     }
   });
 
-  it('keeps an English model title, but never a translated one', async () => {
+  it('keeps an English model title, but never one in another script', async () => {
     const good = fakeChat([
       {
         turns: [1],
@@ -278,7 +280,7 @@ describe("language: the output is in the speaker's language", () => {
       },
       {
         turns: [3],
-        title: '어머니의 시장',
+        title: 'Мамин рынок',
         body: 'My mother sold fish at the market. She left at four in the morning and came home after sunset, and she always bought me a piece of taffy.',
       },
     ]);
@@ -286,7 +288,7 @@ describe("language: the output is in the speaker's language", () => {
     expect(r.memories[0]!.method).toBe('ai-grounded');
     // a title may be NEW words (the body may not)
     expect(r.memories[0]!.title).toBe("My father's boat yard");
-    // a Korean title on an English interview is rejected; the fallback is English
+    // a title in another script is not used; the fallback is the speaker's own words
     expect(r.memories[1]!.title).toBe('My mother sold fish at the market');
   });
 
@@ -423,24 +425,24 @@ describe('what the reader of a note gets', () => {
 });
 
 describe('short questions', () => {
-  it('keeps a short question in either language: "어머니는요?" and "And then?" (round 2: any length)', async () => {
-    const ko = await ingestTranscript(
+  it('keeps a short question: "Your mother?" and "And then?" (round 2: any length)', async () => {
+    const mother = await ingestTranscript(
       {
         interviewee: 'A',
         segments: [
-          { start: 0, end: 2, speaker: 'Q', text: '어머니는요?' },
+          { start: 0, end: 2, speaker: 'Q', text: 'Your mother?' },
           {
             start: 2,
             end: 30,
             speaker: 'A',
-            text: '어머니는 시장에서 생선을 파셨어요. 새벽 네 시에 나가서 해가 지면 오셨어요.',
+            text: 'My mother sold fish at the market. She left at four in the morning and came home after sunset.',
           },
         ],
       },
       {},
       { chat: null, titles: [] },
     );
-    expect(ko.memories[0]!.body).toContain('> 질문: “어머니는요?”');
+    expect(mother.memories[0]!.body).toContain('> Question: “Your mother?”');
     const en = await ingestTranscript(
       {
         interviewee: 'A',
@@ -461,44 +463,26 @@ describe('short questions', () => {
   });
 });
 
-describe('Korean honorifics', () => {
-  it('adds 님 to a plain name and never doubles one that already carries a title', () => {
-    expect(honorific('김순자')).toBe('김순자님');
-    expect(honorific('김순자 할머니')).toBe('김순자 할머니');
-    expect(honorific('박 선생님')).toBe('박 선생님');
-    expect(honorific('이 어르신')).toBe('이 어르신');
-    expect(honorific('  김순자 ')).toBe('김순자님');
-  });
-});
-
 describe('titles', () => {
-  it('accepts a phrase in the right script, rejects wrong script, links and long ones', () => {
-    expect(acceptTitle("My father's boat yard.", 'en')).toBe("My father's boat yard");
-    expect(acceptTitle('아버지의 배 수리', 'ko')).toBe('아버지의 배 수리');
-    expect(acceptTitle('아버지의 배 수리', 'en')).toBeNull();
-    expect(acceptTitle('My father', 'ko')).toBeNull();
-    expect(acceptTitle('See [[Mom]]', 'en')).toBe('See Mom');
-    expect(acceptTitle('x'.repeat(61), 'en')).toBeNull();
-    expect(acceptTitle('', 'en')).toBeNull();
+  it('accepts a phrase in the Latin alphabet, rejects another script, links and long ones', () => {
+    expect(acceptTitle("My father's boat yard.")).toBe("My father's boat yard");
+    expect(acceptTitle('Лодки моего отца')).toBeNull();
+    expect(acceptTitle('See [[Mom]]')).toBe('See Mom');
+    expect(acceptTitle('x'.repeat(61))).toBeNull();
+    expect(acceptTitle('')).toBeNull();
   });
 
   it('falls back to the opening words without fillers, cut at a word boundary', () => {
     expect(
-      fallbackTitle(
-        'Um, I was born in 1941 in a small fishing town on the south coast of Korea.',
-        'en',
-      ),
+      fallbackTitle('Um, I was born in 1941 in a small fishing town on the south coast of Korea.'),
     ).toBe('I was born in 1941 in a small fishing town');
-    expect(fallbackTitle('어 음 나는 1941년에 통영에서 태어났어요. 바닷가였어요.', 'ko')).toBe(
-      '나는 1941년에 통영에서 태어났어요',
-    );
-    expect(fallbackTitle('so, well, my father repaired boats. He had big hands.', 'en')).toBe(
+    expect(fallbackTitle('so, well, my father repaired boats. He had big hands.')).toBe(
       'My father repaired boats',
     );
   });
 
   it('a long English sentence is cut where a clause ends, never on a word that needs a follower', () => {
-    const t = (s: string) => fallbackTitle(s, 'en');
+    const t = (s: string) => fallbackTitle(s);
     expect(
       t('We lived in a shack made of scrap boards and the wind came through the walls in winter.'),
     ).toBe('We lived in a shack made of scrap boards');
@@ -541,7 +525,7 @@ describe('POST /ingest', () => {
     expect(res.status).toBe(200);
     const body = (await res.json()) as { memories: unknown[]; interviewee: string };
     expect(body.memories).toHaveLength(2);
-    expect(body.interviewee).toBe('할머니');
+    expect(body.interviewee).toBe('Grandma');
 
     const notes = (await (
       await ctx.api(owner.token, 'GET', `/v1/archives/${archive}/notes`)

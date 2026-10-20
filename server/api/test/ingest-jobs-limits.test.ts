@@ -258,7 +258,7 @@ describe('the list of imports, and the names an import is given', () => {
 
   it('a file name that arrives decomposed (macOS) is written composed, in the notes and in the record', async () => {
     const { owner, archive, post } = await setup('nfc');
-    const nfd = `José 할머니 녹음 ${RUN}.txt`.normalize('NFD');
+    const nfd = `José and Grand-mère Zoë recording ${RUN}.txt`.normalize('NFD');
     const nfc = nfd.normalize('NFC');
     expect(nfd).not.toBe(nfc);
     const out = (await (

@@ -1,4 +1,4 @@
-import { checkGrounding, eojeols } from './grounding-ko';
+import { checkGrounding, textWords } from './grounding-check';
 import { spokenNumbersToDigits, spokenYearsToDigits } from './speech';
 
 /**
@@ -134,13 +134,7 @@ export function contentWords(sentence: string): string[] {
   // brackets left over after the links are read (an unclosed "[[") are never words, and the word
   // splitter's own link pattern is quadratic on a run of them: they go first
   const t = displayText(spoken(sentence)).replace(/[[\]]/g, ' ').toLowerCase();
-  return [
-    ...new Set(
-      eojeols(t).filter(
-        (w) => !/\d/.test(w) && (/[가-힣]/.test(w) ? w.length >= 2 : w.length >= 4),
-      ),
-    ),
-  ];
+  return [...new Set(textWords(t).filter((w) => !/\d/.test(w) && w.length >= 4))];
 }
 
 /** "y1984" for a year, "n42" for any other number: only like is compared with like. */
@@ -233,8 +227,8 @@ function numbersDiffer(a: string, b: string): boolean {
  *          clause's other subject words all count, as subject and (people only) as object:
  *          "I lost my husband" is not "I lost my son".
  *   WHAT   the same event: the same event verbs (bought is not sold, born is not died, moved
- *          in is not moved out, 입학 is not 졸업, 이사 왔다 is not 떠났다), and the rest of the
- *          words mostly shared (at least 0.6 of the shorter clause).
+ *          in is not moved out), and the rest of the words mostly shared (at least 0.6 of the
+ *          shorter clause).
  *   WHICH  a number of the same kind AND unit (a year with a year, "four children" with "five
  *          children", never twelve hours with thirty years, never an age with a year), stated
  *          plainly ("around 1950", "the 1950s", "after 1950" are not points) and different.
@@ -258,7 +252,7 @@ function numbersDiffer(a: string, b: string): boolean {
 
 interface Num {
   kind: 'year' | 'count';
-  /** what is counted, singular ("child", "year", "명"); '' when nothing says */
+  /** what is counted, singular ("child", "year"); '' when nothing says */
   unit: string;
   value: number;
   /** "around 1950", "the 1950s", "after 1950", "1950 or 1951": not a point to compare */
@@ -274,11 +268,11 @@ interface Fact {
   verbs: Set<string>;
   /** it happens once to its subject (a birth, a death, a wedding, the flood): a year can clash */
   once: boolean;
-  /** "every winter", "always", "매년": a habit, not one moment */
+  /** "every winter", "always": a habit, not one moment */
   habitual: boolean;
   /**
-   * Said of NOW, the day it was told: "I am 82", "I have three grandchildren", "저는 올해
-   * 82살이에요". True when said, and different a year later.
+   * Said of NOW, the day it was told: "I am 82", "I have three grandchildren". True when said,
+   * and different a year later.
    */
   present: boolean;
   /** the rest of its words, for "mostly the same words" */
@@ -491,7 +485,7 @@ const MILESTONE_EN =
  * store closed in 1980" and "...in 1990" may be two stores, or one that opened again.
  */
 const INSTITUTIONS = new Set(
-  'factory mill store shop plant mine school church company business restaurant bank hospital market theater theatre cinema office firm 공장 가게 학교 교회 회사 광산 식당 은행 병원 시장 극장'.split(
+  'factory mill store shop plant mine school church company business restaurant bank hospital market theater theatre cinema office firm'.split(
     ' ',
   ),
 );
@@ -501,22 +495,18 @@ const INSTITUTIONS = new Set(
  */
 const ONCE_WITH_OBJECT = new Set('bought sold built started lost'.split(' '));
 /** one-off events a life can hold more than one of: "the war" may be either of two, unless named */
-const QUALIFY_NOUNS = new Set('war fire 전쟁 화재'.split(' '));
-/** a family word that can be any of several people ("my brother", 동생): one of them by name or rank only */
+const QUALIFY_NOUNS = new Set('war fire'.split(' '));
+/** a family word that can be any of several people ("my brother"): one of them by name or rank only */
 const KIN_MANY = new Set(
-  (
-    'son daughter child brother sister sibling cousin uncle aunt nephew niece grandson granddaughter grandchild ' +
-    '아들 딸 아이 형 누나 언니 오빠 동생 남동생 여동생 사촌 삼촌 외삼촌 이모 고모 큰아버지 작은아버지 큰어머니 ' +
-    '작은어머니 조카 손자 손녀 손주 형제 남매 자매'
-  ).split(' '),
+  'son daughter child brother sister sibling cousin uncle aunt nephew niece grandson granddaughter grandchild'.split(
+    ' ',
+  ),
 );
 /** subjects a family's story has more than one of: a pet, a priest, a teacher, a friend */
 const NOT_ONE_PERSON = new Set(
-  (
-    'dog cat cow horse pig puppy kitten bird chicken pet priest pastor minister teacher doctor nurse ' +
-    'neighbor neighbour friend boss landlord maid servant soldier 개 강아지 고양이 소 말 돼지 닭 새 ' +
-    '신부 목사 선생 선생님 의사 간호사 이웃 친구 사장'
-  ).split(' '),
+  'dog cat cow horse pig puppy kitten bird chicken pet priest pastor minister teacher doctor nurse neighbor neighbour friend boss landlord maid servant soldier'.split(
+    ' ',
+  ),
 );
 /** events that happen again and again: an age or a count "when we moved" is one of many moments */
 const POINT_EVENTS = new Set(
@@ -532,17 +522,14 @@ const ONE_THING_EN =
   /\b(?:sold|sell|sells|selling|bought|buy|buys|buying|purchased|built|build|builds|started|start|starts|began|begin|begins|opened|founded|joined)\s+(?:off\s+|up\s+|out\s+|working\s+|work\s+|to work\s+)?(?:at\s+|in\s+|with\s+|for\s+)?(?:the|our|my|his|her|their|its|this|that|[a-z]+'s)\s+(?:(?:old|new|big|small|little|family|first|only|whole)\s+)?([a-z]+)\b/;
 const ONE_THING_PASSIVE_EN =
   /^(?:the|our|my|his|her|their|its|this|that|[a-z]+'s)\s+(?:(?:old|new|big|small|little|family|first|only|whole)\s+)?([a-z]+)(?:\s+(?:on|in|at|of|near|by)\s+[a-z]+(?:\s+[a-z]+)?)?\s+(?:was|got)\s+(?:sold|bought|built)\b/;
-/** "우리 농장을", "그 집을": Korean has no "the"; only whose or which makes it one thing */
-const ONE_THING_KO = /(?:^|\s)(?:우리|저희|제|내|그|이|저)\s+[가-힣]+(?:을|를|은|는|이|가)(?:\s|$)/;
 const pluralNoun = (w: string): boolean => /s$/.test(w) && !/(?:ss|us|is)$/.test(w);
-/** a subject that is itself a one-off event, when something says which: "the Korean War", "our wedding" */
+/** a subject that is itself a one-off event, when something says which: "the Vietnam War", "our wedding" */
 const ONCE_NOUNS = new Set(
-  'flood fire war funeral wedding earthquake typhoon hurricane accident crash explosion burial revolution eruption 홍수 화재 전쟁 장례 장례식 결혼식 지진 태풍 사고 폭발 혁명'.split(
+  'flood fire war funeral wedding earthquake typhoon hurricane accident crash explosion burial revolution eruption'.split(
     ' ',
   ),
 );
 const HABITUAL_EN = /\b(?:every|each|always|usually|often|sometimes|whenever|used to)\b/;
-const HABITUAL_KO = /매년|해마다|매일|날마다|항상|자주|가끔|마다/;
 /**
  * A clause about NOW (see Fact.present): a present or future verb, or a word for the time of
  * telling. "Sunja is 81" and her own "I am 82" a year later are both true; so are "I have three
@@ -550,19 +537,15 @@ const HABITUAL_KO = /매년|해마다|매일|날마다|항상|자주|가끔|마�
  */
 const PRESENT_EN =
   /\b(?:am|is|are|has|have|'m|'re|'ve|will|'ll|turned|turns|lives|owns|nowadays|currently|today|this year|next year)\b|(?<!^)\bnow\b/;
-const PRESENT_KO_WORDS = /(?:^|\s)(?:지금|현재|올해|요즘|이제|아직)(?:\s|$|은|도|까지)/;
-/** a Korean clause that ends in the present: 이에요/예요/입니다/있어요/있다/계세요... (not 었/았/였) */
-const PRESENT_KO_END =
-  /(?:이에요|예요|입니다|이야|있어요|있다|있습니다|있죠|있지|살아요|사세요|계세요|계십니다)$/;
 /** the word before a number that makes it a label: "part 7", "room 12", "route 66" */
 const LABEL_BEFORE =
-  /(?:\b(?:part|parts|chapter|page|pages|number|no|room|route|flight|bus|line|apartment|apt|unit|platform|gate|track|highway|exit|block|ward|bed|lot|plot|box|section|volume|vol|episode|season|verse|psalm|hymn|channel|station|item|step|level|floor|ticket|grade|class|company|regiment|battalion|platoon|division|squad|troop)\.?\s*|#\s*|제\s*)$/i;
+  /(?:\b(?:part|parts|chapter|page|pages|number|no|room|route|flight|bus|line|apartment|apt|unit|platform|gate|track|highway|exit|block|ward|bed|lot|plot|box|section|volume|vol|episode|season|verse|psalm|hymn|channel|station|item|step|level|floor|ticket|grade|class|company|regiment|battalion|platoon|division|squad|troop)\.?\s*|#\s*)$/i;
 /**
  * Words that make a four-digit number an amount, not a year. An explicit list on purpose:
  * "In 1950 things got hard" must stay a year (a plural noun after it is not enough).
  */
 const AMOUNT_EN = new Set(
-  'won dollars dollar bucks pounds yen euros cents francs marks chickens cows pigs sheep goats hens ducks people men women soldiers workers students days hours minutes miles kilometers km meters feet acres pyeong books trees bags boxes jars eggs bottles sacks bushels'.split(
+  'won dollars dollar bucks pounds yen euros cents francs marks chickens cows pigs sheep goats hens ducks people men women soldiers workers students days hours minutes miles kilometers km meters feet acres books trees bags boxes jars eggs bottles sacks bushels'.split(
     ' ',
   ),
 );
@@ -585,144 +568,11 @@ const NUM_ADJ = new Set(
   ),
 );
 
-/* Korean */
-const KIN_KO: Record<string, string> = {};
-for (const [norm1, forms] of Object.entries({
-  어머니: '어머니 엄마 어머님 모친 어미',
-  아버지: '아버지 아빠 아버님 부친 아비',
-  할머니: '할머니 할머님',
-  할아버지: '할아버지 할아버님',
-  외할머니: '외할머니',
-  외할아버지: '외할아버지',
-  누나: '누나 누님',
-  형: '형 형님',
-  언니: '언니',
-  오빠: '오빠 오라버니',
-  동생: '동생',
-  남동생: '남동생',
-  여동생: '여동생',
-  딸: '딸',
-  아들: '아들',
-  큰딸: '큰딸 장녀',
-  작은딸: '작은딸 차녀',
-  큰아들: '큰아들 장남',
-  작은아들: '작은아들 차남',
-  막내: '막내',
-  남편: '남편 신랑',
-  아내: '아내 부인 집사람 와이프',
-  시어머니: '시어머니',
-  시아버지: '시아버지',
-  장인: '장인',
-  장모: '장모',
-  며느리: '며느리',
-  사위: '사위',
-  삼촌: '삼촌 숙부',
-  외삼촌: '외삼촌',
-  이모: '이모',
-  고모: '고모',
-  큰아버지: '큰아버지',
-  작은아버지: '작은아버지',
-  큰어머니: '큰어머니',
-  작은어머니: '작은어머니',
-  사촌: '사촌',
-  조카: '조카',
-  손자: '손자',
-  손녀: '손녀',
-  손주: '손주',
-  아이: '아이 애 자식 자녀 아이들 애들',
-  형제: '형제',
-  남매: '남매',
-  자매: '자매',
-  가족: '가족 식구',
-  부모: '부모 부모님',
-})) {
-  for (const f of forms.split(' ')) KIN_KO[f] = norm1;
-}
-const KIN_MODIFIERS_KO = new Set(['첫째', '둘째', '셋째', '넷째', '막내', '맏', '큰', '작은']);
-const FIRST_PERSON_KO: Record<string, string> = {
-  나: 'i',
-  저: 'i',
-  내: 'i',
-  제: 'i',
-  우리: 'we',
-  저희: 'we',
-};
-/** "he", "she", "that person": like their English, only the same text resolves them */
-const THIRD_PERSON_KO: Record<string, string> = { 그: 'he', 그녀: 'she', 그분: 'he', 그이: 'he' };
-/** a particle at the end of a word, longest first */
-const PARTICLE_KO =
-  /(?:께서는|께서|께선|에서는|에게서|에게는|한테서|한테는|으로는|으로|로는|에서|에게|한테|까지|부터|이랑|하고|이나|이며|에는|에선|은|는|이|가|을|를|의|에|로|와|과|랑|도|만|엔)$/;
-/** the word is the subject or topic of its clause */
-const SUBJECT_KO = /(?:께서는|께서|께선|은|는|이|가)$/;
-/** ...but not a place or a time made the topic ("부산에서는", "그때는") */
-const NOT_SUBJECT_KO =
-  /(?:에서는|에선|에는|엔|으로는|로는|까지는|부터는|에게는|한테는|때는|적에는|적엔)$/;
-const EVENTS_KO: Array<[string, RegExp]> = [
-  ['born', /태어|출생|탄생|년생/],
-  ['died', /돌아가|세상을\s*떠|사망|별세|죽었|죽은|숨지|숨졌|숨을\s*거두/],
-  ['married', /결혼|시집|장가|혼인/],
-  ['divorced', /이혼/],
-  ['lost', /잃었|잃으|잃고|여의/],
-  ['bought', /샀|구입|구매|장만|사들/],
-  ['sold', /팔았|파셨|팔고|팔아|매각|처분/],
-  ['built', /지었|지으|건축|짓고/],
-  ['started', /시작|개업|창업|입사|취직|문을\s*열/],
-  ['retired', /은퇴|퇴직|정년/],
-  ['stopped', /그만두|그만뒀|문을\s*닫/],
-  ['moved_in', /이사\s*(?:와|왔|오|온)|들어와|들어왔|옮겨\s*왔|정착/],
-  ['moved_out', /이사\s*(?:가|갔|간)|떠나|떠났|떠난|나갔|나와|나왔/],
-  ['came', /왔|오셨|돌아오|돌아왔/],
-  ['went', /갔|가셨/],
-  ['enrolled', /입학/],
-  ['entered', /들어가|들어갔/],
-  ['graduated', /졸업/],
-  ['worked', /일했|일하|근무/],
-  ['lived', /살았|사셨|살던|살고|살면서|거주/],
-  ['met', /만났|만나/],
-  ['enlisted', /입대/],
-  ['discharged', /제대/],
-  ['served', /복무/],
-  ['baptised', /세례/],
-  ['emigrated', /이민/],
-];
-const MOVED_KO = /이사/;
-const NEGATED_KO = /(?:^|\s)(?:안|못)\s|않|못했|없었|없다|없어|없습|아니/;
-/** the Korean of UNREAL_EN: 싶다, -려고, -ㄹ 뻔, -았으면, -을 거, -다면, 들었다, -대요, 예정, 계획 */
-const UNREAL_KO =
-  /싶|려고|뻔했|뻔한|았으면|었으면|였으면|했으면|좋겠|을\s*거|을\s*것|거라|다면|더라면|들었어|들었다|들었습|대요|래요|다더라|라더라|다고\s*(?:했|하더|하셨|들)|예정|계획/;
-/** a Korean clause ends in a predicate */
-const PREDICATE_END_KO =
-  /(?:다|요|죠|니다|까|네|어|아|고|서|며|면서|지만|는데|었|았|였|겠)[.!?…]*$/;
-const COUNTERS_KO = [
-  '개월',
-  '시간',
-  '마리',
-  '명',
-  '살',
-  '세',
-  '년',
-  '개',
-  '번',
-  '시',
-  '월',
-  '일',
-  '주',
-  '분',
-  '층',
-  '채',
-  '권',
-  '장',
-  '원',
-  '달',
-];
 /*
- * "About", "more than", "or so": a number that is not a point (review round 3, F2: "30년 정도"
- * with a space, 넘게, 이상, "more than thirty", "30 or so" all passed for exact). Bounds count
- * too: "more than 30" and "32" can both be true.
+ * "About", "more than", "or so": a number that is not a point (review round 3, F2: "more than
+ * thirty" and "30 or so" passed for exact). Bounds count too: "more than 30" and "32" can both
+ * be true.
  */
-const APPROX_KO =
-  /^(?:\S*?)(?:쯤|경|정도|무렵|가량|여|남짓|대|인가|이었나|였나)|^\S*\s*(?:이후|이전|전에|후에|무렵|쯤|경|전후|정도|넘게|넘어|이상|이하|미만|가까이|안팎|남짓|가량|여|인가)/;
-
 const APPROX_BEFORE =
   /(?:\b(?:around|about|approximately|approx|roughly|circa|ca|maybe|perhaps|probably|nearly|almost|over|under|some|early|mid|late|before|after|since|until|till|by|from|through|between|or|to|than|least|most|like|upwards of|more or less|give or take)\s*[-–]?\s*|~\s*|[-–]\s*)$/i;
 const APPROX_AFTER =
@@ -746,39 +596,26 @@ function numbersWithUnits(text: string): Num[] {
     if (/^(?:st|nd|rd|th)$/i.test(suffix)) continue;
     // "part 7 of my story", "room 12", "25 Main Street": a name for something, not how many
     if (LABEL_BEFORE.test(before) || LABEL_AFTER.test(after)) continue;
-    const korean = /[가-힣]/.test(suffix);
-    const approx = korean
-      ? APPROX_KO.test(after) || /\s(?:약|대략|한)\s*$/.test(before)
-      : APPROX_BEFORE.test(before) || APPROX_AFTER.test(after);
-    // what it counts FIRST: a Korean counter ("2000원"), or the English word right after it
+    const approx = APPROX_BEFORE.test(before) || APPROX_AFTER.test(after);
+    // what it counts: the English word right after it
     let unit = '';
     let amount = /\$\s*$/.test(before);
-    if (korean) {
-      const base = suffix.replace(PARTICLE_KO, '');
-      unit = COUNTERS_KO.find((c) => base.startsWith(c)) ?? base;
-      // "2000만 원", "2000 원": a sum (만/천/백/억 multiply it; 만 is not the particle here)
-      amount ||=
-        (unit !== '' && unit !== '년') ||
-        /^(?:만|천|백|억|조)/.test(suffix) ||
-        /^\s*(?:원|달러|명|마리|개)/.test(after);
-    } else {
-      const words = [...after.matchAll(/[A-Za-z][A-Za-z'’-]*/g)]
-        .slice(0, 3)
-        .map((x) => x[0].toLowerCase());
-      // only a word that FOLLOWS the number directly can say what it counts
-      const direct = /^\s+[A-Za-z]/.test(after);
-      let k = 0;
-      while (direct && k < words.length && NUM_ADJ.has(words[k]!)) k++;
-      const w = direct ? words[k] : undefined;
-      // checked before the stop words: "days" says nothing about who, but "1950 days" is a count
-      if (w && (AMOUNT_EN.has(w) || (KIN_PLURAL.has(w) && w in KIN_EN))) amount = true;
-      if (w && (amount || (!STOP_EN.has(w) && !AUX_EN.has(w)))) {
-        unit = KIN_EN[w] ?? singular(w.replace(/['’]s$/, ''));
-        if (unit === 'year' && words[k + 1] === 'old') unit = 'age';
-      }
+    const words = [...after.matchAll(/[A-Za-z][A-Za-z'’-]*/g)]
+      .slice(0, 3)
+      .map((x) => x[0].toLowerCase());
+    // only a word that FOLLOWS the number directly can say what it counts
+    const direct = /^\s+[A-Za-z]/.test(after);
+    let k = 0;
+    while (direct && k < words.length && NUM_ADJ.has(words[k]!)) k++;
+    const w = direct ? words[k] : undefined;
+    // checked before the stop words: "days" says nothing about who, but "1950 days" is a count
+    if (w && (AMOUNT_EN.has(w) || (KIN_PLURAL.has(w) && w in KIN_EN))) amount = true;
+    if (w && (amount || (!STOP_EN.has(w) && !AUX_EN.has(w)))) {
+      unit = KIN_EN[w] ?? singular(w.replace(/['’]s$/, ''));
+      if (unit === 'year' && words[k + 1] === 'old') unit = 'age';
     }
-    // a year is a bare four-digit number (or "1950년"): "2000 won", "1950 days", "2000원" are
-    // amounts (review round 3, F10: "sold the cow for 2000 won" disagreed with "in 1950")
+    // a year is a bare four-digit number: "2000 won" and "1950 days" are amounts (review round
+    // 3, F10: "sold the cow for 2000 won" disagreed with "in 1950")
     const isYear = /^\d{4}$/.test(raw) && value >= 1800 && value <= 2099 && !amount;
     if (isYear) {
       out.push({ kind: 'year', unit: '', value, approx });
@@ -877,12 +714,11 @@ function asTeller(ts: Set<string>, names: string[], titles: readonly string[] = 
 
 /**
  * A mention of the teller by part of her names is her: "Sunja" in a note, told about "Sunja
- * Kim"; 순자 for 김순자. A family name alone ("Kim") is anybody in the family, so it is not.
+ * Kim". A family name alone ("Kim") is anybody in the family, so it is not.
  */
 function asNamed(ts: Set<string>, names: string[]): Set<string> {
   if (names.length === 0) return ts;
-  const surname =
-    names.length >= 2 && !/[가-힣]/.test(names[names.length - 1]!) ? names[names.length - 1] : null;
+  const surname = names.length >= 2 ? names[names.length - 1] : null;
   const hits = [...ts].filter((t) => names.some((n) => sameName(t, n)));
   if (hits.length === 0 || hits.every((t) => t === surname)) return ts;
   const out = new Set([...ts].filter((t) => !hits.includes(t)));
@@ -921,28 +757,26 @@ function byName(ts: Set<string>): Set<string> {
 
 /** words of a speaker label that say what someone was in the recording, not who */
 const ROLE_WORDS = new Set(
-  (
-    'speaker interviewee interviewer narrator teller guest host participant respondent unknown person voice ' +
-    '화자 인터뷰이 인터뷰어 구술자 면담자 질문자 발화자 참여자 응답자 진행자 사회자'
-  ).split(' '),
+  'speaker interviewee interviewer narrator teller guest host participant respondent unknown person voice'.split(
+    ' ',
+  ),
 );
-/** what a person is called by, never who: "Mr. Kim" is Kim, "김 선생님" is 김 */
+/** what a person is called by, never who: "Mr. Kim" is Kim */
 const HONORIFICS = new Set(
-  (
-    'mr mrs ms miss mx dr doctor prof professor rev reverend sir madam dame lady lord captain sgt ' +
-    '선생 교수 박사 목사 신부 수녀 사장 회장 원장 집사 권사 장로 여사'
-  ).split(' '),
+  'mr mrs ms miss mx dr doctor prof professor rev reverend sir madam dame lady lord captain sgt'.split(
+    ' ',
+  ),
 );
 /** the words that tell a father from a son of one name: "Joe Sr." is not "Joe Jr." */
 const GENERATION = new Set('jr junior sr senior ii iii iv'.split(' '));
 
 /**
  * The names a teller goes by, as the facts spell names: "Grandma Sunja" -> ["sunja"], "Walt
- * Kowalski" -> ["walt", "kowalski"], "박순자 할머니" -> ["박순자"], "José García" -> ["josé",
- * "garcía"]. Family words, honorifics ("Mr.", "Dr.", 선생님), "Jr." and role words ("Speaker",
- * 화자) are not names: they say how the teller is related, or what, not who. A label is a name in
- * any case ("grandma sunja" typed in lower case is the footer's "Grandma Sunja", review round 3
- * F11); a TITLE is not (`asTitle`: only its capitalised words are names, "Grandma Sunja story").
+ * Kowalski" -> ["walt", "kowalski"], "José García" -> ["josé", "garcía"]. Family words,
+ * honorifics ("Mr.", "Dr."), "Jr." and role words ("Speaker") are not names: they say how the
+ * teller is related, or what, not who. A label is a name in any case ("grandma sunja" typed in
+ * lower case is the footer's "Grandma Sunja", review round 3 F11); a TITLE is not (`asTitle`:
+ * only its capitalised words are names, "Grandma Sunja story").
  */
 export function tellerNames(teller: string | null | undefined, asTitle = false): string[] {
   if (typeof teller !== 'string') return [];
@@ -951,7 +785,7 @@ export function tellerNames(teller: string | null | undefined, asTitle = false):
     let w = raw.replace(/['’]s$/, '');
     if (!asTitle && /^(?:\p{Ll}{2,}|\p{Lu}{2,})$/u.test(w))
       w = `${w[0]!.toUpperCase()}${w.slice(1).toLowerCase()}`;
-    if (/^\p{Lu}\p{Ll}+$/u.test(w) && !/[가-힣]/.test(w)) {
+    if (/^\p{Lu}\p{Ll}+$/u.test(w)) {
       const l = w.toLowerCase();
       if (
         !(l in KIN_EN) &&
@@ -964,16 +798,6 @@ export function tellerNames(teller: string | null | undefined, asTitle = false):
         !GENERATION.has(l)
       )
         out.push(l);
-    } else if (/^[가-힣]{2,4}$/.test(w)) {
-      const b = w.replace(/(?:님|씨|양|군)$/, '');
-      if (
-        !(b in KIN_KO) &&
-        !(b in FIRST_PERSON_KO) &&
-        !ROLE_WORDS.has(b) &&
-        !HONORIFICS.has(b) &&
-        b.length >= 2
-      )
-        out.push(b);
     }
   }
   return [...new Set(out)];
@@ -1002,23 +826,20 @@ function readIdentity(label: string, asTitle: boolean): Identity {
   const generation = new Set<string>();
   for (const raw of label.normalize('NFC').split(/[^\p{L}'’]+/u)) {
     const l = raw.toLowerCase().replace(/['’]s$/, '');
-    if (/[가-힣]/.test(l)) {
-      const k = KIN_KO[l.replace(/(?:님|씨)$/, '')];
-      if (k) kin.add(k);
-    } else if (l in KIN_EN) kin.add(KIN_EN[l]!);
+    if (l in KIN_EN) kin.add(KIN_EN[l]!);
     else if (GENERATION.has(l)) generation.add(l === 'junior' ? 'jr' : l === 'senior' ? 'sr' : l);
   }
-  const key = label.normalize('NFC').toLowerCase().replace(/님$/, '').replace(/\s+/g, ' ').trim();
+  const key = label.normalize('NFC').toLowerCase().replace(/\s+/g, ' ').trim();
   return { key, names: tellerNames(label, asTitle), kin, generation };
 }
-/** Every name of `a` is one of `b`'s (a Korean full name and its given name are one name). */
+/** Every name of `a` is one of `b`'s. */
 const namesIn = (a: readonly string[], b: readonly string[]): boolean =>
   a.every((x) => b.some((y) => sameName(y, x) || sameName(x, y)));
 /**
  * Two labels can be one person: names that agree (one holds all of the other's), no two different
- * family words ("Aunt Sunja" is not "Grandma Sunja", 순자 이모 is not 순자 할머니) and the same
- * Jr./Sr. A label with no name ("Grandma", "Mom", 할머니) is nobody in particular: it is never
- * taken to be the same person as another text's teller (review round 3, F6).
+ * family words ("Aunt Sunja" is not "Grandma Sunja") and the same Jr./Sr. A label with no name
+ * ("Grandma", "Mom") is nobody in particular: it is never taken to be the same person as another
+ * text's teller (review round 3, F6).
  */
 function sameIdentity(a: Identity, b: Identity): boolean {
   if (a.names.length === 0 || b.names.length === 0) return false;
@@ -1061,22 +882,9 @@ const NOT_TOPIC_EN = new Set([
     'know knows knew maybe perhaps always never ever something nothing anything everything thing things anyway'
   ).split(' '),
 ]);
-const NOT_TOPIC_KO = new Set(
-  (
-    '나 저 내 제 우리 저희 그 그녀 그분 그이 그때 그날 당시 그리고 그래서 그러니까 그런데 근데 하지만 그러나 그냥 ' +
-    '정말 진짜 너무 아주 많이 조금 좀 이제 지금 다시 같이 함께 모두 다들 그것 그거 그게 이것 이거 이게 저것 ' +
-    '거기 여기 저기 그런 이런 저런 어떤 무슨 아마 그렇게 이렇게 항상 늘 매일 네 예 아니 아니요 음 어 뭐 거 것 때 ' +
-    '있었어요 있었다 있었죠 있었습니다 있었는데 있어요 있다 있습니다 있죠 있는데 없었어요 없었다 없어요 없다 ' +
-    '했어요 했다 했죠 했습니다 했는데 해요 한다 합니다 하고 해서 같아요 같은 같다 같았어요 됐어요 됐다 ' +
-    '되었다 되었어요 그랬어요 그랬다 말했어요 말했다 말씀하셨어요 생각 생각해요 생각했어요 기억 기억해요 기억나요'
-  ).split(' '),
-);
 
-/** A word as names and labels are compared: lower case, no "'s", a Korean word without its particle. */
-const wordKey = (w: string): string =>
-  /[가-힣]/.test(w)
-    ? koreanStem(w).replace(/(?:님|씨)$/, '')
-    : w.toLowerCase().replace(/['’]s$/, '');
+/** A word as names and labels are compared: lower case, no "'s". */
+const wordKey = (w: string): string => w.toLowerCase().replace(/['’]s$/, '');
 
 /** Every word of a text, as `wordKey` spells it. */
 function wordKeys(text: string): Set<string> {
@@ -1090,15 +898,7 @@ function wordKeys(text: string): Set<string> {
   return out;
 }
 
-/** A three-syllable Korean name is also its given name: the archive may say 순자 for 김순자. */
-const KO_FULL_NAME = /^[가-힣]{3}$/;
-const sameName = (key: string, name: string): boolean =>
-  key === name ||
-  (KO_FULL_NAME.test(name) && !(name in KIN_KO) && key === name.slice(1)) ||
-  (/^[가-힣]{2}$/.test(name) &&
-    KO_FULL_NAME.test(key) &&
-    !(key in KIN_KO) &&
-    key.slice(1) === name);
+const sameName = (key: string, name: string): boolean => key === name;
 
 /** Who tells a claim, as the topic test reads it. */
 export interface TellerWords {
@@ -1111,9 +911,7 @@ export interface TellerWords {
 export function tellerWords(teller: string | null | undefined): TellerWords {
   if (typeof teller !== 'string' || teller.trim() === '') return { label: new Set(), names: [] };
   const names = tellerNames(teller);
-  const label = wordKeys(teller);
-  for (const n of names) if (KO_FULL_NAME.test(n) && !(n in KIN_KO)) label.add(n.slice(1));
-  return { label, names };
+  return { label: wordKeys(teller), names };
 }
 
 /** The text names the teller: one of her names is one of its words. */
@@ -1126,20 +924,17 @@ export function namesTeller(text: string, who: TellerWords): boolean {
 /** What happened in a sentence, by its verbs: "born", "died", "married", "moved_in"... */
 export function eventsOf(sentence: string): Set<string> {
   const t = spoken(displayText(capped(sentence)));
-  return /[가-힣]/.test(t)
-    ? verbKeys(t, EVENTS_KO, MOVED_KO)
-    : verbKeys(t.toLowerCase().replace(/’/g, "'"), EVENTS_EN, MOVED_EN);
+  return verbKeys(t.toLowerCase().replace(/’/g, "'"));
 }
 
 /** The words of a sentence that can say what it is about. */
 function topicWords(sentence: string, label: ReadonlySet<string>): string[] {
   const words = contentWords(capped(sentence)).filter((w) => {
     const k = wordKey(w);
-    if (label.has(k)) return false;
-    return /[가-힣]/.test(w) ? !NOT_TOPIC_KO.has(k) && !NOT_TOPIC_KO.has(w) : !NOT_TOPIC_EN.has(k);
+    return !label.has(k) && !NOT_TOPIC_EN.has(k);
   });
   if (words.length === 0) return words;
-  // ...and none the grounding check would let any text add ("those", "우리는", "했어요")
+  // ...and none the grounding check would let any text add ("those", "were")
   const needed = new Set(checkGrounding('', words.join(' ')).ungrounded);
   return words.filter((w) => needed.has(w));
 }
@@ -1176,9 +971,10 @@ export function aboutTheSame(t: Topic, person = false): boolean {
 
 const hasAny = (ts: Set<string>, re: RegExp): boolean => [...ts].some((t) => re.test(t));
 
-function verbKeys(text: string, events: Array<[string, RegExp]>, moved: RegExp): Set<string> {
-  const keys = new Set(events.filter(([, re]) => re.test(text)).map(([k]) => k));
-  if (!keys.has('moved_in') && !keys.has('moved_out') && moved.test(text)) keys.add('moved');
+/** the event keys of a lower-cased text */
+function verbKeys(text: string): Set<string> {
+  const keys = new Set(EVENTS_EN.filter(([, re]) => re.test(text)).map(([k]) => k));
+  if (!keys.has('moved_in') && !keys.has('moved_out') && MOVED_EN.test(text)) keys.add('moved');
   return keys;
 }
 
@@ -1299,7 +1095,7 @@ function englishFact(clause: string, sentenceStart: boolean, inherited: Set<stri
   const inherit = v === 0 || (toks[0] !== undefined && /^(?:who|that|which)$/.test(toks[0].w));
   const subject = inherit ? new Set(inherited) : people(0, v, true);
   const predicate = v < toks.length ? text.slice(toks[v]!.at) : '';
-  const verbs = verbKeys(lower, EVENTS_EN, MOVED_EN);
+  const verbs = verbKeys(lower);
   const objects = people(v, toks.length, false);
   const once = happensOnce(verbs, subject, thingOfEn(lower), objects.size > 0);
   return {
@@ -1309,7 +1105,7 @@ function englishFact(clause: string, sentenceStart: boolean, inherited: Set<stri
     verbs,
     once,
     habitual: HABITUAL_EN.test(lower),
-    // a birth or a death said in the present tense ("저는 1931년생이에요") is still one past moment
+    // a birth or a death is one past moment, whatever the tense of the sentence it is told in
     present: PRESENT_EN.test(lower) && !once,
     words: contentWords(predicate),
     numbers: numbersWithUnits(text),
@@ -1340,7 +1136,7 @@ function onePerson(subject: Set<string>): boolean {
 /**
  * See "WHEN": an event that happens once to one person ("born", "died"), to one thing ("sold the
  * farm") or one person lost ("lost my husband"), or a subject that is itself a one-off event
- * that something names ("the Korean War", "our wedding"; "the war" alone may be either of two).
+ * that something names ("the Vietnam War", "our wedding"; "the war" alone may be either of two).
  */
 function happensOnce(
   verbs: Set<string>,
@@ -1367,148 +1163,17 @@ function thingOfEn(lower: string): 'one' | 'many' | 'milestone' | null {
   return m ? (pluralNoun(m[1]!) ? 'many' : 'one') : null;
 }
 
-/** A Korean word without its particle: "대구에서" -> "대구", "어머니는" -> "어머니". */
-export const koreanStem = (w: string): string => {
-  const b = w.replace(PARTICLE_KO, '');
-  return b === '' ? w : b;
-};
-const koBase = koreanStem;
-
-/** the last word of a clause, without its punctuation */
-const lastWord = (text: string): string => {
-  const ws = text.trim().split(/\s+/);
-  return (ws[ws.length - 1] ?? '').replace(/[^가-힣A-Za-z0-9]+$/, '');
-};
-
-/** One Korean clause: the subject is the word its particle marks (은/는/이/가), with what modifies it. */
-function koreanFact(clause: string): Fact & Who {
-  const text = spoken(clause);
-  const ws = text
-    .split(/\s+/)
-    .map((w) => w.replace(/^[^가-힣A-Za-z0-9]+|[^가-힣A-Za-z0-9]+$/g, ''))
-    .filter((w) => w !== '');
-  // the first word marked as the subject or topic, that is not a time, a place or a number
-  let s = -1;
-  for (let i = 0; i < ws.length; i++) {
-    const w = ws[i]!;
-    if (/\d/.test(w) || !SUBJECT_KO.test(w) || NOT_SUBJECT_KO.test(w)) continue;
-    const b = koBase(w);
-    if (b.length >= 2 || b in KIN_KO || b in FIRST_PERSON_KO) {
-      s = i;
-      break;
-    }
-  }
-  let from = s;
-  while (from > 0) {
-    const p = ws[from - 1]!;
-    if (/\d/.test(p)) break;
-    const bare = koBase(p) === p;
-    if (!(bare || p.endsWith('의'))) break;
-    from--;
-  }
-  const inPhrase = (i: number) => s >= 0 && i >= from && i <= s;
-
-  const kinToken = (i: number, list: string[]): string | null => {
-    const b = koBase(list[i]!);
-    const kin = KIN_KO[b];
-    if (!kin) return null;
-    const mods: string[] = [];
-    let owner = 'i';
-    for (let j = i - 1; j >= Math.max(0, i - 2); j--) {
-      const p = koBase(list[j]!);
-      if (KIN_MODIFIERS_KO.has(p)) mods.push(p);
-      else if (p in FIRST_PERSON_KO) {
-        owner = 'i'; // "우리 어머니" is my mother
-        break;
-      } else if (list[j]!.endsWith('의')) {
-        owner = p;
-        break;
-      } else {
-        // "순자 할머니", "김순자 할머니는": a family word right after a name is what she is called
-        if (
-          j === i - 1 &&
-          mods.length === 0 &&
-          list[j] === p &&
-          /^[가-힣]{2,4}$/.test(p) &&
-          !(p in KIN_KO) &&
-          !(p in THIRD_PERSON_KO) &&
-          !NOT_TOPIC_KO.has(p)
-        )
-          return `@t:${kin}`;
-        break;
-      }
-    }
-    return `${owner}:${kin}${mods.length ? `#${mods.sort().join('+')}` : ''}`;
-  };
-
-  const subject = new Set<string>();
-  if (s >= 0) {
-    for (let i = from; i <= s; i++) {
-      const b = koBase(ws[i]!);
-      const kin = kinToken(i, ws);
-      if (kin) subject.add(kin);
-      else if (b in FIRST_PERSON_KO) {
-        const nextKin = i < s && KIN_KO[koBase(ws[i + 1]!)] !== undefined;
-        if (!nextKin) subject.add(FIRST_PERSON_KO[b]!);
-      } else if (b in THIRD_PERSON_KO) {
-        subject.add(THIRD_PERSON_KO[b]!);
-      } else if (
-        !KIN_MODIFIERS_KO.has(b) &&
-        !(i < s && ws[i]!.endsWith('의') && KIN_KO[koBase(ws[i + 1]!)])
-      ) {
-        subject.add(b);
-      }
-    }
-  }
-  const objects = new Set<string>();
-  ws.forEach((_, i) => {
-    if (inPhrase(i)) return;
-    const kin = kinToken(i, ws);
-    if (kin) objects.add(kin);
-  });
-  const rest = ws.filter((_, i) => !inPhrase(i)).join(' ');
-  const verbs = verbKeys(text, EVENTS_KO, MOVED_KO);
-  // "농장은 1984년에 팔았어요": the thing sold is the topic, so it is one known thing; "민호는
-  // 소를 팔았다" (a cow, or the cow?) is not, unless whose or which says it ("우리 농장을", "그 소를")
-  const topicThing =
-    ['sold', 'bought', 'built'].some((v) => verbs.has(v)) &&
-    !ws.some((w) => /(?:을|를)$/.test(w)) &&
-    [...subject].some((t) => !t.includes(':') && !(t in PRONOUN_EN) && !NOT_ONE_PERSON.has(t));
-  const once = happensOnce(
-    verbs,
-    subject,
-    ONE_THING_KO.test(text) || topicThing ? 'one' : null,
-    objects.size > 0,
-  );
-  return {
-    subject,
-    inherit: false,
-    objects,
-    verbs,
-    once,
-    habitual: HABITUAL_KO.test(text),
-    present: (PRESENT_KO_WORDS.test(text) || PRESENT_KO_END.test(lastWord(text))) && !once,
-    words: contentWords(rest),
-    numbers: numbersWithUnits(text),
-    skip: NEGATED_KO.test(text) || UNREAL_KO.test(text),
-  };
-}
-
 /** A long sentence split where one fact ends and another begins. */
 // not "so" in "30 or so" (the approximation must stay with its number)
 const CLAUSE_SPLIT = /[,;:]|\b(?:and|but|because|(?<!\bor\s)so|although|though|while|which)\b/i;
 
-const hasVerb = (piece: string): boolean => {
-  if (/[가-힣]/.test(piece)) {
-    return verbKeys(piece, EVENTS_KO, MOVED_KO).size > 0 || PREDICATE_END_KO.test(piece.trim());
-  }
-  return [...piece.toLowerCase().matchAll(/[a-z][a-z']*/g)].some(
+const hasVerb = (piece: string): boolean =>
+  [...piece.toLowerCase().matchAll(/[a-z][a-z']*/g)].some(
     (m) =>
       AUX_EN.has(m[0]) ||
       VERBS_EN.has(m[0]) ||
       (/^[a-z]{3,}ed$/.test(m[0]) && !NOT_VERB_ED.has(m[0])),
   );
-};
 
 /**
  * The clauses of a sentence, each a Fact. A piece without a verb is part of its neighbour
@@ -1546,9 +1211,11 @@ function clauseFacts(sentence: string): Fact[] {
   const out: Fact[] = [];
   let previous = new Set<string>();
   merged.forEach((piece, i) => {
-    const f = /[가-힣]/.test(piece)
-      ? koreanFact(piece)
-      : englishFact(piece, i === 0 && display.trimStart().startsWith(piece.slice(0, 8)), previous);
+    const f = englishFact(
+      piece,
+      i === 0 && display.trimStart().startsWith(piece.slice(0, 8)),
+      previous,
+    );
     previous = f.subject;
     out.push(f);
   });
@@ -1585,7 +1252,7 @@ function whoseOf(voices: Voices): Whose {
   let namesB = ib?.names ?? [];
   if (ia && ib && !voices.sameText && ia.key !== ib.key) {
     if (sameIdentity(ia, ib)) {
-      // "Walt" and "Walt Kowalski", 순자 and 김순자: one person, by all of the names either uses
+      // "Walt" and "Walt Kowalski": one person, by all of the names either uses
       namesA = [...new Set([...namesA, ...namesB])];
       namesB = namesA;
     } else if (namesB.length > 0) {
@@ -1619,15 +1286,14 @@ function clash(x: Fact, y: Fact, w: Whose): boolean {
     if (!w.sameTeller && hasAny(ts, FIRST_PERSON)) return false;
     if (!w.sameText && hasAny(ts, UNRESOLVED)) return false;
   }
-  // No subject at all ("Born in 1921 in Daegu.", Korean that leaves the speaker unsaid) is not
-  // "the same subject": two such sentences may be two people's ("1950년에 이사 왔어요" told by
-  // Sunja, and by Minho)
+  // No subject at all ("Born in 1921 in Daegu.") is not "the same subject": two such sentences
+  // may be two people's (one told by Sunja, the other by Minho)
   if (subA.size === 0 || subB.size === 0) return false;
   if (!samePeople(subA, subB) || !samePeople(objA, objB)) return false;
   if (!sameSet(x.verbs, y.verbs)) return false;
   if (x.words.length === 0 || y.words.length === 0) {
-    // nothing else said ("저는 1931년생이에요", "The flood was in 1972"): the event verb, or a
-    // subject that is itself the event, must name what happened
+    // nothing else said ("The flood was in 1972"): the event verb, or a subject that is itself
+    // the event, must name what happened
     if (x.words.length !== y.words.length || (x.verbs.size === 0 && !x.once)) return false;
   } else {
     const o = overlap(x.words.join(' '), y.words.join(' '));

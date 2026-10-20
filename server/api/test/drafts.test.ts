@@ -32,41 +32,40 @@ const draft = (s: RealSession, archive: string, body: unknown) =>
   ctx.api(s.token, 'POST', `/v1/archives/${archive}/drafts`, body);
 
 describe('FM-071 draft composition', () => {
-  describe('reading a fuzzy date out of Korean prose', () => {
+  describe('reading a fuzzy date out of the contributor’s words', () => {
     it('reads the forms people actually write', () => {
-      expect(readFuzzyDate('1987년 3월 15일에 있었던 일')).toBe('1987-03-15');
-      expect(readFuzzyDate('1987년 3월에')).toBe('1987-03');
-      expect(readFuzzyDate('1987년 봄')).toBe('1987');
-      expect(readFuzzyDate('1994-07-15 이었다')).toBe('1994-07-15');
+      expect(readFuzzyDate('It happened on 1987-03-15')).toBe('1987-03-15');
+      expect(readFuzzyDate('1994-07-15 was the day')).toBe('1994-07-15');
       expect(readFuzzyDate('1994.07.15')).toBe('1994-07-15');
-      expect(readFuzzyDate('그해는 1962년이었다')).toBe('1962');
+      expect(readFuzzyDate('That year was 1962')).toBe('1962');
+      expect(readFuzzyDate('We married in June of nineteen sixty-seven.')).toBe('1967-06');
     });
 
     it('marks approximation only where the contributor hedged', () => {
       // THEIR uncertainty, never ours — this function has no confidence of its
       // own to express, and a `~` we invented would be a claim about the record
-      expect(readFuzzyDate('1948년쯤이었을 거예요')).toBe('~1948');
-      expect(readFuzzyDate('1950년 무렵')).toBe('~1950');
-      expect(readFuzzyDate('1948년이었다')).toBe('1948');
+      expect(readFuzzyDate('It was about nineteen forty-eight')).toBe('~1948');
+      expect(readFuzzyDate('It was in nineteen forty-eight')).toBe('1948');
     });
 
     it('answers null rather than guessing, and null is the common answer', () => {
-      expect(readFuzzyDate('할머니가 국수를 삶아 주셨다')).toBeNull();
+      expect(readFuzzyDate('Grandma boiled noodles for us')).toBeNull();
       expect(readFuzzyDate('')).toBeNull();
       // a number that is not a date must not become one
-      expect(readFuzzyDate('그릇을 2000원에 샀다')).toBeNull();
-      expect(readFuzzyDate('1234번지에 살았다')).toBeNull();
+      expect(readFuzzyDate('We drove 2000km that summer')).toBeNull();
+      expect(readFuzzyDate('We lived at number 1234')).toBeNull();
     });
 
     it('never emits a string the fuzzy-date parser would reject', () => {
       const inputs = [
-        '1987년 13월 40일',
         '1987-13-45',
-        '9999년',
-        '1987년 2월 30일',
-        '1987년 3월 15일',
-        '1899년',
+        '1987.13.40',
+        '9999',
+        '1987-02-30',
+        '1987-03-15',
+        '1899',
         '~~1948',
+        'February 30, 1987',
       ];
       for (const raw of inputs) {
         const out = readFuzzyDate(raw);
@@ -74,15 +73,15 @@ describe('FM-071 draft composition', () => {
         expect(parseFuzzyDate(out), `"${raw}" produced unparseable "${out}"`).not.toBeNull();
       }
       // a month out of range is dropped, not clamped
-      expect(readFuzzyDate('1987년 13월')).toBe('1987');
+      expect(readFuzzyDate('1987-13')).toBe('1987');
     });
   });
 
   describe('proposing a title', () => {
     it('never proposes one the note validator would refuse', () => {
       const hostile = [
-        '[[대괄호]] 있는 제목',
-        '# 우물정 | 파이프 ^ 캐럿',
+        '[[Brackets]] in a title',
+        '# Hash | pipe ^ caret',
         '   ',
         '',
         'a'.repeat(400),
@@ -95,46 +94,63 @@ describe('FM-071 draft composition', () => {
     });
 
     it('cuts at the first sentence, and falls back to the photograph’s name', () => {
-      expect(readTitle('마당의 빨랫줄. 그리고 흰 홑이불이 있었다.', null)).toBe('마당의 빨랫줄');
+      expect(readTitle('The clothesline in the yard. And there were white sheets.', null)).toBe(
+        'The clothesline in the yard',
+      );
       // no words at all: the file's own name, minus one extension
-      expect(readTitle('', '할머니 환갑.jpg')).toBe('할머니 환갑');
-      expect(readTitle('   \n  ', '옛날 사진.HEIC')).toBe('옛날 사진');
+      expect(readTitle('', 'Grandma 60th birthday.jpg')).toBe('Grandma 60th birthday');
+      expect(readTitle('   \n  ', 'Old photo.HEIC')).toBe('Old photo');
     });
   });
 
   describe('linking to memories that already exist', () => {
     it('links the longest matching title, and only whole mentions', () => {
-      const titles = ['김순자', '김순자 할머니', '부산 영도'];
-      const { body, linked } = linkKnownTitles('김순자 할머니가 부산 영도에 사셨다', titles);
-      // LONGEST FIRST: "김순자 할머니" must not be eaten by "김순자"
-      expect(body).toContain('[[김순자 할머니]]');
-      expect(body).not.toContain('[[김순자]] 할머니');
-      expect(body).toContain('[[부산 영도]]');
-      expect(linked).toContain('김순자 할머니');
+      const titles = ['Sunja', 'Sunja Kim', 'Yeongdo Island', 'Bus'];
+      const { body, linked } = linkKnownTitles(
+        'Sunja Kim lived on Yeongdo Island in Busan',
+        titles,
+      );
+      // LONGEST FIRST: "Sunja Kim" must not be eaten by "Sunja"
+      expect(body).toContain('[[Sunja Kim]]');
+      expect(body).not.toContain('[[Sunja]] Kim');
+      expect(body).toContain('[[Yeongdo Island]]');
+      // a title inside another word is not a mention of it
+      expect(body).not.toContain('[[Bus]]');
+      expect(linked).toContain('Sunja Kim');
     });
 
     it('leaves a link the contributor typed themselves alone', () => {
-      const { body } = linkKnownTitles('이미 [[김순자]] 라고 적었다', ['김순자']);
+      const { body } = linkKnownTitles('I already wrote [[Sunja]] here', ['Sunja']);
       // one pair of brackets, not two nested ones
-      expect(body).toBe('이미 [[김순자]] 라고 적었다');
+      expect(body).toBe('I already wrote [[Sunja]] here');
       expect(body).not.toContain('[[[[');
     });
 
     it('changes no word of the contributor’s text', () => {
-      const original = '어머니가 재봉틀 앞에 앉아 계셨다';
-      const { body } = linkKnownTitles(original, ['재봉틀', '어머니']);
+      const original = 'Mother sat at the sewing machine';
+      const { body } = linkKnownTitles(original, ['sewing machine', 'Mother']);
       // strip the markup back out and the text must be byte-identical
       expect(body.replace(/\[\[([^\]]*)\]\]/g, '$1')).toBe(original);
     });
+
+    it('a title in another script is a mention only as the whole word, exactly', () => {
+      const { body } = linkKnownTitles(
+        'Grandpa came from Москва. He never went back to Москвабад.',
+        ['Москва'],
+      );
+      expect(body).toBe('Grandpa came from [[Москва]]. He never went back to Москвабад.');
+      // another form of the word is another word
+      expect(linkKnownTitles('Москвы нет', ['Москва']).linked).toEqual([]);
+    });
   });
 
-  it('guesses a type, and defaults to event rather than person', () => {
+  it('the type is an event (a source for a photograph alone): no guessing from keywords', () => {
     // person is the expensive guess to get wrong: a person note is a hub other
     // memories link INTO, so a mislabelled one distorts the sky and the people
     // list at once, where a mislabelled event is one wrong colour
-    expect(readType('그날 마당에서 빨래를 널었다', false)).toBe('event');
-    expect(readType('전쟁 통 피난 시절 이야기', false)).toBe('period');
-    expect(readType('어머니의 재봉틀', false)).toBe('object');
+    expect(readType('That day I hung the laundry in the yard', false)).toBe('event');
+    expect(readType('A story of the war years', false)).toBe('event');
+    expect(readType("Grandma's sewing machine", false)).toBe('event');
     // a photograph with no words of its own is evidence, not an account
     expect(readType('', true)).toBe('source');
   });
@@ -144,20 +160,20 @@ describe('FM-071 draft composition', () => {
       const s = await ctx.realSession(`df1-${RUN}@test.local`);
       const archive = await ctx.provisionArchive(s, `DF1 ${RUN}`);
       await ctx.api(s.token, 'POST', `/v1/archives/${archive}/notes`, {
-        title: `김순자 ${RUN}`,
+        title: `Sunja ${RUN}`,
         type: 'person',
         body: '',
       });
 
-      const text = `1994년 7월 15일이었다. 김순자 ${RUN} 가 첫 손주를 안았다.`;
+      const text = `It was 1994-07-15. Sunja ${RUN} held her first grandchild.`;
       const res = await draft(s, archive, { text });
       expect(res.status).toBe(200);
       const d = (await res.json()) as Draft;
 
       expect(d.occurred, 'the date in the text was not read').toBe('1994-07-15');
       expect(d.title).not.toBe('');
-      expect(d.body, 'an existing memory was not linked').toContain(`[[김순자 ${RUN}]]`);
-      // the moves are SHOWN, in the contributor's language, before they accept
+      expect(d.body, 'an existing memory was not linked').toContain(`[[Sunja ${RUN}]]`);
+      // the moves are SHOWN, before the contributor accepts
       expect(d.notes.length).toBeGreaterThan(2);
       expect(d.notes.join(' ')).toContain('1994-07-15');
       // and the draft's author is recorded, the way an embedding records its model
@@ -168,14 +184,14 @@ describe('FM-071 draft composition', () => {
       const s = await ctx.realSession(`df2-${RUN}@test.local`);
       const archive = await ctx.provisionArchive(s, `DF2 ${RUN}`);
 
-      const text = '할머니는 국수를 잘 삶으셨다';
+      const text = 'Grandma was good at boiling noodles';
       const d = (await (await draft(s, archive, { text })).json()) as Draft;
 
       /**
        * THE CENTRAL PROPERTY. Strip the markup the composer may add and what is
        * left must be exactly what was typed. A generator that completed
-       * "할머니는 국수를 잘 삶으셨다, 그리고 늘 웃으셨다" would put a sentence
-       * nobody remembers into a dead person's record.
+       * "Grandma was good at boiling noodles, and she always smiled" would put a
+       * sentence nobody remembers into a dead person's record.
        */
       const stripped = d.body.replace(/!?\[\[([^\]]*)\]\]/g, '$1').trim();
       expect(stripped, 'the composer invented text').toBe(text);
@@ -189,7 +205,7 @@ describe('FM-071 draft composition', () => {
         `select count(*) as n from public.notes where archive_id = $1`,
         [archive],
       );
-      await draft(s, archive, { text: `초안만 ${RUN} 만들어 보는 글입니다.` });
+      await draft(s, archive, { text: `Only a draft ${RUN}, written to try it out.` });
       const after = await ctx.pool.query<{ n: string }>(
         `select count(*) as n from public.notes where archive_id = $1`,
         [archive],
@@ -215,7 +231,7 @@ describe('FM-071 draft composition', () => {
       expect(res.status).toBe(200);
       const d = (await res.json()) as Draft;
       expect(d.body).toBe('The photo from that day.');
-      expect(d.notes.join(' ')).not.toMatch(/사진/);
+      expect(d.notes.join(' ')).not.toMatch(/photograph/i);
     });
   });
 });

@@ -74,7 +74,7 @@ describe('FM-051 self-link rename', () => {
   it("a later note with the old title cannot claim a renamed note's self-link", async () => {
     const s = await ctx.realSession(`sl2-${RUN}@test.local`);
     const archive = await ctx.provisionArchive(s, `SL2 ${RUN}`);
-    const old = `Halmoni ${RUN}`;
+    const old = `Grandma ${RUN}`;
     const PRIVATE = `ZZPRIVATE${RUN}`;
     const body = `She is [[${old}]] to us. ${PRIVATE}`;
     const id = await note(s, archive, old, body);
@@ -113,7 +113,7 @@ describe('FM-051 self-link rename', () => {
   it('restoring a revision whose title differs rewrites its self-links', async () => {
     const s = await ctx.realSession(`sl3-${RUN}@test.local`);
     const archive = await ctx.provisionArchive(s, `SL3 ${RUN}`);
-    const old = `Appa ${RUN}`;
+    const old = `Dad ${RUN}`;
     const now = `Kim Jae-ho ${RUN}`;
     // the note is CURRENTLY at the old title; the revision carries the new one
     const id = await note(s, archive, old, `Called [[${old}]] at home.`);
@@ -169,7 +169,7 @@ describe('FM-051 self-link rename', () => {
   it('renaming does not append a duplicate revision for the note itself', async () => {
     const s = await ctx.realSession(`sl4-${RUN}@test.local`);
     const archive = await ctx.provisionArchive(s, `SL4 ${RUN}`);
-    const old = `Samchon ${RUN}`;
+    const old = `Uncle ${RUN}`;
     const next = `Kim Min-su ${RUN}`;
     // a mixed body: one occurrence of the OLD title and one of the NEW title.
     const body = `Both [[${old}]] and [[${next}]] appear here.`;

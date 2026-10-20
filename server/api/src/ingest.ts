@@ -59,9 +59,9 @@ const str = (v: unknown, max: number): string | undefined =>
 
 /**
  * A name written into the notes (a file name, a teller's name): one line, in composed
- * form. macOS hands file names over decomposed (NFD): "할머니 녹음.txt" arrived as loose
- * jamo, "José.txt" with its accent split from the letter, and was stored that way in every
- * footer, where no search or comparison matched it (e2e review #13).
+ * form. macOS hands file names over decomposed (NFD): "José.txt" arrived with its accent split
+ * from the letter, and was stored that way in every footer, where no search or comparison
+ * matched it (e2e review #13).
  */
 const label = (v: unknown, max: number): string | undefined => {
   if (typeof v !== 'string') return undefined;

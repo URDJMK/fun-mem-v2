@@ -61,7 +61,7 @@ export interface CleanOptions {
   /** capital at the start and after sentence ends (default true); off for a fragment of a turn */
   capitalize?: boolean;
   /**
-   * When the words are ONLY fillers ("Mm-hm.", "음."), keep them as they were instead of
+   * When the words are ONLY fillers ("Mm-hm."), keep them as they were instead of
    * returning nothing (default true): a turn that was said is never made empty. "Mm-hm" on its
    * own is often the answer "yes".
    */
@@ -69,10 +69,10 @@ export interface CleanOptions {
 }
 
 /**
- * Um, Uh and Uhm are also Korean family names (엄, 어): "His name was Um Jae-sun", "We met Mr. Um
- * at church". A capitalised one is a NAME when a title stands before it, a capitalised word
- * (not "I") follows it, or it sits in the middle of a sentence; a filler starts a sentence or
- * stands between commas. Reads a bounded slice on each side.
+ * Um, Uh and Uhm are also surnames: "His name was Um Jae-sun", "We met Mr. Um at church". A
+ * capitalised one is a NAME when a title stands before it, a capitalised word (not "I")
+ * follows it, or it sits in the middle of a sentence; a filler starts a sentence or stands
+ * between commas. Reads a bounded slice on each side.
  */
 const TITLE_BEFORE = /\b(?:Mr|Mrs|Ms|Mx|Dr|Prof|Miss|Mister|Madam|Sir|Aunt|Uncle)\.?\s+$/i;
 function isName(word: string, whole: string, from: number, to: number): boolean {
@@ -209,8 +209,6 @@ export function cleanSpeech(input: string, opts: CleanOptions = {}): string {
       return w;
     });
   }
-  // Korean fillers, only when they stand alone
-  t = t.replace(/(^|\s)(?:어+|음+|으음+|흠+)(?=[\s,.…]|$)[,.…]*/g, '$1');
 
   t = squash(t)
     .replace(/\s+([,.;!?])/g, '$1')
@@ -299,7 +297,7 @@ const STRONG_MONEY_WORD =
   /(?:[$₩€£¥]|\b(?:dollars?|bucks|cents?|pounds?|euros?|yen|quid|price|prices|cost|costs|paid|pay|wages?|salary|money)\b|\d\s*won\b)/i;
 /** A noun within two words after a number makes it a quantity: "two thousand people", "eighteen hundred acres". */
 const QUANTITY =
-  /^(?:dollars?|bucks|cents?|pounds?|won|euros?|yen|quid|grand|cows?|cattle|chickens?|hens?|pigs?|sheep|goats?|horses?|head|fish|people|persons?|men|women|kids|children|students|graduates|soldiers|workers|families|households|houses|homes|acres?|hectares?|pyeong|years?|months?|weeks?|days?|hours?|minutes?|seconds?|miles?|kilomet(?:er|re)s?|km|meters?|metres?|feet|foot|ft|inches|kilos?|kilograms?|kg|grams?|tons?|tonnes?|lbs?|gallons?|liters?|litres?|bags?|boxes|sacks?|bushels?|trees|times|percent|%|words|pages|copies|items|units|rooms|steps|hundred|thousand|million|billion)$/i;
+  /^(?:dollars?|bucks|cents?|pounds?|won|euros?|yen|quid|grand|cows?|cattle|chickens?|hens?|pigs?|sheep|goats?|horses?|head|fish|people|persons?|men|women|kids|children|students|graduates|soldiers|workers|families|households|houses|homes|acres?|hectares?|years?|months?|weeks?|days?|hours?|minutes?|seconds?|miles?|kilomet(?:er|re)s?|km|meters?|metres?|feet|foot|ft|inches|kilos?|kilograms?|kg|grams?|tons?|tonnes?|lbs?|gallons?|liters?|litres?|bags?|boxes|sacks?|bushels?|trees|times|percent|%|words|pages|copies|items|units|rooms|steps|hundred|thousand|million|billion)$/i;
 /** An address is not a year either: "1946 Main Street". */
 const ADDRESS =
   /^(?:street|st|road|rd|avenue|ave|lane|ln|drive|dr|boulevard|blvd|way|place|court|highway)$/i;
@@ -539,8 +537,8 @@ const HEDGE =
 
 /**
  * The EARLIEST date mentioned in English prose, as raw fuzzy text, or null.
- * Same rules as the Korean reader: null is the common answer; a year alone never
- * grows a month; `~` appears only when the speaker hedged next to the date.
+ * Null is the common answer; a year alone never grows a month; `~` appears only when the
+ * speaker hedged next to the date.
  */
 export function readEnglishDate(input: string): string | null {
   const text = spokenYearsToDigits(input);
@@ -571,9 +569,11 @@ export function readEnglishDate(input: string): string | null {
     new RegExp(String.raw`\b${MONTH_CAP}(?:,\s*|\s+)(?:of\s+)?${YEAR}\b`, 'g'),
     (m) => `${m[2]}-${monthNo(m[1]!)}`,
   );
-  // a bare year that is not a quantity ("1500 feet", "$2000", "1950 dollars", "1946 Main Street")
+  // a bare year that is not a quantity ("1500 feet", "$2000", "1950 dollars", "1946 Main Street").
+  // A letter of ANY script right after the digits makes them a unit or a code, never a year:
+  // "the 1960s", and a counter or an abbreviation glued to the number in another language.
   add(
-    new RegExp(String.raw`(?<![\d$.,])${YEAR}(?![\d,.]?\d)(?![가-힣A-Za-z])`, 'g'),
+    new RegExp(String.raw`(?<![\d$.,])${YEAR}(?![\d,.]?\d)(?!\p{L})`, 'gu'),
     (m) => m[1]!,
     (m) => !isQuantityContext(text, m.index, m.index + m[0].length),
   );

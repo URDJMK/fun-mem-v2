@@ -63,25 +63,25 @@ describe('FM-056 rename cascade visibility', () => {
     const archive = await ctx.provisionArchive(owner, `RA1 ${RUN}`);
     await addMember(archive, other.userId);
 
-    const secretTitle = `비밀 ${RUN}`;
-    const secret = await makeNote(owner, archive, secretTitle, '아무도 못 보는 이야기');
+    const secretTitle = `Secret ${RUN}`;
+    const secret = await makeNote(owner, archive, secretTitle, 'A story nobody can see');
     await restrict(archive, secret);
 
     // the other member's own note happens to mention that title
-    const theirs = await makeNote(other, archive, `내 노트 ${RUN}`, `[[${secretTitle}]] 이야기`);
+    const theirs = await makeNote(other, archive, `My note ${RUN}`, `[[${secretTitle}]] story`);
 
     // POSITIVE CONTROL FIRST: an ORDINARY rename must still cascade, or this
     // test is satisfied by a fix that simply disables the feature.
-    const openTitle = `공개 ${RUN}`;
-    const open = await makeNote(owner, archive, openTitle, '누구나 보는 이야기');
-    const refOpen = await makeNote(other, archive, `참조 ${RUN}`, `[[${openTitle}]] 참조`);
-    expect((await rename(owner, archive, open, `공개수정 ${RUN}`)).status).toBe(200);
+    const openTitle = `Open ${RUN}`;
+    const open = await makeNote(owner, archive, openTitle, 'A story everyone can see');
+    const refOpen = await makeNote(other, archive, `Reference ${RUN}`, `[[${openTitle}]] see this`);
+    expect((await rename(owner, archive, open, `Open renamed ${RUN}`)).status).toBe(200);
     expect(await bodyOf(refOpen), 'FM-016 ordinary rename stopped cascading').toContain(
-      `공개수정 ${RUN}`,
+      `Open renamed ${RUN}`,
     );
 
     // now the private one
-    const newSecret = `비밀수정 ${RUN}`;
+    const newSecret = `Secret renamed ${RUN}`;
     expect((await rename(owner, archive, secret, newSecret)).status).toBe(200);
 
     const after = await bodyOf(theirs);
@@ -89,7 +89,7 @@ describe('FM-056 rename cascade visibility', () => {
       after,
       "a private note's new title was written into another member's body",
     ).not.toContain(newSecret);
-    expect(after, 'the body was edited at all').toBe(`[[${secretTitle}]] 이야기`);
+    expect(after, 'the body was edited at all').toBe(`[[${secretTitle}]] story`);
   });
 
   it("renaming a private note writes no revision into another member's note", async () => {
@@ -98,16 +98,16 @@ describe('FM-056 rename cascade visibility', () => {
     const archive = await ctx.provisionArchive(owner, `RA2 ${RUN}`);
     await addMember(archive, other.userId);
 
-    const t = `숨김 ${RUN}`;
-    const secret = await makeNote(owner, archive, t, '비공개');
+    const t = `Hidden ${RUN}`;
+    const secret = await makeNote(owner, archive, t, 'Private');
     await restrict(archive, secret);
-    const theirs = await makeNote(other, archive, `기록 ${RUN}`, `[[${t}]] 참조`);
+    const theirs = await makeNote(other, archive, `Record ${RUN}`, `[[${t}]] see this`);
 
     const before = await ctx.pool.query(
       `select count(*) from public.revisions where note_id = $1`,
       [theirs],
     );
-    await rename(owner, archive, secret, `숨김수정 ${RUN}`);
+    await rename(owner, archive, secret, `Hidden renamed ${RUN}`);
     const after = await ctx.pool.query<{ count: string; reason: string }>(
       `select count(*) as count, max(reason) as reason from public.revisions where note_id = $1`,
       [theirs],
@@ -120,7 +120,7 @@ describe('FM-056 rename cascade visibility', () => {
     );
     const leaked = await ctx.pool.query(
       `select 1 from public.revisions where note_id = $1 and body like $2`,
-      [theirs, `%숨김수정 ${RUN}%`],
+      [theirs, `%Hidden renamed ${RUN}%`],
     );
     expect(leaked.rowCount, 'the private title leaked into the revision log').toBe(0);
   });
@@ -132,11 +132,11 @@ describe('FM-056 rename cascade visibility', () => {
     await addMember(archive, other.userId);
 
     // the dangling occurrence exists BEFORE the target does
-    const t = `미래 ${RUN}`;
-    const theirs = await makeNote(other, archive, `먼저 ${RUN}`, `[[${t}]] 언젠가`);
-    const mine = await makeNote(owner, archive, `내것 ${RUN}`, `[[${t}]] 나도`);
+    const t = `Future ${RUN}`;
+    const theirs = await makeNote(other, archive, `First ${RUN}`, `[[${t}]] someday`);
+    const mine = await makeNote(owner, archive, `Mine ${RUN}`, `[[${t}]] me too`);
 
-    const target = await makeNote(owner, archive, t, '이제 생겼다');
+    const target = await makeNote(owner, archive, t, 'Now it exists');
     await restrict(archive, target);
 
     // Saving the SOURCE is what recomputes its links — reindexLinks is the
@@ -145,10 +145,10 @@ describe('FM-056 rename cascade visibility', () => {
     // these. An earlier draft of this test did exactly that and was asserting
     // against a path the product cannot take.)
     await ctx.api(other.token, 'PUT', `/v1/archives/${archive}/notes/${theirs}`, {
-      body: `[[${t}]] 언젠가 그리고 더`,
+      body: `[[${t}]] someday and more`,
     });
     await ctx.api(owner.token, 'PUT', `/v1/archives/${archive}/notes/${mine}`, {
-      body: `[[${t}]] 나도 그리고 더`,
+      body: `[[${t}]] me too and more`,
     });
 
     const theirLink = await ctx.pool.query<{ resolved_id: string | null }>(
@@ -171,13 +171,18 @@ describe('FM-056 rename cascade visibility', () => {
 
     // SYMMETRIC: the boundary holds in the other direction too. The owner's
     // note must not resolve to a private note authored by the other member.
-    const theirSecret = await makeNote(other, archive, `그들비밀 ${RUN}`, '남의 비공개');
+    const theirSecret = await makeNote(
+      other,
+      archive,
+      `Their secret ${RUN}`,
+      'Private to someone else',
+    );
     await restrict(archive, theirSecret);
     const mineToTheirs = await makeNote(
       owner,
       archive,
-      `역방향 ${RUN}`,
-      `[[그들비밀 ${RUN}]] 참조`,
+      `Reverse ${RUN}`,
+      `[[Their secret ${RUN}]] see this`,
     );
     const rev = await ctx.pool.query<{ resolved_id: string | null }>(
       `select resolved_id from public.links where source_id = $1`,
@@ -196,9 +201,9 @@ describe('FM-056 rename cascade visibility', () => {
     await addMember(archive, other.userId);
 
     // resolved while the target is visible to everyone
-    const t = `전환 ${RUN}`;
-    const target = await makeNote(owner, archive, t, '처음엔 공개');
-    const theirs = await makeNote(other, archive, `가리킴 ${RUN}`, `[[${t}]] 가리킨다`);
+    const t = `Switch ${RUN}`;
+    const target = await makeNote(owner, archive, t, 'Open at first');
+    const theirs = await makeNote(other, archive, `Pointer ${RUN}`, `[[${t}]] points here`);
     const linked = await ctx.pool.query<{ resolved_id: string | null }>(
       `select resolved_id from public.links where source_id = $1`,
       [theirs],
@@ -209,7 +214,7 @@ describe('FM-056 rename cascade visibility', () => {
 
     // ...then it becomes private and is renamed
     await restrict(archive, target);
-    await rename(owner, archive, target, `전환수정 ${RUN}`);
+    await rename(owner, archive, target, `Switch renamed ${RUN}`);
 
     const after = await ctx.pool.query<{ resolved_id: string | null }>(
       `select resolved_id from public.links where source_id = $1`,
@@ -227,7 +232,7 @@ describe('FM-056 rename cascade visibility', () => {
     // resolved_id afterwards — so the only assertion looked identical either
     // way. The leak is the BODY and the REVISION; those are what must be checked.
     expect(await bodyOf(theirs), "the referrer's body was rewritten anyway").toBe(
-      `[[${t}]] 가리킨다`,
+      `[[${t}]] points here`,
     );
     const revs = await ctx.pool.query(
       `select 1 from public.revisions where note_id = $1 and reason = 'rename-cascade'`,
@@ -250,11 +255,11 @@ describe('FM-056 rename cascade visibility', () => {
       const archive = await ctx.provisionArchive(owner, `RA5 ${RUN}`);
       await addMember(archive, other.userId);
 
-      const wanted = `나중이름 ${RUN}`;
-      const theirs = await makeNote(other, archive, `대기 ${RUN}`, `[[${wanted}]] 기다린다`);
-      const mine = await makeNote(owner, archive, `내대기 ${RUN}`, `[[${wanted}]] 나도`);
+      const wanted = `Later name ${RUN}`;
+      const theirs = await makeNote(other, archive, `Waiting ${RUN}`, `[[${wanted}]] waits`);
+      const mine = await makeNote(owner, archive, `My waiting ${RUN}`, `[[${wanted}]] me too`);
 
-      const secret = await makeNote(owner, archive, `임시 ${RUN}`, '비공개 내용');
+      const secret = await makeNote(owner, archive, `Temporary ${RUN}`, 'Private content');
       await restrict(archive, secret);
       // the rename is what calls promoteUnresolved with the new title
       expect((await rename(owner, archive, secret, wanted)).status).toBe(200);

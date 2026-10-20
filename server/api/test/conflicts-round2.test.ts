@@ -42,7 +42,7 @@ describe('N-1: a different year is a disagreement only for what happens once (re
       'My father worked at the mill in 1955.',
     ],
     ['repeatable trip', 'We went to Busan in 1970.', 'We went to Busan in 1975.'],
-    ['visited twice', 'We visited Korea in 1990.', 'We visited Korea in 1995.'],
+    ['visited twice', 'We visited Ireland in 1990.', 'We visited Ireland in 1995.'],
     ['two times two counts', 'In 1950 we had 12 cows.', 'In 1960 we had 20 cows.'],
     ['age by year', 'In 1960 my son was five.', 'In 1965 my son was ten.'],
     ['age by year 2', 'My son was five in 1960.', 'My son was ten in 1965.'],
@@ -78,34 +78,10 @@ describe('N-1: a different year is a disagreement only for what happens once (re
     ['different events', 'I was 20 when I married.', 'I was 22 when I had my first child.'],
     ['hours vs years', 'Mom worked 12 hours a day.', 'Mom worked at the factory for 30 years.'],
     ['kids vs at table', 'There were 9 of us kids.', 'There were 11 of us at the table.'],
-    [
-      'KO diff person',
-      '우리 어머니는 1925년에 태어나셨어요.',
-      '우리 아버지는 1926년에 태어나셨다.',
-    ],
-    ['KO trip twice', '우리는 1970년에 부산에 갔어요.', '우리는 1975년에 부산에 갔어요.'],
-    ['KO lived two years', '우리는 1970년에 부산에 살았어요.', '우리는 1980년에 부산에 살았어요.'],
-    ['KO subjectless', '1950년에 이사 왔어요.', '1952년에 이사 왔어요.'],
-    [
-      'KO units',
-      '아버지는 30년 동안 광산에서 일하셨다.',
-      '아버지는 하루에 12시간 광산에서 일하셨다.',
-    ],
-    ['KO sons', '큰아들은 1970년에 태어났다.', '작은아들은 1972년에 태어났다.'],
-    [
-      'KO husband/father-in-law',
-      '남편은 1990년에 돌아가셨어요.',
-      '시아버지는 1985년에 돌아가셨어요.',
-    ],
-    ['KO came twice', '어머니는 1960년에 서울에 오셨다.', '어머니는 1965년에 서울에 오셨다.'],
-    ['KO age by year', '1960년에 저는 10살이었어요.', '1965년에 저는 15살이었어요.'],
+    // no subject said: these may be two people's sentences
+    ['subjectless', 'Moved to Scranton in 1950.', 'Moved to Scranton in 1952.'],
     // said of NOW, true when said (round 3, F1): a grandchild may have been born in between
     ['present count', 'I have 3 grandchildren.', 'I have 5 grandchildren.'],
-    [
-      'KO cows by year',
-      '1950년에 우리 집에는 소가 12마리 있었다.',
-      '1960년에 우리 집에는 소가 20마리 있었다.',
-    ],
     // e2e H-long-monologue: a numbered part is a label, and "It" is not a person
     [
       'part N',
@@ -147,22 +123,13 @@ describe('N-1: a different year is a disagreement only for what happens once (re
       'The textile factory in Daegu closed in 1989.',
     ],
     ['the flood', 'The flood was in 1972.', 'The flood was in 1974.'],
-    ['KO TP', '우리 어머니는 1925년에 태어나셨어요.', '우리 어머니는 1926년에 태어나셨다.'],
-    [
-      'KO TP duration',
-      '아버지는 30년 동안 광산에서 일하셨다.',
-      '아버지는 25년 동안 광산에서 일하셨다.',
-    ],
-    ['KO count TP', '어머니는 아이를 4명 낳으셨다.', '어머니는 아이를 5명 낳으셨다.'],
-    ['KO TP son', '큰아들은 1970년에 태어났다.', '큰아들은 1971년에 태어났다.'],
-    ['KO TP age', '저는 16살에 시집왔어요.', '저는 17살에 시집왔어요.'],
   ])('%s', (_label, a, b) => {
     expect(compareClaims(a, b).relation).toBe('conflict');
     expect(compareClaims(b, a).relation).toBe('conflict');
   });
   // Not caught, and accepted as misses (a miss leaves two plain sentences; nothing is wrong):
-  // "We moved to Ohio in 1952 when I was 6" / "...when I was 7" (a move can repeat), Korean
-  // number words (넷/다섯, 열여섯), "그때" (which time?), "소가 12마리" (no subject is named).
+  // "We moved to Ohio in 1952 when I was 6" / "...when I was 7" (a move can repeat), "back then"
+  // (which time?), "we had 12 cows" (no subject is named).
 });
 
 describe('N-2: another relative\'s "I" is not this teller\'s (review R4)', () => {
@@ -308,17 +275,13 @@ describe('N-2: another relative\'s "I" is not this teller\'s (review R4)', () =>
     expect(report).toMatchObject({ incomplete: false });
   });
 
-  it('who told a note is read from its footer, in English and in Korean', () => {
+  it('who told a note is read from its footer', () => {
     expect(
       footerTeller(
         'Text.\n\n> Question: “Where?”\n> From “Spring 2026” · told by Grandma Sunja (0:03–0:24)',
       ),
     ).toBe('Grandma Sunja');
     expect(footerTeller('Text.\n\n> From the interview transcript · told by Walt')).toBe('Walt');
-    expect(footerTeller('글.\n\n> “봄 인터뷰”에서 옮김 · 박순자님 말씀 (0:03–0:24)')).toBe(
-      '박순자',
-    );
-    expect(footerTeller('글.\n\n> 인터뷰 녹취에서 옮김 · 할머니 말씀')).toBe('할머니');
     expect(footerTeller('A note written by hand.\n\n> From the interview transcript')).toBeNull();
     expect(tellerVoice('Grandma  Sunja')).toBe(tellerVoice('grandma sunja'));
   });
@@ -557,19 +520,28 @@ describe('N-6: one marker per memory, note and sentence (review E15)', () => {
   });
 });
 
-describe("the marker date is the family's day, not the UTC day (optional item)", () => {
-  it('01:30 in Seoul is already the next day', async () => {
+describe("the marker date is the UTC day unless FUNMEM_TZ names the family's zone", () => {
+  it('a valid zone wins; none, or one that does not exist, gives the UTC day', async () => {
     const { today } = await import('../src/conflicts');
     const saved = process.env.FUNMEM_TZ;
+    const evening = new Date('2026-10-18T16:30:00Z');
     try {
       delete process.env.FUNMEM_TZ;
-      expect(today(new Date('2026-10-18T16:30:00Z'))).toBe('2026-10-19');
-      expect(today(new Date('2026-10-18T14:59:00Z'))).toBe('2026-10-18');
+      expect(today(evening)).toBe('2026-10-18');
+      expect(today(new Date('2026-10-18T23:59:00Z'))).toBe('2026-10-18');
+      expect(today(new Date('2026-10-19T00:00:00Z'))).toBe('2026-10-19');
+      // 05:30 the next morning in Auckland; 22:00 the evening before in New York
+      process.env.FUNMEM_TZ = 'Pacific/Auckland';
+      expect(today(evening)).toBe('2026-10-19');
+      process.env.FUNMEM_TZ = 'America/New_York';
+      expect(today(new Date('2026-10-19T02:00:00Z'))).toBe('2026-10-18');
       process.env.FUNMEM_TZ = 'UTC';
-      expect(today(new Date('2026-10-18T16:30:00Z'))).toBe('2026-10-18');
-      // a misspelt zone falls back to the default (Seoul), not to UTC (round 3)
+      expect(today(evening)).toBe('2026-10-18');
+      // a misspelt zone, or an empty one, falls back to UTC
       process.env.FUNMEM_TZ = 'Not/AZone';
-      expect(today(new Date('2026-10-18T16:30:00Z'))).toBe('2026-10-19');
+      expect(today(evening)).toBe('2026-10-18');
+      process.env.FUNMEM_TZ = '';
+      expect(today(evening)).toBe('2026-10-18');
     } finally {
       if (saved === undefined) delete process.env.FUNMEM_TZ;
       else process.env.FUNMEM_TZ = saved;

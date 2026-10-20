@@ -3,6 +3,7 @@ import {
   compareClaims,
   displayText,
   namesOf,
+  norm,
   numbersOf,
   planEdit,
   plainText,
@@ -221,29 +222,13 @@ describe('compareClaims: a different number is a conflict only for the SAME fact
     ['negated', 'We did not sell the farm in 1984.', 'We sold the farm in 1982.'],
     ['a question', 'Did we sell the farm in 1984?', 'We sold the farm in 1982.'],
     [
-      'ko: two parents',
-      '어머니는 1905년에 대구에서 태어나셨다.',
-      '아버지는 1903년에 대구에서 태어나셨다.',
-    ],
-    [
-      'ko: born / died',
-      '어머니는 1905년에 대구에서 태어나셨다.',
-      '어머니는 1990년에 대구에서 돌아가셨다.',
-    ],
-    [
-      'ko: 입학 / 졸업',
-      '나는 1955년에 부산에서 학교에 들어갔어요.',
-      '나는 1961년에 부산에서 학교를 졸업했어요.',
-    ],
-    [
-      'ko: 이사 왔다 / 떠났다',
-      '우리 가족은 1950년에 부산으로 이사 왔어요.',
-      '우리 가족은 1953년에 부산을 떠났어요.',
+      'entered / graduated',
+      'I entered school in Busan in 1955.',
+      'I graduated from school in Busan in 1961.',
     ],
     // no subject said: these may be two people's sentences (Sunja's interview, and Minho's)
-    ['ko: nobody named', '1950년에 부산으로 이사 왔어요.', '1952년에 부산으로 이사 왔어요.'],
-    ['ko: nobody named (2)', '1984년에 농장을 팔았어요.', '1982년에 농장을 팔았어요.'],
     ['nobody named', 'Born in 1921 in Daegu.', 'Born in 1923 in Daegu.'],
+    ['nobody named (2)', 'Sold the farm in 1984.', 'Sold the farm in 1982.'],
     ['1st / 2nd son', 'My 1st son was born in 1948.', 'My 2nd son was born in 1951.'],
     [
       'brothers / brother',
@@ -278,17 +263,62 @@ describe('compareClaims: a different number is a conflict only for the SAME fact
       'The long drought came and we sold the farm in 1982, I think.',
       'We sold the farm in 1984 after the long drought, and my father cried.',
     ],
-    ['ko: a year, the farm named', '농장은 1984년에 팔았어요.', '농장은 1982년에 팔았어요.'],
-    ['ko: a birth year, nothing else said', '저는 1931년생이에요.', '저는 1932년생이에요.'],
     ['a thing, not a person', 'The farm was sold in 1984.', 'The farm was sold in 1982.'],
+    ['a birth year, said by "I"', 'I was born in 1931.', 'I was born in 1932.'],
     [
-      'ko: a birth year',
-      '어머니는 1905년에 대구에서 태어나셨다.',
-      '어머니는 1907년에 대구에서 태어나셨다.',
+      'a birth year, a place named',
+      'My mother was born in Daegu in 1905.',
+      'My mother was born in Daegu in 1907.',
     ],
   ])('%s', (_label, a, b) => {
     expect(compareClaims(a, b).relation).toBe('conflict');
     expect(compareClaims(b, a).relation).toBe('conflict');
+  });
+});
+
+describe('text in a script the English rules do not cover is opaque: kept, compared as written, never a false alarm', () => {
+  const RU = 'Мы продали ферму в 1984 году. Потом мы переехали в город.';
+  const FOOT = '\n\n> From the interview transcript';
+
+  it('is compared by its own letters and digits: nothing is dropped from what is compared', () => {
+    expect(norm('Мы продали ферму в 1984 году!')).toBe('мы продали ферму в 1984 году');
+    expect(norm('我们1984年卖了农场。')).toBe('我们1984年卖了农场');
+    expect(norm('باعنا المزرعة عام 1984.')).toBe('باعنا المزرعة عام 1984');
+    expect(norm(RU)).not.toBe(norm(RU.replace('1984', '1982')));
+    expect(unitsOf(RU).map((u) => u.text)).toEqual([
+      'Мы продали ферму в 1984 году.',
+      'Потом мы переехали в город.',
+    ]);
+  });
+
+  it('the number check stays quiet: with no rules for the words it cannot tell what the numbers belong to', () => {
+    expect(
+      compareClaims('Мы продали ферму в 1982 году.', 'Мы продали ферму в 1984 году.').relation,
+    ).not.toBe('conflict');
+  });
+
+  it('an edit cannot remove or reword it, may add to it, and a changed number is recorded with the original kept', () => {
+    const old = `${RU}${FOOT}`;
+    expect(planEdit(old, old.replace(' Потом мы переехали в город.', ''))).toMatchObject({
+      ok: false,
+      kind: 'removed',
+    });
+    expect(planEdit(old, old.replace('переехали в город', 'уехали в деревню')).ok).toBe(false);
+    expect(planEdit(old, old.replace('Потом', 'Зимой было холодно. Потом'))).toMatchObject({
+      ok: true,
+      corrections: [],
+    });
+    const p = planEdit(old, old.replace('1984', '1982'));
+    expect(p).toMatchObject({
+      ok: true,
+      corrections: [{ neu: 'Мы продали ферму в 1982 году.', old: 'Мы продали ферму в 1984 году.' }],
+    });
+    if (p.ok) expect(p.body).toBe(old);
+    expect(planEdit(old, RU)).toMatchObject({ ok: false, kind: 'quote-removed' });
+    // a script written without spaces between sentences is one unit: never edited in place either
+    const zh = '我们1984年卖了农场。后来我们搬到了城里。';
+    expect(planEdit(zh, '我们1984年卖了农场。')).toMatchObject({ ok: false, kind: 'removed' });
+    expect(planEdit(zh, `${zh} 冬天很冷。`)).toMatchObject({ ok: true, corrections: [] });
   });
 });
 

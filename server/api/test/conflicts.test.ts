@@ -7,6 +7,7 @@ import {
   markersFor,
   sameNoteMarker,
   type Attribution,
+  type ConflictReport,
   type Passage,
 } from '../src/conflicts';
 import type { ChatModel } from '../src/ingest';
@@ -34,19 +35,23 @@ describe('the lines written into a note', () => {
     );
   });
 
-  it('is written in the language of the claim', () => {
-    const line = sameNoteMarker(A, {
-      claim: '1982년에 농장을 팔았어요.',
-      existing: '1984년에 농장을 팔았어요.',
-    });
-    expect(line).toContain('서로 다른 기억');
-    expect(line).toContain('Margaret Ellis (도우미)');
-    expect(
-      crossNoteMarker(
-        { ...A, channel: 'interview', who: null },
-        { claim: '1990년에 팔았어요.', title: '농장', existing: '1984년에 팔았어요.' },
-      ),
-    ).toContain('기여자님이 올린 인터뷰 녹취');
+  it('is always the English line, and quotes words in any script exactly as they were said', () => {
+    const claim = 'Мы продали ферму в 1982 году.';
+    const existing = 'Мы продали ферму в 1984 году.';
+    const same = sameNoteMarker(A, { claim, existing });
+    expect(same).toBe(
+      '> ⚠ Disagreement · 2026-10-18 · Margaret Ellis via the assistant: “Мы продали ферму в 1982 году.” — the text above says “Мы продали ферму в 1984 году.”',
+    );
+    const cross = crossNoteMarker(
+      { ...A, channel: 'interview', who: null },
+      { claim, title: 'Ферма', existing },
+    );
+    expect(cross).toBe(
+      '> ⚠ May disagree with [[Ферма]] · 2026-10-18 · an interview transcript added by a contributor: that note says “Мы продали ферму в 1984 году.”',
+    );
+    // ...and the lines read back as data, whatever script they hold
+    expect(parseMarker(same)).toMatchObject({ kind: 'two-accounts', claim, existing });
+    expect(parseMarker(cross)).toMatchObject({ kind: 'other-note', note: 'Ферма', existing });
   });
 
   it('names a contributor generically when the account has no name', () => {
@@ -173,6 +178,20 @@ describe('finding what a new claim contradicts', () => {
       by: 'numbers',
       existing: 'We sold the farm in nineteen eighty-four.',
     });
+  });
+
+  it('a claim in a script the rules cannot read finds nothing and breaks nothing; the English claim beside it is still checked', async () => {
+    const mixed: Passage = {
+      ...FARM,
+      text: `${FARM.text} Мы продали ферму в 1984 году.`,
+    };
+    const report: ConflictReport = { incomplete: false };
+    const c = await findConflicts({ retrieve: own(mixed), judge: null, report }, [
+      'Мы продали ферму в 1982 году.',
+      'We sold the farm in nineteen ninety.',
+    ]);
+    expect(c.map((x) => x.claim)).toEqual(['We sold the farm in nineteen ninety.']);
+    expect(report).toEqual({ incomplete: false, checked: 2 });
   });
 
   it('quotes what a note SAYS, not a claim it merely records someone else making', async () => {

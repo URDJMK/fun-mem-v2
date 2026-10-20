@@ -178,7 +178,6 @@ describe('a save is all or nothing', () => {
     });
     const result = {
       sourceHash: randomUUID(),
-      language: 'en',
       memories: [
         { ...bad('first fine'), title: 'One' },
         { ...bad('second fine'), title: 'Two' },

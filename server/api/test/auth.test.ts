@@ -164,7 +164,7 @@ describe('FM-014 auth wiring + tenant provisioning', () => {
     const res = await app.request('/v1/provision', {
       method: 'POST',
       headers: { authorization: `Bearer ${s.token}`, 'content-type': 'application/json' },
-      body: JSON.stringify({ subjectName: `Subject ${RUN}`, jurisdiction: 'KR' }),
+      body: JSON.stringify({ subjectName: `Subject ${RUN}`, jurisdiction: 'US' }),
     });
     expect(res.status).toBe(201);
     const body = (await res.json()) as { tenantId: string; archiveId: string };
@@ -176,7 +176,7 @@ describe('FM-014 auth wiring + tenant provisioning', () => {
         where t.id = $1 and a.id = $2 and m.user_id = $3`,
       [body.tenantId, body.archiveId, s.userId],
     );
-    expect(rows.rows).toEqual([{ kind: 'personal', jurisdiction: 'KR', role: 'owner' }]);
+    expect(rows.rows).toEqual([{ kind: 'personal', jurisdiction: 'US', role: 'owner' }]);
 
     // jurisdiction is required (FR-128, no default) — refused before any insert
     const noJur = await app.request('/v1/provision', {
@@ -193,7 +193,7 @@ describe('FM-014 auth wiring + tenant provisioning', () => {
       provisionSignup(pool, {
         userId: randomUUID(),
         subjectName: 'Orphan Probe',
-        jurisdiction: 'KR',
+        jurisdiction: 'US',
         tenantName: marker,
       }),
     ).rejects.toThrow();
@@ -216,7 +216,7 @@ describe('FM-014 auth wiring + tenant provisioning', () => {
     const prov = await app.request('/v1/provision', {
       method: 'POST',
       headers: { authorization: `Bearer ${owner.token}`, 'content-type': 'application/json' },
-      body: JSON.stringify({ subjectName: `Gate ${RUN}`, jurisdiction: 'KR' }),
+      body: JSON.stringify({ subjectName: `Gate ${RUN}`, jurisdiction: 'US' }),
     });
     const { archiveId } = (await prov.json()) as { archiveId: string };
 

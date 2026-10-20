@@ -83,7 +83,7 @@ beforeAll(async () => {
     );
     await pool.query(
       `insert into public.archives (id, tenant_id, subject_name, jurisdiction)
-       values ($1, $2, 'Grandma Kim', 'KR') on conflict (id) do nothing`,
+       values ($1, $2, 'Grandma Kim', 'US') on conflict (id) do nothing`,
       [A1, T1],
     );
     await pool.query(

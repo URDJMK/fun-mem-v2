@@ -82,12 +82,19 @@ describe('FM-022 hybrid search', () => {
     const s = await ctx.realSession(`rrf-${RUN}@test.local`);
     const archive = await ctx.provisionArchive(s, `Rrf ${RUN}`);
     // one chunk per note; D matches no channel and must never appear
-    const a = await note(s, archive, 'A', '바다 바다 이야기');
-    const b = await note(s, archive, 'B', '바다에 갔다'); // invisible to tsvector-simple
-    const c = await note(s, archive, 'C', '우리는 바다 사진 모음 앨범 정리 기록 보관');
-    const d = await note(s, archive, 'D', '회사 회의 일정 정리');
+    const a = await note(s, archive, 'A', 'harbor harbor story');
+    // `simple` keeps harbor/pier as ONE word, so tsvector cannot find 'harbor' in
+    // it; pgroonga splits at the slash and can
+    const b = await note(s, archive, 'B', 'we walked the harbor/pier at dusk');
+    const c = await note(
+      s,
+      archive,
+      'C',
+      'we took harbor photos for the album and filed them in the archive for safekeeping',
+    );
+    const d = await note(s, archive, 'D', 'budget meeting schedule review');
     await drainOnce(ctx.pool, ctx.embeddings, archive);
-    const q = '바다';
+    const q = 'harbor';
 
     // independently derive each channel's ranking (same rank expressions and
     // id tie-break the endpoint is contracted to use)
@@ -123,7 +130,7 @@ describe('FM-022 hybrid search', () => {
     ]) {
       leg.forEach((id, i) => fusedScore.set(id, (fusedScore.get(id) ?? 0) + 1 / (RRF_K + i + 1)));
     }
-    const dChunk = chunks.rows.find((r) => (r.content as string).includes('회의'))!.id as string;
+    const dChunk = chunks.rows.find((r) => (r.content as string).includes('meeting'))!.id as string;
     fusedScore.delete(dChunk); // no keyword match; a pure-noise vector rank must not fuse it in
     const expected = [...fusedScore.entries()]
       .sort((x, y) => y[1] - x[1] || (x[0] < y[0] ? -1 : 1))
@@ -150,22 +157,23 @@ describe('FM-022 hybrid search', () => {
     const member = await ctx.realSession(`aclm-${RUN}@test.local`);
     const archive = await ctx.provisionArchive(owner, `Acl ${RUN}`);
     await addMember(archive, member.userId);
-    const pub = await note(owner, archive, 'Picnic', '바다 소풍 다녀온 날');
-    const secret = await note(owner, archive, 'Secret', '바다 비밀 그리고 X비밀문서열쇠');
+    const secretKey = `XSECRETKEY${RUN}`;
+    const pub = await note(owner, archive, 'Picnic', 'a picnic by the harbor that Sunday');
+    const secret = await note(owner, archive, 'Secret', `a harbor secret and ${secretKey}`);
     await restrict(archive, secret);
     await drainOnce(ctx.pool, ctx.embeddings, archive);
 
     // the member sees only the public note: results, snippets, AND the count
-    const asMember = await search(member.token, archive, '바다');
+    const asMember = await search(member.token, archive, 'harbor');
     expect(asMember.total).toBe(1);
     expect(asMember.results.length).toBe(1);
     expect(asMember.results[0]!.noteId).toBe(pub);
     const raw = JSON.stringify(asMember);
     expect(raw).not.toContain(secret);
-    expect(raw).not.toContain('X비밀문서열쇠');
+    expect(raw).not.toContain(secretKey);
 
     // the author still finds their own restricted note
-    const asOwner = await search(owner.token, archive, '바다');
+    const asOwner = await search(owner.token, archive, 'harbor');
     expect(asOwner.total).toBe(2);
     expect(asOwner.results.map((r) => r.noteId).sort()).toEqual([pub, secret].sort());
 
@@ -185,22 +193,24 @@ describe('FM-022 hybrid search', () => {
       s,
       archive,
       'Voyage',
-      '# 항해\n\n우리는 바다에 갔다. ^v1\n\n# 귀항\n\n집으로 돌아왔다.',
+      '# Voyage out\n\nWe went to the sea. ^v1\n\n# Homecoming\n\nWe came back home.',
     );
-    const alias = await note(s, archive, 'Recipes', '[[Margaret|Peg]] 할머니의 레시피 모음');
-    const person = await note(s, archive, 'Margaret Kim', '할머니는 요리를 잘하셨다', {
+    const alias = await note(s, archive, 'Recipes', "[[Margaret|Peg]] grandma's recipe collection");
+    const person = await note(s, archive, 'Margaret Kim', 'Grandma was a wonderful cook', {
       type: 'person',
     });
-    const summer = await note(s, archive, 'Summer', '여름의 기억', { occurred: '1987-06' });
-    const walk = await note(s, archive, 'Walk', '바닷가에서 산책했다');
+    const summer = await note(s, archive, 'Summer', 'memories of the long summer', {
+      occurred: '1987-06',
+    });
+    const walk = await note(s, archive, 'Walk', 'We walked along the seaside');
     await drainOnce(ctx.pool, ctx.embeddings, archive);
 
     // exact: a quoted phrase matches in order, not reversed
-    const exact = await search(s.token, archive, '"바다에 갔다"');
+    const exact = await search(s.token, archive, '"went to the sea"');
     const hit = exact.results.find((r) => r.noteId === voyage);
     expect(hit).toBeDefined();
     expect(hit!.anchor).toBe('v1');
-    const reversed = await search(s.token, archive, '"갔다 바다에"');
+    const reversed = await search(s.token, archive, '"sea the to went"');
     expect(reversed.results.map((r) => r.noteId)).not.toContain(voyage);
 
     // alias: wikilink display text is searchable content
@@ -234,21 +244,44 @@ describe('FM-022 hybrid search', () => {
 
     // semantic: no full keyword match exists (negative control below), the
     // vector leg still surfaces the related chunk in the top 3
-    const sem = await search(s.token, archive, '바닷가 산책 풍경 사진');
+    const sem = await search(s.token, archive, 'seaside walking scenery photos');
     expect(sem.results.slice(0, 3).map((r) => r.noteId)).toContain(walk);
     const tsMiss = await ctx.pool.query(
       `select 1 from public.chunks c
         where c.note_id = $1 and c.fts @@ websearch_to_tsquery('simple', $2)`,
-      [walk, '바닷가 산책 풍경 사진'],
+      [walk, 'seaside walking scenery photos'],
     );
     expect(tsMiss.rowCount).toBe(0);
+  });
+
+  it('only a year, month or day is a date query; other numbers and words are not', async () => {
+    const s = await ctx.realSession(`dts-${RUN}@test.local`);
+    const archive = await ctx.provisionArchive(s, `Dts ${RUN}`);
+    // two notes dated a month apart, whose bodies never say the date
+    const june = await note(s, archive, 'June trip', 'we drove to the coast', {
+      occurred: '1987-06',
+    });
+    const august = await note(s, archive, 'August trip', 'we drove to the hills', {
+      occurred: '1987-08',
+    });
+
+    const ids = async (q: string) =>
+      (await search(s.token, archive, q)).results.map((r) => r.noteId);
+    // a year, a year-month and a full date are dates and match by prefix
+    expect(await ids('1987')).toEqual(expect.arrayContaining([june, august]));
+    expect(await ids('1987-06')).toContain(june);
+    expect(await ids('1987-06')).not.toContain(august);
+    // a trailing word is not part of a date, so the query is plain keywords
+    expect(await ids('1987th')).not.toContain(june);
+    // neither is anything that merely starts with digits
+    expect(await ids('19870')).not.toContain(june);
   });
 
   it('rebuild restores hybrid search after an index wipe', async () => {
     const s = await ctx.realSession(`rbd-${RUN}@test.local`);
     const archive = await ctx.provisionArchive(s, `Rbd ${RUN}`);
-    await note(s, archive, 'Fishing', '# 기록\n\n바다 낚시 기록. ^f1');
-    await note(s, archive, 'Camping', '산에서 캠핑했다');
+    await note(s, archive, 'Fishing', '# Log\n\nSea fishing log. ^f1');
+    await note(s, archive, 'Camping', 'We camped in the mountains');
     await drainOnce(ctx.pool, ctx.embeddings, archive);
 
     const proj = (r: { results: SearchResult[]; total: number }) => ({
@@ -260,19 +293,19 @@ describe('FM-022 hybrid search', () => {
         snippet: x.snippet,
       })),
     });
-    const before = proj(await search(s.token, archive, '바다'));
+    const before = proj(await search(s.token, archive, 'sea'));
     expect(before.total).toBeGreaterThan(0);
 
     // wipe the ENTIRE derived layer (chunks + vectors) out from under search
     await ctx.pool.query(`delete from public.chunk_embeddings where archive_id = $1`, [archive]);
     await ctx.pool.query(`delete from public.chunks where archive_id = $1`, [archive]);
-    const wiped = await search(s.token, archive, '바다');
+    const wiped = await search(s.token, archive, 'sea');
     expect(wiped.total).toBe(0);
 
     // derived-layer law: rebuild + drain restore identical search results
     const rebuilt = await ctx.api(s.token, 'POST', `/v1/archives/${archive}/chunks/rebuild`);
     expect(rebuilt.status).toBe(200);
     await drainOnce(ctx.pool, ctx.embeddings, archive);
-    expect(proj(await search(s.token, archive, '바다'))).toEqual(before);
+    expect(proj(await search(s.token, archive, 'sea'))).toEqual(before);
   });
 });

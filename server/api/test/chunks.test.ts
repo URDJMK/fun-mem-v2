@@ -127,41 +127,57 @@ describe('FM-021 chunks and FTS', () => {
     void noteId;
   });
 
-  it('korean tokenization matches particle variants and quoted phrases', async () => {
-    const s = await ctx.realSession(`ko-${RUN}@test.local`);
-    const archive = await ctx.provisionArchive(s, `Ko ${RUN}`);
+  it('pgroonga finds partial words and quoted phrases that the simple analyzer cannot', async () => {
+    const s = await ctx.realSession(`pg-${RUN}@test.local`);
+    const archive = await ctx.provisionArchive(s, `Pg ${RUN}`);
+    // pgroonga matches a partial word only while the word typed is not itself a
+    // word in the index, and the index is shared by every archive (and every
+    // earlier run), so the stem is unique to this run
+    const stem = `fish${RUN}`;
     await note(
       s,
       archive,
-      '바다 이야기',
-      '# 동해\n\n우리는 바다에 갔다. ^sea\n\n# 산\n\n산으로 등산했다.',
+      'Lake stories',
+      `# Lake\n\nWe went ${stem}ing at the lake. ^lake\n\n# Hills\n\nThe summit was cold and bright.`,
     );
 
-    // '바다' (noun stem) matches the chunk containing '바다에' (noun+particle) —
-    // the built-in simple analyzer cannot do this; pgroonga bigram can
-    const stem = await ctx.pool.query(
+    // the stem matches the chunk containing the longer word — the built-in
+    // simple analyzer cannot do this; pgroonga can
+    const simple = await ctx.pool.query(
+      `select 1 from public.chunks
+        where archive_id = $1 and fts @@ websearch_to_tsquery('simple', $2)`,
+      [archive, stem],
+    );
+    expect(simple.rowCount, 'the simple analyzer found a partial word').toBe(0);
+    const partial = await ctx.pool.query(
       `select anchor, content from public.chunks
         where archive_id = $1 and content &@ $2`,
-      [archive, '바다'],
+      [archive, stem],
     );
-    expect(stem.rows.length).toBe(1);
-    expect(stem.rows[0].anchor).toBe('sea');
-    expect(stem.rows[0].content).toContain('바다에');
+    expect(partial.rows.length).toBe(1);
+    expect(partial.rows[0].anchor).toBe('lake');
+    expect(partial.rows[0].content).toContain(`${stem}ing`);
 
-    // quoted Korean phrase query
+    // quoted phrase query: in order, and not reversed
     const phrase = await ctx.pool.query(
       `select content from public.chunks
         where archive_id = $1 and content &@~ $2`,
-      [archive, '"바다에 갔다"'],
+      [archive, '"at the lake"'],
     );
     expect(phrase.rows.length).toBe(1);
+    const reversed = await ctx.pool.query(
+      `select content from public.chunks
+        where archive_id = $1 and content &@~ $2`,
+      [archive, '"lake the at"'],
+    );
+    expect(reversed.rows.length).toBe(0);
 
-    // a Korean word only in the other section does not match the first
+    // a word only in the other section does not match the first
     const other = await ctx.pool.query(
       `select content from public.chunks where archive_id = $1 and content &@ $2`,
-      [archive, '등산'],
+      [archive, 'summit'],
     );
     expect(other.rows.length).toBe(1);
-    expect(other.rows[0].content).toContain('산으로');
+    expect(other.rows[0].content).toContain('cold and bright');
   });
 });

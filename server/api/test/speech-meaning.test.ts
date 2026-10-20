@@ -10,7 +10,7 @@ import { applyRoles, parseTranscript, stripSoundNotes } from '../src/transcript'
 
 describe('cleanSpeech keeps names, corrections and clauses', () => {
   it.each([
-    // Um, Uh, Uhm are Korean family names (엄, 어)
+    // Um, Uh, Uhm are also surnames
     ['His name was Um Jae-sun.', 'His name was Um Jae-sun.'],
     ['We met Mr. Um at church.', 'We met Mr. Um at church.'],
     ['Um Jae-sun was my uncle.', 'Um Jae-sun was my uncle.'],
@@ -119,25 +119,25 @@ describe('sound notes go, names in brackets stay', () => {
   });
 });
 
-describe('full-width punctuation stays as she wrote it, and still ends a question (round 3)', () => {
-  it('？ ！ ， ； are kept in her words, in text and in JSON', () => {
+describe('full-width punctuation stays as she wrote it (round 3)', () => {
+  it('？ ！ ， ； are kept in her words, in text and in JSON, and the person is asked who tells', () => {
     const t = parseTranscript({
       segments: [
-        { start: 0, end: 2, speaker: 'SPEAKER_01', text: '어디서 태어나셨어요？' },
-        { start: 2, end: 9, speaker: 'SPEAKER_00', text: '부산이요． 바닷가였어요！' },
+        { start: 0, end: 2, speaker: 'SPEAKER_01', text: '你在哪里出生？' },
+        { start: 2, end: 9, speaker: 'SPEAKER_00', text: '我出生在釜山． 海边的小房子！' },
       ],
     });
-    expect(t.turns.map((x) => x.text)).toEqual([
-      '어디서 태어나셨어요？',
-      '부산이요． 바닷가였어요！',
-    ]);
-    const zh = parseTranscript(
-      '提问者：你在哪里出生？\n奶奶：我1946年出生在釜山，我父亲是修船的，他的手很大！真的；很大。\n提问者：你母亲呢？\n奶奶：她在市场上卖鱼，从来没有抱怨过。',
-    );
-    expect(zh.turns.map((x) => x.text)).toContain(
-      '我1946年出生在釜山，我父亲是修船的，他的手很大！真的；很大。',
-    );
-    expect(applyRoles(zh).roles.interviewees).toEqual(['奶奶']);
+    expect(t.turns.map((x) => x.text)).toEqual(['你在哪里出生？', '我出生在釜山． 海边的小房子！']);
+    const lines = [
+      '提问者：你在哪里出生？',
+      '奶奶：我1946年出生在釜山，我父亲是修船的，他的手很大！真的；很大。',
+      '提问者：你母亲呢？',
+      '奶奶：她在市场上卖鱼，从来没有抱怨过。',
+    ];
+    const zh = parseTranscript(lines.join('\n'));
+    // every line is kept word for word; only English rules read it, so nothing is guessed from it
+    expect(zh.turns.map((x) => x.text)).toEqual(lines);
+    expect(applyRoles(zh).roles.needsConfirmation).toBe(true);
   });
 });
 

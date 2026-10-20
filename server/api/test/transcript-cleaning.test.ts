@@ -26,7 +26,7 @@ describe('only KNOWN sound notes are removed', () => {
     for (const s of [
       'He wrote it [sic] on the wall.',
       'We moved to [Busan] in 1950.',
-      '[그 당시에는] 쌀이 귀했어요.',
+      '[At that time] rice was scarce.',
       'My mother [Kim Sunja] sold fish.',
       'She said [to me] that we would leave.',
       'He was born in [1946].',
@@ -36,11 +36,11 @@ describe('only KNOWN sound notes are removed', () => {
     }
   });
 
-  it('sound notes go: recogniser tags, Rev notes with a time, all-capital tags, Korean notes, music, times in brackets', () => {
+  it('sound notes go: recogniser tags, Rev notes with a time, all-capital tags, music, times in brackets', () => {
     expect(
       tidy(
         stripAnnotations(
-          '[Music] hello (laughs) there [inaudible 00:01:23] friend [CROSSTALK] and [BLANK_AUDIO] (웃음) ♪ la la ♪ [00:12] end',
+          '[Music] hello (laughs) there [inaudible 00:01:23] friend [CROSSTALK] and [BLANK_AUDIO] ♪ la la ♪ [00:12] end',
         ),
       ),
     ).toBe('hello there friend and end');
@@ -50,7 +50,7 @@ describe('only KNOWN sound notes are removed', () => {
   });
 
   it('a speaker label is never a sound note, whatever its case', () => {
-    for (const s of ['[SPEAKER_00] hi', '[화자1] 안녕', '[INTERVIEWER] hi', '[Q] where?']) {
+    for (const s of ['[SPEAKER_00] hi', '[Speaker 1] hello', '[INTERVIEWER] hi', '[Q] where?']) {
       expect(tidy(stripAnnotations(s))).toBe(s);
     }
   });

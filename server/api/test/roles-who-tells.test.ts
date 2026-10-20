@@ -44,7 +44,7 @@ describe('one odd label among the teller’s turns (e2e K11)', () => {
     },
   );
 
-  it.each(['Halmoni', 'Sunja', 'Grandam', 'Granma', 'Grandma Sunja', 'Grandma 2'])(
+  it.each(['Granny', 'Sunja', 'Grandam', 'Granma', 'Grandma Sunja', 'Grandma 2'])(
     '«%s:» may be her or someone else: never silently an interviewer, the import asks',
     (odd) => {
       const r = read(story(odd));
@@ -183,17 +183,6 @@ describe('a header naming who is who (parser #2)', () => {
     expect(r.reasons).toContain('label_says_interviewer');
   });
 
-  it('Korean: 구술자 / 면담자 headers name the teller even when written without a space', () => {
-    const r = assignRoles(
-      turns(
-        ['구술자', '김순자'],
-        ['면담자', '노아'],
-        ...body.map(([s, t]): [string, string] => [s === 'Noah' ? '노아' : '순자', t]),
-      ),
-    );
-    expect(r).toMatchObject({ interviewees: ['순자'], confidence: 'high' });
-  });
-
   it('a header naming nobody who speaks decides nothing', () => {
     const r = assignRoles(turns(['Interviewee', 'Grandma Rose'], ...body));
     expect(r.interviewees).not.toContain('Interviewee');
@@ -208,54 +197,35 @@ describe('a header naming who is who (parser #2)', () => {
   });
 });
 
-describe('Korean role labels and questions written without "?" (parser #3, e2e E10)', () => {
-  it('구술자 tells and 면담자 asks', () => {
+describe('role labels and questions written without "?" (parser #3, e2e E10)', () => {
+  it('Narrator tells and Interviewer asks', () => {
     const r = read(
       [
-        '면담자: 고향이 어디세요',
-        '구술자: 부산이요. 바닷가 작은 집에서 태어났어요.',
-        '면담자: 언제 태어나셨어요',
-        '구술자: 1946년 봄이었어요.',
-        '면담자: 아버지는요',
-        '구술자: 배를 고치셨어요.',
+        'Interviewer: Where is your hometown',
+        'Narrator: Busan. I was born in a small house by the sea.',
+        'Interviewer: When were you born',
+        'Narrator: In the spring of 1946.',
+        'Interviewer: And your father',
+        'Narrator: He repaired boats.',
       ].join('\n'),
     );
-    expect(r.roles).toMatchObject({ interviewees: ['구술자'], confidence: 'high' });
+    expect(r.roles).toMatchObject({ interviewees: ['Narrator'], confidence: 'high' });
   });
 
-  it('full-width question marks count, so two answers stay two turns of hers', () => {
-    const r = read(
-      [
-        '질문자: 어디서 태어나셨어요？',
-        '할머니: 저는 부산에서 태어났어요. 아버지는 배를 고치는 일을 하셨어요.',
-        '질문자: 어머니는 어떤 분이셨어요？',
-        '할머니: 어머니는 시장에서 생선을 파셨어요. 힘들다고 한 번도 말씀하신 적이 없어요.',
-      ].join('\n'),
-    );
-    // her characters are kept as she typed them (round 3); the question is read all the same
-    expect(r.turns.map((t) => t.text)).toEqual([
-      '어디서 태어나셨어요？',
-      '저는 부산에서 태어났어요. 아버지는 배를 고치는 일을 하셨어요.',
-      '어머니는 어떤 분이셨어요？',
-      '어머니는 시장에서 생선을 파셨어요. 힘들다고 한 번도 말씀하신 적이 없어요.',
-    ]);
-    expect(r.roles).toMatchObject({ interviewees: ['할머니'], confidence: 'high' });
-  });
-
-  it('a normal Korean interview transcribed without "?" is a sure answer, not a question to the family', () => {
+  it('a normal interview transcribed without "?" is a sure answer, not a question to the family', () => {
     const r = read({
       segments: [
-        ['SPEAKER_01', '할머니 어디서 태어나셨어요'],
-        ['SPEAKER_00', '부산 영도에서 태어났어요. 바닷가 바로 앞에 작은 집이 있었어요.'],
-        ['SPEAKER_01', '아버지는 어떤 분이셨어요'],
+        ['SPEAKER_01', 'Grandma where were you born'],
+        ['SPEAKER_00', 'In Busan, in Yeongdo. There was a little house right by the sea.'],
+        ['SPEAKER_01', 'Tell me about your father'],
         [
           'SPEAKER_00',
-          '배를 고치는 일을 하셨는데 말씀이 별로 없으셨어요. 그래도 저한테는 다정하셨지요.',
+          'He repaired boats and he did not talk much at all. But he was always kind to me.',
         ],
-        ['SPEAKER_01', '그때 집은 어땠어요'],
-        ['SPEAKER_00', '방 두 칸에 여섯 식구가 살았어요. 겨울에는 난로 하나로 버텼어요.'],
-        ['SPEAKER_01', '학교는 다니셨나요'],
-        ['SPEAKER_00', '초등학교 오 학년까지 다녔어요. 그다음에는 시장에서 일을 도왔어요.'],
+        ['SPEAKER_01', 'What was the house like'],
+        ['SPEAKER_00', 'Two rooms for six of us. In winter we made do with one stove.'],
+        ['SPEAKER_01', 'Did you go to school'],
+        ['SPEAKER_00', 'Until the fifth grade. After that I helped out at the market.'],
       ].map(([speaker, text], i) => ({ start: i * 10, end: i * 10 + 9, speaker, text })),
     });
     expect(r.roles).toMatchObject({
@@ -270,8 +240,11 @@ describe('a lone speaker labelled as the asker is never a sure teller (parser #4
   it('everything under "Interviewer" (the relative’s label was not read): ask', () => {
     const r = assignRoles(
       turns(
-        ['Interviewer', '어디서 태어나셨어요 부산에서 태어났어요. 바닷가 작은 집이었어요.'],
-        ['Interviewer', '아버지는 배를 고치셨어요. 말씀이 별로 없으셨지.'],
+        [
+          'Interviewer',
+          'Where were you born I was born in Busan. It was a small house by the sea.',
+        ],
+        ['Interviewer', 'My father repaired boats. He did not talk much at all.'],
       ),
     );
     expect(r).toMatchObject({ confidence: 'low', needsConfirmation: true });
@@ -280,8 +253,8 @@ describe('a lone speaker labelled as the asker is never a sure teller (parser #4
     );
   });
 
-  it('the same with "Q" and with 면담자', () => {
-    for (const label of ['Q', '면담자', 'Host 2']) {
+  it('the same with "Q" and with "Host 2"', () => {
+    for (const label of ['Q', 'Host 2', 'Moderator']) {
       const r = assignRoles(
         turns([label, 'We moved to Daegu in 1952 and my uncle found us a room.']),
       );
@@ -417,16 +390,22 @@ describe('round 3: a normal interview is a sure answer in more registers', () =>
     expect(r.roles).toMatchObject({ interviewees: ['Grandma'], confidence: 'high' });
   });
 
-  it('casual Korean (반말) without "?" is a sure answer', () => {
+  it('short questions written without "?" in plain speech are a sure answer', () => {
     const qa: Array<[string, string]> = [
-      ['어디서 태어났어', '부산에서 태어났지 항구 근처 작은 집이었어'],
-      ['결혼은 언제 했어', '스무 살에 시집갔지 중매로 했어 그때는 다 그랬어'],
-      ['무슨 일 했어', '그냥 공장에서 일했어 실 뽑는 일을 했지 손이 다 텄어'],
-      ['엄마는', '엄마는 시장에서 생선을 파셨어 새벽에 나가서 밤에 오셨지'],
+      ['where were you born', 'In Busan, in a little house near the harbour. It was small.'],
+      [
+        'when did you get married',
+        'At twenty, through a matchmaker. Everyone did it that way then.',
+      ],
+      [
+        'what work did you do',
+        'I worked at a factory spinning thread. My hands were always cracked.',
+      ],
+      ['and your mom', 'She sold fish at the market. She left at dawn and came home at night.'],
     ];
     const r = applyRoles(
-      parseTranscript(qa.flatMap(([q, a]) => [`손자: ${q}`, `할머니: ${a}`]).join('\n')),
+      parseTranscript(qa.flatMap(([q, a]) => [`Noah: ${q}`, `Grandma: ${a}`]).join('\n')),
     );
-    expect(r.roles).toMatchObject({ interviewees: ['할머니'], confidence: 'high' });
+    expect(r.roles).toMatchObject({ interviewees: ['Grandma'], confidence: 'high' });
   });
 });
