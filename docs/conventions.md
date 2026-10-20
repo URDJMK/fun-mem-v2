@@ -7,8 +7,9 @@ in *this* project, not just that it's understood. Tool names in parentheses
 are examples, not requirements; swap in whatever fits the stack.
 
 > **fun-mem v2, 2026-10-19.** A ticked item is set up in this repository, and the line after the
-> arrow says where. CI is written but has not run yet: the repository has no GitHub remote, so the
-> first push is its first run. Items left open are deliberate, with the reason after the arrow.
+> arrow says where. The repository is public (github.com/URDJMK/fun-mem-v2), and CI runs on every
+> push to `main` and every pull request. Items left open are deliberate, with the reason after the
+> arrow.
 
 ## 1. Secrets & security scanning
 
@@ -33,7 +34,8 @@ a committed file however "temporary" it seems.
       → `.github/dependabot.yml` (weekly), `just audit` (`pnpm audit --prod`)
 - [ ] SAST (static analysis for bug/vuln patterns, not just secrets): CodeQL
       or Semgrep in CI
-      → later: CodeQL needs GitHub's code security on a private repository
+      → not yet: free now that the repository is public, one switch away (Settings → Code
+      security → CodeQL analysis, default setup)
 - [ ] License compliance check (`cargo deny` covers this too, or
       `license-checker` for JS)
       → later
@@ -92,7 +94,7 @@ model for "what does green mean here."
       no deploy yet
 - [ ] Branch protection on `main`: required status checks, required review,
       no direct pushes
-      → a GitHub setting: turn it on once the repository exists on GitHub
+      → not yet: a GitHub setting (Settings → Branches), with CI as the required check
 - [ ] Preview/staging deploy per PR (Vercel/Netlify-style, or a self-hosted
       equivalent)
       → later: nothing is deployed yet
