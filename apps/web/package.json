@@ -11,20 +11,20 @@
   },
   "dependencies": {
     "@funmem/core": "workspace:*",
-    "@supabase/supabase-js": "^2.110.6",
-    "react": "^19.2.7",
-    "react-dom": "^19.2.7",
-    "react-router": "^8.2.0"
+    "@supabase/supabase-js": "^2.118.0",
+    "react": "^19.3.1",
+    "react-dom": "^19.3.1",
+    "react-router": "^8.4.0"
   },
   "devDependencies": {
     "@funmem/api": "workspace:*",
-    "@hono/node-server": "^2.0.10",
-    "@types/pg": "^8.20.0",
-    "@types/react": "^19.2.17",
-    "@types/react-dom": "^19.2.3",
-    "@vitejs/plugin-react": "^6.0.3",
-    "pg": "^8.22.0",
-    "playwright": "^1.61.1",
-    "vite": "^8.1.5"
+    "@hono/node-server": "^2.1.5",
+    "@types/pg": "^8.23.1",
+    "@types/react": "^19.3.0",
+    "@types/react-dom": "^19.3.0",
+    "@vitejs/plugin-react": "^6.1.2",
+    "pg": "^8.23.1",
+    "playwright": "^1.64.1",
+    "vite": "^8.3.4"
   }
 }
