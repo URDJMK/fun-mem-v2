@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { block } from './fixtures';
 import { decideAbstention } from '../src/abstain';
 import { budgetEvidence } from '../src/evidence';
+import { SELF_IDENTIFICATION } from '../src/selfid';
 import type { ValidationResult } from '../src/validate';
 import type { Claim } from '../src/types';
 
@@ -19,7 +20,7 @@ describe('FM-026 abstention', () => {
     // evidence of anything, and thresholding on it is a magic number.
 
     // title-only and date-only hits are METADATA matches, not evidence. A note
-    // titled "할머니" matches the word without containing a single fact.
+    // titled "Grandma" matches the word without containing a single fact.
     const titleOnly = [block({ legs: ['title'], ranks: { title: 1 }, score: 0.99 })];
     const d = decideAbstention(titleOnly, 1, 1, ok(1));
     expect(d.abstain, 'a title-only hit with a high score was treated as evidence').toBe(true);
@@ -75,7 +76,7 @@ describe('FM-026 abstention', () => {
     // nothing proved budgetEvidence can actually produce a sub-threshold
     // ratio at a realistic budget — the endpoint's guarantee rested on gates
     // A and C alone. This wires the two together.
-    const long = '가'.repeat(400);
+    const long = 'We walked down to the harbor every morning. '.repeat(27);
     const many = Array.from({ length: 12 }, (_, i) =>
       block({
         chunkId: `${i}`.padStart(8, '0') + '-0000-0000-0000-000000000000',
@@ -109,9 +110,31 @@ describe('FM-026 abstention', () => {
     // actionable offer is what makes it useful per journey 6.4.
     expect(d.message, 'abstention produced no message').toBeTruthy();
     expect(d.message!.length).toBeGreaterThan(10);
-    expect(d.message, 'the abstention does not offer a next step').toMatch(/가족|물어|ask|family/i);
+    expect(d.message, 'the abstention does not offer a next step').toMatch(/ask|family/i);
 
     // and it must not pretend to know something
-    expect(d.message).not.toMatch(/아마|probably|maybe|추측/i);
+    expect(d.message).not.toMatch(/probably|maybe|perhaps|guess/i);
+  });
+
+  it('the abstention and the self-identification say what the product means, in plain English', () => {
+    // Pinned whole: these two sentences are the only words the product speaks on
+    // its own, so a rewording that changes what they promise has to show up here.
+    expect(decideAbstention([], 0, 0, none).message).toBe(
+      'There is not enough in the records to answer this. Would you like to ask your family?',
+    );
+    expect(SELF_IDENTIFICATION).toBe(
+      'I am an AI that answers from these records. My answers are not records and are not kept as evidence.',
+    );
+    // every refusal path carries the same message, not just the empty-retrieval one
+    const paths = [
+      decideAbstention([block({ legs: ['title'] })], 1, 1, ok(1)), // gate A
+      decideAbstention([block()], 1, 4, ok(1)), // gate B
+      decideAbstention([block()], 1, 1, none), // gate C
+      decideAbstention([block()], 1, 1, ok(1), 'Why?'), // gate D
+    ];
+    for (const d of paths) {
+      expect(d.abstain).toBe(true);
+      expect(d.message).toBe(decideAbstention([], 0, 0, none).message);
+    }
   });
 });

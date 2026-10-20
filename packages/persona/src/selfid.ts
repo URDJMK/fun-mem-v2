@@ -7,7 +7,7 @@
  * caller state, never hidden persona state.
  */
 export const SELF_IDENTIFICATION =
-  '저는 이 기록을 바탕으로 답하는 AI입니다. 제 답변은 기록이 아니며 증거로 저장되지 않습니다.';
+  'I am an AI that answers from these records. My answers are not records and are not kept as evidence.';
 
 export function selfIdentificationFor(turnIndex: number): string | null {
   return turnIndex === 0 ? SELF_IDENTIFICATION : null;

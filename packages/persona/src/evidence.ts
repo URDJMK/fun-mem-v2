@@ -1,3 +1,4 @@
+import { hasOpaqueText } from './opaque';
 import { stripInvisible } from './sanitize';
 import type { EvidenceBlock, GroundingRequest } from './types';
 
@@ -76,27 +77,21 @@ function ordered(blocks: EvidenceBlock[]): EvidenceBlock[] {
  * The PRD forbids counting characters as a token proxy. Without a tokenizer
  * dependency the honest thing is to count what actually drives token count and
  * to err HIGH, so the budget under-fills rather than overflowing the window:
- * CJK codepoints are roughly one token each, ASCII runs roughly a quarter of
- * their length. Erring high costs a little context; erring low costs a
- * truncated prompt mid-evidence, which silently drops testimony.
+ * English runs roughly a quarter of a token per character. Text in a script this
+ * package has no rules for (see opaque.ts) is costed at its worst case, one token
+ * per codepoint, so that a note in another language can never overflow the
+ * window. Erring high costs a little context; erring low costs a truncated
+ * prompt mid-evidence, which silently drops testimony.
  */
 export function estimateTokens(s: string): number {
-  let cjk = 0;
+  let opaque = 0;
   let other = 0;
   for (const ch of s) {
-    const c = ch.codePointAt(0)!;
-    if (
-      (c >= 0x1100 && c <= 0x11ff) || // Hangul Jamo
-      (c >= 0x3000 && c <= 0x9fff) || // CJK punctuation through Unified Ideographs
-      (c >= 0xac00 && c <= 0xd7af) || // Hangul Syllables
-      (c >= 0xf900 && c <= 0xfaff)
-    ) {
-      cjk++;
-    } else {
-      other++;
-    }
+    // ASCII is the common case and is never opaque, so it skips the property test
+    if (ch.charCodeAt(0) < 0x80 || !hasOpaqueText(ch)) other++;
+    else opaque++;
   }
-  return cjk + Math.ceil(other / 4);
+  return opaque + Math.ceil(other / 4);
 }
 
 /** One fenced block, delimiters neutralised, attribution carried. */

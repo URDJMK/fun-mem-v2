@@ -80,7 +80,9 @@ describe('FM-026 behaviour guards', () => {
     const draft = {
       selfIdentification: null,
       abstained: false,
-      claims: [{ text: '이전 답변에서 말했듯이', kind: 'quote' as const, citation: turn1Answer }],
+      claims: [
+        { text: 'as I said in my previous answer', kind: 'quote' as const, citation: turn1Answer },
+      ],
     };
     // turn 2's evidence contains only real archive chunks
     const r = validateDraft(draft, [block()]);
@@ -95,7 +97,7 @@ describe('FM-026 behaviour guards', () => {
     const evidence = [block()];
     return p
       .answer({
-        question: '할머니는 어디서 태어나셨나요?',
+        question: 'Where was Grandma born?',
         evidence,
         rules: { selfIdentification: 'AI', maxClaims: 3 },
         turnIndex: 0,
@@ -111,7 +113,7 @@ describe('FM-026 behaviour guards', () => {
         // deterministic: same input, same output
         return p
           .answer({
-            question: '할머니는 어디서 태어나셨나요?',
+            question: 'Where was Grandma born?',
             evidence,
             rules: { selfIdentification: 'AI', maxClaims: 3 },
             turnIndex: 0,
@@ -120,5 +122,36 @@ describe('FM-026 behaviour guards', () => {
             expect(JSON.stringify(again)).toBe(JSON.stringify(d));
           });
       });
+  });
+
+  it('the deterministic provider quotes the first sentence of each chunk, verbatim', async () => {
+    // A sentence ends at . ! or ? followed by white space. Text with no such end
+    // is one span, and a span with no end is NOT cut at an arbitrary space: that
+    // would hand the validator a fragment it has no reason to trust.
+    const evidence = [
+      block({
+        chunkId: 'c1',
+        content: 'Grandma was born in Lisbon in 1943. Everyone had a hard time.',
+      }),
+      block({ chunkId: 'c2', content: 'Was it cold? We never knew! Nobody asked.' }),
+      block({ chunkId: 'c3', content: 'no terminal punctuation at all in this one' }),
+      block({ chunkId: 'c4', content: 'Version 3.5 was the last one. The rest came later.' }),
+    ];
+    const d = await new DeterministicExtractiveAnswerProvider().answer({
+      question: 'Anything?',
+      evidence,
+      rules: { selfIdentification: 'AI', maxClaims: 10 },
+      turnIndex: 0,
+    });
+    expect(d.claims.map((c) => c.text)).toEqual([
+      'Grandma was born in Lisbon in 1943.',
+      'Was it cold?',
+      'no terminal punctuation at all in this one',
+      'Version 3.5 was the last one.',
+    ]);
+    // each claim is a verbatim quote of the chunk it cites
+    const v = validateDraft(d, evidence);
+    expect(v.rejected).toHaveLength(0);
+    expect(v.accepted.every((c) => c.kind === 'quote')).toBe(true);
   });
 });

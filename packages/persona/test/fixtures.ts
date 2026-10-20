@@ -1,19 +1,20 @@
 import type { EvidenceBlock } from '../src/types';
 
 /**
- * Shared fixtures. Korean throughout, because this is a Korean-market product
- * and the quote/paraphrase boundary is drawn by particles (조사) that an
- * English-only fixture would never exercise.
+ * Shared fixtures. Plain English family testimony. The quote/paraphrase boundary
+ * is drawn by single small words (a preposition, an ending, a capital letter) that
+ * a near-quote can differ in, so the sentences below are ones a paraphrase can
+ * change by exactly one of them.
  */
 export function block(over: Partial<EvidenceBlock> = {}): EvidenceBlock {
   return {
     chunkId: '11111111-1111-1111-1111-111111111111',
     noteId: '22222222-2222-2222-2222-222222222222',
-    noteTitle: '할머니',
+    noteTitle: 'Grandma',
     anchor: 'abc-1',
-    headingPath: ['어린 시절'],
+    headingPath: ['Childhood'],
     chunkIndex: 0,
-    content: '할머니는 1943년에 부산에서 태어나셨다. 그때는 다들 힘들었죠.',
+    content: 'Grandma was born in Lisbon in 1943. Everyone had a hard time back then.',
     legs: ['ts'],
     ranks: { ts: 1 },
     score: 0.5,
@@ -28,5 +29,22 @@ export function block(over: Partial<EvidenceBlock> = {}): EvidenceBlock {
 export const unanchored = block({
   chunkId: '33333333-3333-3333-3333-333333333333',
   anchor: null,
-  content: '아버지는 농부였어요 그때는 다들 힘들었죠',
+  content: 'my father was a farmer and back then everyone had a hard time',
 });
+
+/**
+ * Text in scripts the English rules have no knowledge of. The package keeps it,
+ * compares it exactly and costs it at its worst case; it never reads it.
+ */
+export const OTHER_SCRIPT = {
+  /** "grandmother was born in Lisbon" */
+  cyrillic: 'бабушка родилась в Лиссабоне',
+  /** "everyone loved grandmother": the same word as above, in another case ending */
+  cyrillicOtherCase: 'бабушку любили все',
+  /** "Where did grandmother live?" */
+  cyrillicQuestion: 'где жила бабушка?',
+  /** "Grandma was born in Lisbon." */
+  greek: 'Η γιαγιά γεννήθηκε στη Λισαβόνα.',
+  /** A two-character word, the shortest unit of meaning in its script. */
+  han: '\u{5317}\u{4EAC}',
+};

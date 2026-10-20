@@ -1,10 +1,10 @@
 import { describe, expect, it } from 'vitest';
-import { block, unanchored } from './fixtures';
+import { block, OTHER_SCRIPT, unanchored } from './fixtures';
 import { validateDraft } from '../src/validate';
 import type { AnswerDraft, Claim } from '../src/types';
 
 const claim = (over: Partial<Claim> = {}): Claim => ({
-  text: '할머니는 1943년에 부산에서 태어나셨다.',
+  text: 'Grandma was born in Lisbon in 1943.',
   kind: 'quote',
   citation: {
     noteId: '22222222-2222-2222-2222-222222222222',
@@ -87,25 +87,54 @@ describe('FM-026 response validator', () => {
 
     // NFC on BOTH sides. Note bodies are never normalised on write — FM-050
     // normalised titles only — so a decomposed body against a composed quote
-    // must still prove. This fixture is the same text in NFD.
-    const nfd = block({ content: block().content.normalize('NFD') });
+    // must still prove. ASCII is the same in every composition form, so this
+    // fixture needs letters that decompose: `é` is `e` plus a combining accent.
+    const accented = 'Grandma ate at the caf\u{E9} in Z\u{FC}rich in 1943.';
+    const nfd = block({ content: accented.normalize('NFD') });
+    expect(nfd.content, 'the fixture is not actually decomposed').not.toBe(accented);
     expect(
-      validateDraft(draft([claim()]), [nfd]).accepted[0]!.kind,
+      validateDraft(draft([claim({ text: accented })]), [nfd]).accepted[0]!.kind,
       'NFD source defeated an NFC quote',
     ).toBe('quote');
+    // ...and the mirror: a decomposed quote of a composed source
+    expect(
+      validateDraft(draft([claim({ text: accented.normalize('NFD') })]), [
+        block({ content: accented }),
+      ]).accepted[0]!.kind,
+      'an NFD quote was not proved against an NFC source',
+    ).toBe('quote');
 
-    // A PARTICLE SWAP IS NOT A QUOTE. 할머니는 -> 할머니가 is exactly the
-    // quote/paraphrase boundary in Korean; a validator that strips particles or
-    // collapses whitespace to be "helpful" erases the distinction DoD 4 exists
+    // A ONE-WORD SWAP IS NOT A QUOTE. `in` -> `at` is exactly the
+    // quote/paraphrase boundary; a validator that strips small words, folds case
+    // or collapses whitespace to be "helpful" erases the distinction DoD 4 exists
     // to draw. It must be DEMOTED, not rejected — the citation is still good.
-    const swapped = claim({ text: '할머니가 1943년에 부산에서 태어나셨다.' });
-    const r = validateDraft(draft([swapped]), evidence);
-    expect(r.accepted, 'a near-quote was dropped instead of demoted').toHaveLength(1);
-    expect(r.accepted[0]!.kind, 'a particle swap passed as a verbatim quote').not.toBe('quote');
+    for (const near of [
+      'Grandma was born at Lisbon in 1943.', // another preposition
+      'grandma was born in Lisbon in 1943.', // case folded
+      'Grandma was born in  Lisbon in 1943.', // whitespace changed
+    ]) {
+      const r = validateDraft(draft([claim({ text: near })]), evidence);
+      expect(r.accepted, `a near-quote was dropped instead of demoted: ${near}`).toHaveLength(1);
+      expect(r.accepted[0]!.kind, `a near-quote passed as verbatim: ${near}`).not.toBe('quote');
+    }
 
     // text absent from the source entirely cannot be a quote either
-    const invented = claim({ text: '할머니는 1943년에 서울에서 태어나셨다.' });
+    const invented = claim({ text: 'Grandma was born in Porto in 1943.' });
     expect(validateDraft(draft([invented]), evidence).accepted[0]?.kind).not.toBe('quote');
+  });
+
+  it('a quote in a script the English rules do not cover is proved exactly', () => {
+    // Nothing in the proof knows any language: it is a substring test after
+    // composition, so another script gets the same exactness as English. A word
+    // in another case ending is a near-quote, not the quote.
+    const evidence = [block({ content: OTHER_SCRIPT.cyrillic })];
+    const exact = validateDraft(draft([claim({ text: 'бабушка родилась' })]), evidence);
+    expect(exact.accepted[0]!.kind, 'an exact quote in another script was not proved').toBe(
+      'quote',
+    );
+    const near = validateDraft(draft([claim({ text: 'бабушку родилась' })]), evidence);
+    expect(near.accepted, 'a near-quote was dropped instead of demoted').toHaveLength(1);
+    expect(near.accepted[0]!.kind, 'a loose match passed as a quote').not.toBe('quote');
   });
 
   it('a claim citing block grain without an anchor is rejected', () => {
@@ -113,7 +142,7 @@ describe('FM-026 response validator', () => {
     // grain on a chunk with no authored anchor is the query-time anchor
     // fabrication the decision forbids.
     const lying = claim({
-      text: '아버지는 농부였어요',
+      text: 'my father was a farmer',
       citation: {
         noteId: unanchored.noteId,
         anchor: 'invented',
@@ -128,7 +157,7 @@ describe('FM-026 response validator', () => {
     // the honest form of the same claim, at chunk grain, IS accepted — the
     // fallback must actually work or the archive is uncitable
     const honest = claim({
-      text: '아버지는 농부였어요',
+      text: 'my father was a farmer',
       citation: {
         noteId: unanchored.noteId,
         anchor: null,

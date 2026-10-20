@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { afterAll, describe, expect, it } from 'vitest';
 import { testContext, type RealSession } from './helpers';
-import { WEDDING } from '../../../packages/persona/test/korean-fixtures';
+import { WEDDING } from '../../../packages/persona/test/testimony-fixtures';
 
 /**
  * FM-027 — the contradictory-testimony fixture (FR-083), end to end.
@@ -53,8 +53,8 @@ describe('FM-027 disagreeing testimony', () => {
     const archive = await ctx.provisionArchive(s, `DIS1 ${RUN}`);
 
     // FR-083's fixture: same wedding, two relatives, materially different on
-    // the year AND the place. Realistic transcribed testimony — dialect, mixed
-    // speech levels, 한자 place name, no terminal punctuation.
+    // the year AND the place. Realistic transcribed testimony — dialect, a
+    // spelled-out year, no capitals, no terminal punctuation.
     //
     // BOTH NOTES ARE SHORT ON PURPOSE. An earlier version made the mother's
     // account verbose to force budget pressure, and that made this test 37-50%
@@ -66,10 +66,10 @@ describe('FM-027 disagreeing testimony', () => {
     // deterministically in packages/persona/test/diversity.test.ts, where the
     // budget can be derived rather than raced for. What this test proves is the
     // DoD-1 RESPONSE SHAPE: two accounts, separately cited, never merged.
-    const motherNote = await makeNote(s, archive, `어머니의 기억 ${RUN}`, WEDDING.mother);
-    const uncleNote = await makeNote(s, archive, `삼촌의 기억 ${RUN}`, WEDDING.uncle);
+    const motherNote = await makeNote(s, archive, `Mother's account ${RUN}`, WEDDING.mother);
+    const uncleNote = await makeNote(s, archive, `Uncle's account ${RUN}`, WEDDING.uncle);
 
-    const res = await ask(s, archive, '할머니 결혼식');
+    const res = await ask(s, archive, "Grandma's wedding");
     expect(res.status).toBe(200);
     const body = (await res.json()) as AskBody;
 
@@ -106,21 +106,21 @@ describe('FM-027 disagreeing testimony', () => {
     const open = await makeNote(
       owner,
       archive,
-      `공개 결혼식 ${RUN}`,
-      '할머니 결혼식은 1965년 부산에서 열렸다.',
+      `Public wedding ${RUN}`,
+      "Grandma's wedding was held in Lisbon in 1965.",
     );
     const secret = `ZZSECRET${RUN}`;
     const hidden = await makeNote(
       owner,
       archive,
-      `비공개 결혼식 ${RUN}`,
-      `할머니 결혼식은 1967년 대구에서 열렸다. ${secret}`,
+      `Private wedding ${RUN}`,
+      `Grandma's wedding was held in Porto in 1967. ${secret}`,
     );
 
     // POSITIVE CONTROL: while both are visible, diversity DOES surface two
     // sources. Without this, "the restricted note is absent" is satisfied by an
     // interleaver that never returns a second source at all.
-    const before = (await (await ask(member, archive, '할머니 결혼식')).json()) as AskBody;
+    const before = (await (await ask(member, archive, "Grandma's wedding")).json()) as AskBody;
     expect(before.sources, 'diversity never produced two sources even unrestricted').toBe(2);
 
     await ctx.pool.query(
@@ -130,7 +130,7 @@ describe('FM-027 disagreeing testimony', () => {
       [archive, hidden],
     );
 
-    const res = await ask(member, archive, '할머니 결혼식');
+    const res = await ask(member, archive, "Grandma's wedding");
     const text = await res.text();
     expect(text, 'restricted content reached the answer').not.toContain(secret);
     const body = JSON.parse(text) as AskBody;
@@ -154,17 +154,18 @@ describe('FM-027 disagreeing testimony', () => {
     // one note with many chunks, ranked strongly; one with a single chunk
     const many = Array.from(
       { length: 12 },
-      (_, i) => `## 기억 ${i}\n\n할머니 결혼식 이야기입니다 ${i}번째로 들은 이야기예요`,
+      (_, i) =>
+        `## Memory ${i + 1}\n\nGrandma's wedding story, number ${i + 1}, the one told at dinner`,
     ).join('\n\n');
-    const loud = await makeNote(s2, archive, `어머니 기록 ${RUN}`, many);
+    const loud = await makeNote(s2, archive, `Mother's record ${RUN}`, many);
     const quiet = await makeNote(
       s2,
       archive,
-      `삼촌 기록 ${RUN}`,
-      '할머니 결혼식은 대구에서 했다 아이가',
+      `Uncle's record ${RUN}`,
+      "Grandma's wedding was in Porto, so it was",
     );
 
-    const body = (await (await ask(s2, archive, '할머니 결혼식')).json()) as AskBody;
+    const body = (await (await ask(s2, archive, "Grandma's wedding")).json()) as AskBody;
     expect(body.abstained, `abstained: ${body.reason}`).toBe(false);
     const cited = new Set(body.claims.map((c) => c.citation.noteId));
     expect(cited.has(loud), 'the many-chunk note was dropped').toBe(true);

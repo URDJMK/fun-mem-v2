@@ -4,12 +4,12 @@
  * The shape here is the load-bearing design decision of the whole task: a
  * `Claim` is something the provider EMITS, never something parsed out of prose
  * afterwards. Requiring "a citation per claim" first requires knowing what a
- * claim is, and there is no Korean claim segmenter anywhere in this monorepo.
- * `Intl.Segmenter('ko')` splits on terminal punctuation that oral-transcript
- * Korean routinely omits — `'아버지는 농부였어요 그때는 다들 힘들었죠'` is ONE
- * segment and TWO claims — so splitting prose would let a single citation
- * silently cover a second, uncited claim. That is the forbidden shortcut
- * arriving through a segmentation gap rather than through laziness.
+ * claim is, and there is no claim segmenter anywhere in this monorepo.
+ * `Intl.Segmenter('en')` splits on terminal punctuation that oral transcripts
+ * routinely omit — `'my father was a farmer and back then everyone had a hard
+ * time'` is ONE segment and TWO claims — so splitting prose would let a single
+ * citation silently cover a second, uncited claim. That is the forbidden
+ * shortcut arriving through a segmentation gap rather than through laziness.
  */
 
 /**

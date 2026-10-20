@@ -12,8 +12,8 @@ import type { AnswerDraft, AnswerProvider, Claim, GroundingRequest } from './typ
  * gates, the labelling and self-identification, which is everything the
  * acceptance command gates.
  *
- * What it cannot do is produce fluent Korean prose. That is precisely what a
- * real generator would add, and precisely what D-47 defers.
+ * What it cannot do is produce fluent prose. That is precisely what a real
+ * generator would add, and precisely what D-47 defers.
  */
 export class DeterministicExtractiveAnswerProvider implements AnswerProvider {
   readonly providerVersion = 'extractive-1';
@@ -30,7 +30,7 @@ export class DeterministicExtractiveAnswerProvider implements AnswerProvider {
       // The first sentence-ish span of the chunk, taken VERBATIM so the quote
       // proof holds. Splitting on a terminator is safe here only because the
       // result is checked against the source rather than trusted.
-      const text = (b.content.split(/(?<=[.!?。])\s/)[0] ?? b.content).trim();
+      const text = (b.content.split(/(?<=[.!?])\s/)[0] ?? b.content).trim();
       if (!text) continue;
       claims.push({
         text,

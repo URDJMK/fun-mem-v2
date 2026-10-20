@@ -6,4 +6,5 @@ export { decideAbstention, type AbstentionDecision } from './abstain';
 export { selfIdentificationFor, SELF_IDENTIFICATION } from './selfid';
 export { DeterministicExtractiveAnswerProvider } from './provider-extractive';
 export { stripInvisible, hasSmuggledCodepoints } from './sanitize';
+export { hasOpaqueText } from './opaque';
 export { interleaveBySource, distinctSources } from './diversity';

@@ -30,10 +30,12 @@ export interface ValidationResult {
  * the model quotes it composed. Comparing raw would fail a perfectly honest
  * quote.
  *
- * What this deliberately does NOT do is collapse whitespace or strip particles.
- * `할머니는` vs `할머니가` is precisely the quote/paraphrase boundary in Korean;
- * a "helpful" normaliser that erased it would make DoD 4 unenforceable in the
- * permissive direction — every near-quote would pass as verbatim.
+ * What this deliberately does NOT do is fold case, collapse whitespace or strip
+ * word endings. `was born` vs `were born` is precisely the quote/paraphrase
+ * boundary; a "helpful" normaliser that erased it would make DoD 4
+ * unenforceable in the permissive direction — every near-quote would pass as
+ * verbatim. Text in a script the English rules do not cover (opaque.ts) is
+ * compared the same way: exactly.
  */
 function forQuote(s: string): string {
   // FM-027: strip smuggled codepoints BEFORE normalising. NFC does not touch

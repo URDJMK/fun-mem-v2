@@ -49,11 +49,11 @@ describe('FM-026 ask endpoint', () => {
     const noteId = await makeNote(
       s,
       archive,
-      `할머니 ${RUN}`,
-      '할머니는 1943년에 부산에서 태어나셨다. 어린 시절 이야기를 자주 하셨다.',
+      `Grandma ${RUN}`,
+      'Grandma was born in Lisbon in 1943. She often told stories about her childhood.',
     );
 
-    const res = await ask(s, archive, '부산');
+    const res = await ask(s, archive, 'Lisbon');
     expect(res.status).toBe(200);
     const body = (await res.json()) as AskBody;
 
@@ -70,13 +70,13 @@ describe('FM-026 ask endpoint', () => {
     expect(body.providerVersion).toBeTruthy();
     // and self-identification is present on the first turn
     expect(body.selfIdentification, 'no self-identification on turn 0').toBeTruthy();
-    expect((await (await ask(s, archive, '부산', 3)).json()).selfIdentification).toBeNull();
+    expect((await (await ask(s, archive, 'Lisbon', 3)).json()).selfIdentification).toBeNull();
   });
 
   it('a question the archive cannot answer abstains with an offer', async () => {
     const s = await ctx.realSession(`ask2-${RUN}@test.local`);
     const archive = await ctx.provisionArchive(s, `ASK2 ${RUN}`);
-    await makeNote(s, archive, `할머니 ${RUN}`, '할머니는 부산에서 태어나셨다.');
+    await makeNote(s, archive, `Grandma ${RUN}`, 'Grandma was born in Lisbon.');
 
     // nothing in the archive is about this
     const res = await ask(s, archive, `ZZUNRELATED${RUN}`);
@@ -84,7 +84,7 @@ describe('FM-026 ask endpoint', () => {
     expect(body.abstained, 'answered a question with no evidence').toBe(true);
     expect(body.claims).toHaveLength(0);
     expect(body.message, 'abstention carried no message').toBeTruthy();
-    expect(body.message, 'the abstention offers no next step').toMatch(/가족|물어/);
+    expect(body.message, 'the abstention offers no next step').toMatch(/ask your family/);
   });
 
   it('a restricted note is never retrieved into evidence', async () => {
@@ -92,7 +92,7 @@ describe('FM-026 ask endpoint', () => {
     const member = await ctx.realSession(`ask3b-${RUN}@test.local`);
     const archive = await ctx.provisionArchive(owner, `ASK3 ${RUN}`);
     const secret = `ZZSECRET${RUN}`;
-    const noteId = await makeNote(owner, archive, `비밀 ${RUN}`, `${secret} 특별한 이야기입니다.`);
+    const noteId = await makeNote(owner, archive, `Secret ${RUN}`, `${secret} is a special story.`);
     await ctx.pool.query(
       `insert into public.memberships (archive_id, user_id, role)
        values ($1, $2, 'contributor') on conflict do nothing`,

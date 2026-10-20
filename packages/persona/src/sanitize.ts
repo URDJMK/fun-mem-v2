@@ -2,7 +2,7 @@
  * FM-027 unit 2 — invisible-codepoint defence.
  *
  * This exists because of a defect measured in FM-026's shipped code, not a
- * hypothetical: a Tag-block payload appended to genuine Korean testimony rode
+ * hypothetical: a Tag-block payload appended to genuine testimony rode
  * into an ACCEPTED, validator-approved `quote` claim — sixteen invisible
  * codepoints inside an approved citation. The quote proof normalises NFC and
  * nothing else, and NFC does not touch `Cf`/`Cs`/`Co`, so the payload survived
@@ -25,7 +25,7 @@ const INVISIBLE_RE = /[\p{Cf}\p{Cs}\p{Co}\u{FE00}-\u{FE0F}\u{E0100}-\u{E01EF}]/u
 /**
  * U+200D ZERO WIDTH JOINER is `\p{Cf}`, and it is also what holds 👨‍👩‍👧
  * together. A blanket category strip shatters the family emoji into three
- * glyphs — in a Korean family-memory product, that corrupts precisely the
+ * glyphs — in a family-memory product, that corrupts precisely the
  * messages people care most about. So the pardon is CONTEXTUAL: a ZWJ is
  * legitimate only when it actually joins two pictographic characters.
  *
@@ -79,7 +79,7 @@ const VARIATION_SELECTOR = /[\u{FE00}-\u{FE0F}\u{E0100}-\u{E01EF}]/u;
  *    rather than the dingbat ❤)
  *
  * Everything else invisible is payload. A VS with no pictograph before it, or
- * a ZWJ that joins Hangul to anything, is smuggling.
+ * a ZWJ that joins a letter to anything, is smuggling.
  */
 function isClusterMember(chars: string[], i: number): boolean {
   const ch = chars[i];

@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { budgetEvidence, estimateTokens, fenceBlock } from '../src/evidence';
 import { distinctSources, interleaveBySource } from '../src/diversity';
 import { block } from './fixtures';
-import { verboseTestimony } from './korean-fixtures';
+import { verboseTestimony } from './testimony-fixtures';
 
 /**
  * FM-027 — source diversity as a PURE property.
@@ -20,8 +20,8 @@ const src = (noteId: string, chunkId: string, content: string, score: number) =>
 
 describe('FM-027 source diversity', () => {
   it('a verbose source cannot crowd a second source out of the window', () => {
-    // Realistic transcribed testimony, not a repeated syllable: the token
-    // estimate treats CJK per codepoint, so filler would mis-model real cost.
+    // Realistic transcribed testimony, not a repeated filler word: the blocks
+    // should look like the notes the product will really be handed.
     const account = verboseTestimony(1);
     const blocks = [
       ...Array.from({ length: 8 }, (_, i) => src('note-A', `a${i}`, account, 0.9 - i / 100)),

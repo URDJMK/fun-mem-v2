@@ -1,3 +1,4 @@
+import { hasOpaqueText } from './opaque';
 import type { EvidenceBlock } from './types';
 import type { ValidationResult } from './validate';
 
@@ -26,104 +27,48 @@ const CONTENT_LEGS = new Set(['ts', 'pgroonga', 'vector']);
 /** Below this share of relevant evidence fitting the window, the answer would be built on a fragment. */
 const MIN_FIT_RATIO = 0.5;
 
-/**
- * The content-bearing terms of a question, with interrogatives and Korean
- * particles stripped from the tail.
- *
- * Korean is agglutinative, so `수영을` (swimming + object marker) must match
- * `수영` in the evidence or every question misses. Only the trailing particle
- * is trimmed — never an internal one — because `할머니는` vs `할머니가` is the
- * distinction the quote proof deliberately preserves elsewhere.
- */
-// Matched as a PREFIX, not an exact word. Korean fuses the interrogative into
-// the predicate — 언제였나요, 어디였어요, 누구세요 — so an exact-match list drops
-// `언제` and then treats `언제였나요` as a content term the evidence must
-// contain, which refuses perfectly answerable questions.
-/**
- * Korean is SOV, so the predicate is the FINAL token. Only that token is tested
- * for a conjugated tail.
- *
- * Applying the suffix test to every token was badly wrong in this product:
- * 아버지, 할아버지 and 누나 all end in a "predicate" syllable, so gate D stopped
- * requiring the very subject the question was about. A family-memory archive
- * asked "할아버지 첫 직장은?" would have had its discriminating noun silently
- * exempted.
- */
-const PREDICATE_TAIL = /(요|다|까|죠|네|군|나|자|래|지)$/;
-
-const INTERROGATIVE_STEMS = [
-  '언제',
-  '어디',
-  '누가',
-  '누구',
-  '무엇',
-  '무슨',
-  '왜',
-  '어떻게',
-  '얼마나',
-  '몇',
-  'what',
-  'when',
-  'where',
-  'who',
-  'why',
-  'how',
-];
+// Matched as a PREFIX, not an exact word, so `whose`, `whom` and `whenever` go
+// with their stems instead of being left behind as terms the evidence can never
+// contain. (It takes `whole` and `however` too; that is how the gate has always
+// read them.)
+const INTERROGATIVE_STEMS = ['what', 'when', 'where', 'who', 'why', 'how'];
 const isInterrogative = (w: string) =>
   INTERROGATIVE_STEMS.some((s) => w.toLowerCase().startsWith(s));
-const TRAILING_PARTICLE = /(은|는|이|가|을|를|의|에|에서|으로|로|와|과|도|만|까지|부터)$/;
 
-/** Hangul syllables, plus CJK ideographs — 한자 is normal in older Korean records. */
-const CJK = /[\uac00-\ud7af\u4e00-\u9fff\u3400-\u4dbf]/;
+/** Shorter words are filler (`is`, `of`, `to`), not content. */
+const MIN_TERM_LEN = 3;
 
+/**
+ * The content-bearing terms of a question, with interrogatives stripped.
+ *
+ * A word in a script the English rules do not cover (see opaque.ts) is kept
+ * whatever its length. The floor exists to drop English filler; a short word in
+ * another script is as likely to be the very thing the question is about, and
+ * dropping it would exempt that word from the check.
+ */
 export function contentTerms(question: string): string[] {
-  const tokens = question
-    // NFC FIRST. `search.ts` normalises the query it retrieves with, so an NFD
-    // question would be measured against NFC evidence and every term would look
-    // uncovered — turning a useful refusal into a blanket one.
+  // NFC FIRST. `search.ts` normalises the query it retrieves with, so an NFD
+  // question would be measured against NFC evidence and every term would look
+  // uncovered — turning a useful refusal into a blanket one.
+  const words = question
     .normalize('NFC')
-    .replace(/[?？.!,]/g, ' ')
+    .replace(/[?.!,]/g, ' ')
     .split(/\s+/)
-    .filter(Boolean)
-    // INTERROGATIVE TEST BEFORE PARTICLE STRIPPING. `누가` ends in the subject
-    // particle 가; stripping first leaves `누`, which is not an interrogative
-    // stem and becomes a junk term the evidence can never contain — buying the
-    // gate a free miss on the most common Korean "who" question.
-    .filter((w) => !isInterrogative(w))
-    .map((w) => w.replace(TRAILING_PARTICLE, ''))
-    .filter((w) => w.length > 0 && !isInterrogative(w))
-    .filter((w) => {
-      // A one-syllable Hangul word is usually the SUBJECT of the question —
-      // 색, 집, 병 — so a length>=2 filter tuned to English throws away exactly
-      // the term that matters. CJK ideographs count the same way: older Korean
-      // records write names and places in 한자, and a Latin floor applied to
-      // them silently emptied the term list, which disabled the gate entirely.
-      return CJK.test(w) ? w.length >= 1 : w.length >= 3;
-    });
-
-  // Only the last token may be the predicate.
-  const last = tokens[tokens.length - 1];
-  return last !== undefined && tokens.length > 1 && PREDICATE_TAIL.test(last)
-    ? tokens.slice(0, -1)
-    : tokens;
+    .filter(Boolean);
+  return words.filter((w) => !isInterrogative(w) && (w.length >= MIN_TERM_LEN || hasOpaqueText(w)));
 }
 
 /**
- * Korean verbs conjugate, so a question's `태어나셨어요` never matches the
- * evidence's `태어나셨다` literally. Comparing a short stem is the cheapest
- * honest approximation — and it errs toward COVERAGE, i.e. toward answering,
- * which is why the gate abstains on the ratio rather than on any single term.
- */
-/**
- * Korean predicates carry their conjugation on the tail. Nouns essentially
- * never end in these, so the test is one-sided in the direction that matters:
- * a misclassified noun would be dropped from the requirement and make the gate
- * more permissive, and these endings do not occur on the nouns a family
- * question is built from.
+ * English inflects, so a question's `swimming` never matches the evidence's
+ * `swim` literally. Comparing a short stem is the cheapest honest approximation
+ * — and it errs toward COVERAGE, i.e. toward answering, which is why the gate
+ * abstains on the ratio rather than on any single term. Text in a script the
+ * English rules do not cover has no stem to compare, so it is matched exactly.
  */
 const STEM_LEN = 3;
 function covers(haystack: string, term: string): boolean {
   if (haystack.includes(term)) return true;
+  if (hasOpaqueText(term)) return false;
   return term.length > STEM_LEN && haystack.includes(term.slice(0, STEM_LEN));
 }
 
@@ -138,7 +83,7 @@ export interface AbstentionDecision {
  * a useful abstention, and a bare refusal fails that half of the DoD.
  */
 const ABSTAIN_MESSAGE =
-  '기록에 이 질문에 답할 만한 내용이 충분하지 않습니다. 가족에게 여쭤보시겠어요?';
+  'There is not enough in the records to answer this. Would you like to ask your family?';
 
 export function decideAbstention(
   evidence: EvidenceBlock[],
@@ -194,7 +139,11 @@ export function decideAbstention(
   // evidence never mentions — and abstains when unsure.
   if (question !== undefined) {
     const terms = contentTerms(question);
-    if (terms.length === 0) {
+    // A question needs at least one SUBSTANTIVE term. A short word in another
+    // script is kept as a term (see contentTerms) but, being a letter or a
+    // particle that any text of its language contains, finding it proves nothing;
+    // a question made only of such words is as unverifiable as one with no words.
+    if (!terms.some((t) => t.length >= MIN_TERM_LEN)) {
       // Nothing checkable. Skipping the gate here answered the LEAST specified
       // input of all with confident cited claims, which is the wrong direction
       // for a grounding guarantee: an unverifiable question is refused.
@@ -202,27 +151,27 @@ export function decideAbstention(
     }
     {
       const haystack = evidence.map((b) => b.content).join(' ');
-      // NOUNS decide, predicates do not. A question's answer lives in its nouns
-      // — 색, 수영, 직장, 결혼식 — while the predicate is only how the asking is
-      // phrased, and Korean has many ways to say the same thing: a note reading
-      // "1940년 대구 출생" plainly answers "어디서 태어나셨어요?", but no lexical
-      // rule can match 출생 to 태어나다. Requiring the verb too refuses
-      // questions the archive obviously answers, which is a product defect, not
-      // caution.
-      //
-      // Known limitation, recorded rather than hidden: a question whose
-      // DISCRIMINATING term is the verb — "할머니가 언제 돌아가셨어요?" — is
-      // under-refused, because 할머니 alone satisfies the gate. Carried.
+      // Matching is lexical and case-sensitive, so `Dad` in the question does
+      // not match `dad` in the evidence, and a spelled-out year does not match
+      // its digits. Recorded rather than hidden: both under-answer, neither
+      // over-answers, which is the safe direction. Carried.
       const uncovered = terms.filter((t) => !covers(haystack, t));
       // NEARLY-FULL coverage, not a majority. A realistic fixture broke the
-      // majority rule: asked "어머니는 무슨 색을 좋아하셨어요?", a note that
-      // never mentions colour but does say she 좋아하셨고 (about food) scored
-      // 2 of 3 and answered. The verb matched while the SUBJECT of the question
-      // did not — and it is the subject that decides whether the archive can
-      // answer at all. One miss is tolerated only once a question carries four
-      // or more content terms, where a phrasing difference is likely.
-      const allowedMisses = Math.floor(terms.length / 4);
-      if (uncovered.length > allowedMisses) {
+      // majority rule: a note that never mentions the colour a mother liked, but
+      // does say she liked her food, matched the question's verb and none of its
+      // subject, and a majority let it answer. It is the subject that decides
+      // whether the archive can answer at all. One miss is tolerated only once a
+      // question carries four or more content terms, where a phrasing difference
+      // is likely.
+      //
+      // That allowance is for English phrasing only. A word in a script the
+      // English rules do not cover may never be missed, and it does not count
+      // toward the allowance either: otherwise padding a question with short
+      // words in another script, which are easy to cover, would buy a miss on the
+      // words that matter.
+      const missedOpaque = uncovered.filter(hasOpaqueText);
+      const allowedMisses = Math.floor(terms.filter((t) => !hasOpaqueText(t)).length / 4);
+      if (missedOpaque.length > 0 || uncovered.length > allowedMisses) {
         return abstain(
           `topical gap: the evidence never mentions ${uncovered.map((t) => `'${t}'`).join(', ')}`,
         );
