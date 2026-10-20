@@ -36,6 +36,7 @@ const { pathToFileURL } = require('node:url');
     const mod = await import(pathToFileURL(workerData.modPath).href);
     const { env, pipeline } = mod;
     env.cacheDir = workerData.cacheDir;
+    if (workerData.remoteHost) env.remoteHost = workerData.remoteHost;
     const fe = await pipeline('feature-extraction', workerData.modelId, {
       dtype: 'int8',
       revision: workerData.revision,
@@ -57,6 +58,15 @@ const { pathToFileURL } = require('node:url');
 
 export function defaultModelCacheDir(): string {
   return process.env.FUNMEM_MODEL_CACHE ?? `${process.env.HOME ?? '.'}/.cache/funmem/models`;
+}
+
+/**
+ * Where the weights download from: Hugging Face, or the mirror HF_ENDPOINT names (the
+ * variable Hugging Face's own tools read). transformers.js does not read it itself, so a
+ * mirror or a deliberately dead endpoint was ignored and the download went to huggingface.co.
+ */
+function modelHost(): string | undefined {
+  return process.env.HF_ENDPOINT || undefined;
 }
 
 /**
@@ -234,7 +244,13 @@ function spawnModelWorker(cacheDir: string): Promise<Worker> {
     const modPath = createRequire(import.meta.url).resolve('@huggingface/transformers');
     const worker = new Worker(WORKER_SRC, {
       eval: true,
-      workerData: { modPath, cacheDir, modelId: MODEL_ID, revision: REVISION },
+      workerData: {
+        modPath,
+        cacheDir,
+        modelId: MODEL_ID,
+        revision: REVISION,
+        remoteHost: modelHost(),
+      },
     });
     const fail = (e: Error) => {
       clearTimeout(timer);
