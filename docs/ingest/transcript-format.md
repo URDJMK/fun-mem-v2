@@ -34,7 +34,7 @@ The format is recognised from the content; nothing needs to be declared.
 | **OpenAI Whisper's default JSON** (`{ "text": "…" }`) | the words, as plain text with no speakers |
 | **SRT / VTT subtitles** | each cue is a segment; a speaker is read from `<v Name>` or a leading `[SPEAKER_00]:` / `Name:`. A cue holding two voices (two `<v>` tags, two labelled lines, two speakers on one line, or `- ` dialogue dashes) is split, its time shared by length. Times with no milliseconds (`00:00:01 --> 00:00:04`) or a colon before them (`00:00:01:000`) are fine. |
 | **Otter / Zoom / Teams text** | `Speaker Name  0:05` on its own line (or Zoom's `[Name] 00:00:05`), the words on the lines after it |
-| **Labelled text** | `Name: words`, optionally with a time before or after (`[00:12] Grandma: …`, `Grandma (00:12): …`, `00:12 Grandma: …`, `Speaker 1 00:05: …`). A name may be in any script and have accents (`Zoë:`, `김 선생님:`), a note in brackets (`Interviewer (Noah):`, `Anna Lee (she/her):`), or be `Family, Given:`. `[화자1] …` needs no colon. Markdown and list styles are read too: `**Noah:** …`, `**Noah**: …`, `- Noah: …`; and, when a whole document is written that way (the same name at least twice, plus a second name or a role), `<Noah> …`, `Noah said: …` and `Noah - …`. Names are compared in any case (`grandma:` is `Grandma:`), and `Grandma 2:` beside `Grandma:` is one more speaker. A colon INSIDE a sentence never makes a speaker in a file whose labels start the lines (`할머니: …생선을 파셨어요: 힘들다고…`, `Grandma: Why did we leave? Hunger: that was the reason`); a bulleted `- Name:` is a label only when it is the whole document's style. `Q. …` / `A. …` are labels when both recur; `[할머니] …` without a colon is a label when a few such names start most lines. A line with no label continues the previous speaker, except: when only the interviewer is labelled (`Q: …` then the answer on its own line), unlabelled lines are the answers (shown as the speaker `ANSWERS`). |
+| **Labelled text** | `Name: words`, optionally with a time before or after (`[00:12] Grandma: …`, `Grandma (00:12): …`, `00:12 Grandma: …`, `Speaker 1 00:05: …`). A name may be in any script and have accents (`Zoë:`, `Иван:`), a note in brackets (`Interviewer (Noah):`, `Anna Lee (she/her):`), or be `Family, Given:`. Markdown and list styles are read too: `**Noah:** …`, `**Noah**: …`, `- Noah: …`; and, when a whole document is written that way (the same name at least twice, plus a second name or a role), `<Noah> …`, `Noah said: …` and `Noah - …`. Names are compared in any case (`grandma:` is `Grandma:`), and `Grandma 2:` beside `Grandma:` is one more speaker. A colon INSIDE a sentence never makes a speaker in a file whose labels start the lines (`Grandma: Why did we leave? Hunger: that was the reason`); a bulleted `- Name:` is a label only when it is the whole document's style. `Q. …` / `A. …` are labels when both recur; `[Grandma] …` without a colon is a label when a few such names start most lines. A line with no label continues the previous speaker, except: when only the interviewer is labelled (`Q: …` then the answer on its own line), unlabelled lines are the answers (shown as the speaker `ANSWERS`). |
 | **A paste that lost its line breaks** | `Interviewer: … Grandma: … Interviewer: …` on one line is split back into turns. The labels are decided once for the whole text (a name that recurs, starts a line, is a bracketed id, or comes right after a question), and the text is cut before every occurrence of those labels, so a short sentence just before a label ("Very poor. Interviewer: …") is never swallowed into it. A speaker who appears only once, right after a full stop, is not cut (it could be a sentence with a colon): that one stays inside the previous turn. |
 | **Timestamped text** | `[00:12] words`, no speakers |
 | **Plain text** | one turn per line, or paragraphs. Works, but questions and answers get mixed: send speakers if at all possible. |
@@ -42,21 +42,23 @@ The format is recognised from the content; nothing needs to be declared.
 A JSON file that cannot be read (damaged, cut off, or in a layout not listed above) is refused with
 a message saying so; it is never read as text, so its keys and braces never become anyone's words.
 
-Text files may be UTF-8, UTF-16 (Notepad's "Unicode") or Korean EUC-KR/CP949; v1's upload page
-detected which in the browser (`apps/web/src/lib/decode.ts` in v1). The API itself takes text, so a
-client in v2 sends UTF-8 (or brings that decoder over). A byte-order mark, Windows or old-Mac line endings, decomposed (NFD) Hangul,
-zero-width and direction marks, no-break and full-width spaces, full-width brackets and colons
-(`［화자1］`, `：`) and control characters are all normalised before anything is read. An email
-reply in which most lines start with `>` loses those quote marks first.
+The API takes the transcript as text inside a JSON request, so a client sends UTF-8 (a file saved
+as UTF-16 is decoded by the client first). A byte-order mark, Windows or old-Mac line endings,
+decomposed (NFD) accents, zero-width and direction marks, no-break and other Unicode spaces, and
+control characters are all normalised before anything is read. An email reply in which most lines
+start with `>` loses those quote marks first.
+
+Transcripts are read as English. Words in another script are kept exactly as written and pass
+through every check as whole words, but no rule reads them (see "Who is telling the memories").
 
 ## What we do to the text before anything else (in code, not by AI)
 
 Nothing the relative said is removed, and nothing is added. In detail:
 
-- Remove fillers and stammers: "um", "uh", "I, I", ", you know," (and 음, 어). A stammer is the same word in the same case ("so so" without a comma, "Grade A, a" stay), and across a comma only for "I/we/he/she/they/the/a/and/but/so/my/just" ("you, you" and "it, it" stay). "Um" and "Uh" stay when they are a name ("Mr. Um", "Um Jae-sun"), and ", I mean," stays when it introduces a correction ("1950, I mean, 1951"). A turn that is only "Mm-hm." stays "Mm-hm.": it is often the answer "yes".
-- Remove **known** sound notes only: `[Music]`, `[laughter]`, `(inaudible)`, `[crosstalk]`, `[BLANK_AUDIO]`, Rev's `[inaudible 00:01:23]`, machine tags such as `[APPLAUSE]` or `[BLANK_AUDIO]` (an all-capital tag of two words or with an underscore; a single all-capital word such as `[UN]` or `[KBS]` is a name and stays), Korean notes such as `(웃음)`, `♪ … ♪`, `[Note: …]`, and times in brackets. Every other bracketed word stays (`[Busan]`, `[sic]`, `[그 당시에는]`), and a speaker label is never a sound note (`[SPEAKER_00]`, `[INTERVIEWER]`). The warning counts each note.
-- Drop a transcriber's note on its own line (`Note: …`, `Transcriber's note: …`, `편집자 주: …`) and the **lead block**: the lines above the first speaker label. In it, header fields (`Date:`, `Title:`, `Location:`, `제목:`, `일시:`, `장소:`), phrases such as `Interview with…`, `Recorded March 1…`, `Transcribed by…`, a date, weekday, time or duration on its own line (`45m 12s`, `Tue, 5/12 9:15AM • 45:30`), e-mail attribution (`On Mon, May 4, 2026 at 9:12 AM Noah Kim <…> wrote:`, `…님이 작성:`), `From:/Sent:/To:/Cc:/Subject:`, `-----Original Message-----`, Otter `SUMMARY KEYWORDS` / `SPEAKERS` blocks, `Tape 2, side A`, and a leading `Interviewee: Sunja Kim` / `Interviewer: Noah Kim` block are not anyone's words: they are left out and the page says how many (`lines_dropped`). `Speaker 1 = Noah Kim, Speaker 2 = Sunja Kim` lines are used as the names. **Below the first speaker label nothing is dropped as a "header"**: an answer that begins with a date ("March 3rd, 1946, in Busan", "1950년 6월 25일에 전쟁이 났어요"), or a speaker called `Translator:` or `Subject:`, is speech.
-- What is left in the lead block is speech with no speaker (`unlabelled_start`). A greeting, thanks, "testing, one two three", "today is…", or the interviewer calling her "Grandma," stays with the interviewer side. A sentence that looks like a tape cut mid-answer (it starts with and/but/so/because, "…", 그래서/그리고/그런데, or lower-case) is kept as the relative's, but the page then ASKS who is telling (`unlabelled_to_teller`) instead of filing it silently. Anything else is held back and asked about.
+- Remove fillers and stammers: "um", "uh", "I, I", ", you know,". A stammer is the same word in the same case ("so so" without a comma, "Grade A, a" stay), and across a comma only for "I/we/he/she/they/the/a/and/but/so/my/just" ("you, you" and "it, it" stay). "Um" and "Uh" stay when they are a name ("Mr. Um", "Um Jae-sun"), and ", I mean," stays when it introduces a correction ("1950, I mean, 1951"). A turn that is only "Mm-hm." stays "Mm-hm.": it is often the answer "yes".
+- Remove **known** sound notes only: `[Music]`, `[laughter]`, `(inaudible)`, `[crosstalk]`, `[BLANK_AUDIO]`, Rev's `[inaudible 00:01:23]`, machine tags such as `[APPLAUSE]` or `[BLANK_AUDIO]` (an all-capital tag of two words or with an underscore; a single all-capital word such as `[UN]` or `[BBC]` is a name and stays), `♪ … ♪`, `[Note: …]`, and times in brackets. Every other bracketed word stays (`[Busan]`, `[sic]`, `[at the time]`), and a speaker label is never a sound note (`[SPEAKER_00]`, `[INTERVIEWER]`). The warning counts each note.
+- Drop a transcriber's note on its own line (`Note: …`, `Transcriber's note: …`) and the **lead block**: the lines above the first speaker label. In it, header fields (`Date:`, `Title:`, `Location:`), phrases such as `Interview with…`, `Recorded March 1…`, `Transcribed by…`, a date, weekday, time or duration on its own line (`45m 12s`, `Tue, 5/12 9:15AM • 45:30`), e-mail attribution (`On Mon, May 4, 2026 at 9:12 AM Noah Kim <…> wrote:`), `From:/Sent:/To:/Cc:/Subject:`, `-----Original Message-----`, Otter `SUMMARY KEYWORDS` / `SPEAKERS` blocks, `Tape 2, side A`, and a leading `Interviewee: Sunja Kim` / `Interviewer: Noah Kim` block are not anyone's words: they are left out and the page says how many (`lines_dropped`). `Speaker 1 = Noah Kim, Speaker 2 = Sunja Kim` lines are used as the names. **Below the first speaker label nothing is dropped as a "header"**: an answer that begins with a date ("March 3rd, 1946, in Busan", "June 25, 1950, the war started"), or a speaker called `Translator:` or `Subject:`, is speech.
+- What is left in the lead block is speech with no speaker (`unlabelled_start`). A greeting, thanks, "testing, one two three", "today is…", or the interviewer calling her "Grandma," stays with the interviewer side. A sentence that looks like a tape cut mid-answer (it starts with and/but/so/because, "…", or lower-case) is kept as the relative's, but the page then ASKS who is telling (`unlabelled_to_teller`) instead of filing it silently. Anything else is held back and asked about.
 - Remove `>` quote marks, `#` headings, code fences and `---` rules from the start of every line: they are structure, not words.
 - Collapse a speech-recogniser loop: the SAME speaker saying the same sentence four times in a row (eight times for a sentence of three words or fewer). "I miss her." said four times, or "No. No. No. No.", is testimony and stays.
 - Drop known recogniser inventions such as "Thanks for watching!".
@@ -68,7 +70,7 @@ Nothing the relative said is removed, and nothing is added. In detail:
 
 Only after the roles are known is a short "mm-hm" from the **interviewer**, between two parts of
 one answer, folded into that answer. A one-word answer from the relative is never folded away
-after a question, and a word of agreement ("Yes.", "맞아요.") from the relative always stays.
+after a question, and a word of agreement ("Yes.", "That's right.") from the relative always stays.
 
 Every AI rewrite is then checked against the speaker's own words: if it adds anything that was not
 said, it is thrown away and the speaker's words are shown instead.
@@ -79,17 +81,19 @@ If you name the interviewee (in the file, or in the request's `teller` / `interv
 the guess says how sure it is. **Only a sure guess is saved without asking**; anything else stops at
 "Who is telling these memories?" for a person to confirm. A guess is sure when:
 
-- the labels say who asks (`Interviewer`, `Q`, `Host`, `질문자`, `인터뷰어`, `진행자`, `면접관`, `면담자`, `조사자`, `채록자`…; `면접자` only when its turns do ask) or who tells (`Interviewee`, `Narrator`, `구술자`, `제보자`), and the turns do not contradict them, and exactly one other person speaks; or
-- one person speaks at least twice as much as the next, and their turns read as telling while the other's read as asking (a question mark, a question word, "Tell me about…", "…말씀해 주세요"); or
-- only one person speaks, and they are not asking questions.
+- the labels say who asks (`Interviewer`, `Q`, `Question`, `Host`, `Moderator`, with or without a number) or who tells (`Interviewee`, `Narrator`, `Respondent`, `Answer`, and `A` beside a `Q`), and the turns do not contradict them, and exactly one other person speaks; or
+- one person speaks at least twice as much as the next, and their turns read as telling while the other's read as asking (a question mark, a question word, "Tell me about…"); or
+- only one person speaks, they are not asking questions, and most of their letters are in the Latin
+  script (a monologue mostly in another script is asked about, with the reason `script_not_read`:
+  the reader cannot tell its questions from its answers).
 
 It asks when two people speak about equally, when the person who talks most is the one asking,
 when a second person also tells at length (a second relative: a speaker who is not the teller and
 makes a statement of a dozen words or more, or a third voice that answers), when labels could not be
 read, when the only speaker is labelled as the interviewer, when an unlabelled opening might be hers, or when
 the interviewee you named is not in the file. A header that names ONE interviewee is a hint, not a verdict: a
-second relative who tells at length still makes it ask. Questions are recognised without a question mark too (Korean speech-to-text output has none:
-`-나요`, `-ㄴ가요`, `어떻게`, `왜`, `어머니는요`…), and full-width `？` counts.
+second relative who tells at length still makes it ask. Questions are recognised without a question mark
+too, from an English question word at the start or a request ("Tell me about…").
 
 ## How to produce it (collaborator)
 
@@ -138,18 +142,18 @@ treated as worse than none. The words are read sentence by sentence; the result 
 (`1946`), a month (`1946-03`), a day (`1946-03-15`), or an approximate one with a tilde (`~1946`),
 or nothing.
 
-- **Said in words or digits.** "nineteen forty-six", "1946", "1946년", "June of nineteen sixty-seven".
+- **Said in words or digits.** "nineteen forty-six", "1946", "June of nineteen sixty-seven".
 - **A hedge right beside the year makes it approximate** ("maybe 1958", "about nineteen sixty-two",
-  "I think we moved in 1960", "1960 or so", 아마 1946년쯤). A hedge elsewhere in the sentence does not:
+  "I think we moved in 1960", "1960 or so"). A hedge elsewhere in the sentence does not:
   "I was about ten in 1950" is a sure 1950.
 - **Not dates:** prices and counts ("nineteen fifty for that cow", "1946 chickens"), addresses,
-  phone numbers, and numbers that name a thing ("Room 1912", "Flight 1946", "jersey number 1984",
-  1912호, 1946번 버스); today's date ("it is 2026 now"), the date of the recording, and years that have
+  phone numbers, and numbers that name a thing ("Room 1912", "Flight 1946", "jersey number 1984", a
+  number glued to a letter such as "1912B"); today's date ("it is 2026 now"), the date of the recording, and years that have
   not happened yet.
 - **A year the speaker takes back is ignored:** "No, not 1950. It was 1951." is 1951. So is a year
   they only report as other people's ("everyone says 1950").
 - **Spans, ranges and decades are not events** ("since 1934", "between 1950 and 1953", "1950–53",
-  "the 1960s", 1990년대, 1953년부터). They never become the date, and when another year is named too,
+  "the 1960s", "from 1953 on"). They never become the date, and when another year is named too,
   the memory has no single date.
 - **A person described in passing does not date the story:** "my mother, born 1920, raised us
   alone. In 1950 she lost the farm" is 1950.

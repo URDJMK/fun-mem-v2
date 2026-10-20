@@ -133,5 +133,5 @@ arrives decomposed), and an import's file name is scrubbed from the record as so
 | `NIM_MODEL` | `nvidia/nemotron-3-ultra-550b-a55b` | |
 | `NIM_CONCURRENCY` | 4 | model calls in flight across the whole server |
 | `NIM_HEDGE_MS` | 40000 | a call this slow gets one duplicate beside it; `0`, a negative number or `off` turns it off |
-| `FUNMEM_TZ` | `Asia/Seoul` | the time zone of the date written in a "may disagree" marker |
+| `FUNMEM_TZ` | `UTC` | the time zone of the date written in a "may disagree" marker (an invalid zone falls back to UTC) |
 | `INGEST_HARD_LIMIT_MS` | 900000 | |
