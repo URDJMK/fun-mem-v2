@@ -10,7 +10,7 @@
     "build": "tsc --noEmit",
     "test": "vitest run",
     "typecheck": "tsc --noEmit",
-    "start": "vite-node src/main.ts"
+    "start": "exec vite-node src/main.ts"
   },
   "devDependencies": {
     "@supabase/supabase-js": "^2.110.6",
