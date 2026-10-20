@@ -14,6 +14,8 @@ repos:
         stages: [pre-commit]
       - id: conventional-commit
         name: commit message follows Conventional Commits
-        entry: scripts/check-commit-msg.sh
-        language: script
+        # run through sh, not the script's #!/bin/sh: pre-commit on Windows reads a shebang as
+        # a literal path, and there is no /bin/sh there
+        entry: sh scripts/check-commit-msg.sh
+        language: system
         stages: [commit-msg]
