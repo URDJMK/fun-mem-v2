@@ -64,78 +64,84 @@ export function NoteForm({
   return (
     <form
       data-testid="note-form"
+      className="stack"
+      style={{ gap: 13 }}
       onSubmit={(e) => {
         e.preventDefault();
         void save();
       }}
     >
-      <p>
-        <label>
-          Title
-          <br />
-          <input
-            data-testid="note-title"
-            value={title}
-            onChange={(e) => setTitle(e.target.value)}
-            placeholder="The clothesline in the yard"
-          />
-        </label>
-      </p>
-      <p>
-        <label>
-          When
-          <br />
-          <input
-            data-testid="note-occurred"
-            value={occurred}
-            onChange={(e) => setOccurred(e.target.value)}
-            placeholder="1987 · 1987-03 · ~1948 · or leave it empty"
-          />
-        </label>
-        <br />A year alone is fine. If you don’t know, leave it empty: a date is never made up.
-      </p>
+      <label className="field">
+        Title
+        <input
+          className="input"
+          data-testid="note-title"
+          value={title}
+          onChange={(e) => setTitle(e.target.value)}
+          placeholder="The clothesline in the yard"
+        />
+      </label>
+      <label className="field">
+        When
+        <input
+          className="input"
+          style={{ maxWidth: 320 }}
+          data-testid="note-occurred"
+          value={occurred}
+          onChange={(e) => setOccurred(e.target.value)}
+          placeholder="1987 · 1987-03 · ~1948"
+        />
+        <span className="hint">
+          A year alone is fine, and ~ means “around”. If you don’t know, leave it empty: a date is
+          never made up.
+        </span>
+      </label>
       {withType && (
-        <p>
-          <label>
-            What is this memory about?
-            <br />
-            <select
-              data-testid="note-type"
-              value={type}
-              onChange={(e) => setType(e.target.value as EntityType)}
-            >
-              {TYPES.map((t) => (
-                <option key={t} value={t}>
-                  {TYPE_LABEL[t]}
-                </option>
-              ))}
-            </select>
-          </label>
+        <fieldset style={{ margin: 0, padding: 2, border: 'none' }} className="stack">
+          <legend style={{ fontWeight: 600, marginBottom: 10 }}>What is this memory about?</legend>
+          <div className="row" data-testid="note-type">
+            {TYPES.map((t) => (
+              <button
+                key={t}
+                type="button"
+                className="chip"
+                aria-pressed={type === t}
+                data-type={t}
+                onClick={() => setType(t)}
+              >
+                {TYPE_LABEL[t]}
+              </button>
+            ))}
+          </div>
+        </fieldset>
+      )}
+      <label className="field">
+        Text
+        <textarea
+          className="textarea textarea-serif"
+          data-testid="note-body"
+          rows={12}
+          value={body}
+          onChange={(e) => setBody(e.target.value)}
+          placeholder="What happened, in your own words."
+        />
+        <span className="hint">
+          Put a name in double brackets, like [[Mother]], to link it to their page.
+        </span>
+      </label>
+      {error && (
+        <p role="alert" className="notice notice-error">
+          {error}
         </p>
       )}
-      <p>
-        <label>
-          Text
-          <br />
-          <textarea
-            data-testid="note-body"
-            rows={12}
-            cols={60}
-            value={body}
-            onChange={(e) => setBody(e.target.value)}
-            placeholder="Put a name in double brackets, like [[Mother]], to link it to another memory."
-          />
-        </label>
-      </p>
-      {error && <p role="alert">{error}</p>}
-      <p>
-        <button type="submit" data-testid="note-save" disabled={saving}>
+      <div className="row">
+        <button type="submit" className="btn btn-primary" data-testid="note-save" disabled={saving}>
           {saving ? 'Saving…' : 'Save'}
-        </button>{' '}
-        <button type="button" onClick={onCancel}>
+        </button>
+        <button type="button" className="btn btn-quiet" onClick={onCancel}>
           Cancel
         </button>
-      </p>
+      </div>
     </form>
   );
 }

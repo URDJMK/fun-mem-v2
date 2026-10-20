@@ -1,7 +1,9 @@
 import { createContext, useCallback, useContext, useEffect, useState, type ReactNode } from 'react';
-import { listArchives, provisionArchive } from './api';
-import { storedArchiveId, storeArchiveId } from './supabase';
+import { Link, useParams } from 'react-router';
+import { listArchives, type ArchiveSummary } from './api';
+import { storeArchiveId } from './supabase';
 import { canWrite } from './words';
+import { Failed, TopBar } from '../components/ui';
 
 export interface Archive {
   id: string;
@@ -13,113 +15,80 @@ export interface Archive {
 
 const ArchiveContext = createContext<Archive | null>(null);
 
-/** The archive the signed-in person is looking at. Only used under `ArchiveGate`. */
+/** The archive the signed-in person is looking at. Only used under `ArchiveRoute`. */
 export function useArchive(): Archive {
   const archive = useContext(ArchiveContext);
-  if (!archive) throw new Error('useArchive outside ArchiveGate');
+  if (!archive) throw new Error('useArchive outside ArchiveRoute');
   return archive;
 }
 
-/**
- * Which archive is this person looking at? The server is asked, not the browser: with Google
- * sign-in two people can share one browser, and an archive id left behind by the first is
- * nothing to the second. The stored id only breaks a tie among archives the person belongs
- * to. Someone who belongs to none yet is asked whose memories to gather.
- */
-export function ArchiveGate({ children }: { children: ReactNode }) {
-  // undefined: still asking; null: none yet; 'failed': the server could not be asked
-  const [archive, setArchive] = useState<Archive | null | undefined | 'failed'>(undefined);
-
-  const load = useCallback(async () => {
+/** The archives this person belongs to, as the server lists them. */
+export function useArchives(): {
+  archives: ArchiveSummary[] | null | 'failed';
+  reload: () => Promise<void>;
+} {
+  // null: still asking
+  const [archives, setArchives] = useState<ArchiveSummary[] | null | 'failed'>(null);
+  const reload = useCallback(async () => {
     try {
-      const mine = await listArchives();
-      const stored = storedArchiveId();
-      const pick = mine.find((a) => a.id === stored) ?? mine[0];
-      if (!pick) return setArchive(null);
-      storeArchiveId(pick.id);
-      setArchive({ ...pick, writer: canWrite(pick.role) });
+      setArchives(await listArchives());
     } catch {
-      setArchive('failed');
+      setArchives('failed');
     }
   }, []);
-
   useEffect(() => {
-    void load();
-  }, [load]);
-
-  if (archive === undefined) return null;
-  if (archive === 'failed') {
-    return <p role="alert">Could not load your archive. Reload the page.</p>;
-  }
-  if (archive === null) return <Provision onDone={load} />;
-  return <ArchiveContext.Provider value={archive}>{children}</ArchiveContext.Provider>;
+    void reload();
+  }, [reload]);
+  return { archives, reload };
 }
 
-function Provision({ onDone }: { onDone: () => Promise<void> }) {
-  const [subjectName, setSubjectName] = useState('');
-  const [jurisdiction, setJurisdiction] = useState('');
-  const [pending, setPending] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+/**
+ * Every page inside one archive goes through here. The archive is named in the address, and
+ * the server is asked whether this person belongs to it: with Google sign-in two people can
+ * share one browser, and an address left behind by the first is nothing to the second.
+ */
+export function ArchiveRoute({ children }: { children: ReactNode }) {
+  const { archiveId = '' } = useParams<{ archiveId: string }>();
+  const { archives } = useArchives();
 
-  async function submit() {
-    setPending(true);
-    setError(null);
-    try {
-      const { archiveId } = await provisionArchive(subjectName.trim(), jurisdiction.trim());
-      storeArchiveId(archiveId);
-      await onDone();
-    } catch {
-      setError('Could not create the archive.');
-      setPending(false);
-    }
+  if (archives === null) return null;
+  if (archives === 'failed') {
+    return (
+      <>
+        <TopBar />
+        <main className="page">
+          <Failed>Could not load this archive. Reload the page.</Failed>
+        </main>
+      </>
+    );
   }
-
+  const found = archives.find((a) => a.id.toLowerCase() === archiveId.toLowerCase());
+  if (!found) {
+    return (
+      <>
+        <TopBar />
+        <main className="page">
+          <Failed>This archive could not be found, or you are not a member of it.</Failed>
+          <p>
+            <Link to="/">Back to your archives</Link>
+          </p>
+        </main>
+      </>
+    );
+  }
+  storeArchiveId(found.id);
   return (
-    <main>
-      <title>Create an archive · fun-mem</title>
-      <p>A place to keep them</p>
-      <h1>Whose memories will you gather?</h1>
-      <p>Write a name, and the memories gather around that person. You can change it later.</p>
-      <form
-        data-testid="provision-form"
-        onSubmit={(e) => {
-          e.preventDefault();
-          void submit();
-        }}
-      >
-        <p>
-          <label>
-            Whose memories
-            <br />
-            <input
-              name="subjectName"
-              required
-              placeholder="Their name"
-              value={subjectName}
-              onChange={(e) => setSubjectName(e.target.value)}
-            />
-          </label>
-        </p>
-        <p>
-          <label>
-            Jurisdiction
-            <br />
-            <input
-              name="jurisdiction"
-              required
-              placeholder="A country code, e.g. US"
-              value={jurisdiction}
-              onChange={(e) => setJurisdiction(e.target.value)}
-            />
-          </label>
-        </p>
-        <p>
-          <button type="submit" disabled={pending}>
-            {pending ? 'Creating…' : 'Start'}
-          </button>
-        </p>
-        {error && <p role="alert">{error}</p>}
-      </form>
-    </main>
+    <ArchiveContext.Provider key={found.id} value={{ ...found, writer: canWrite(found.role) }}>
+      {children}
+    </ArchiveContext.Provider>
   );
 }
+
+/** The address of a page inside an archive. */
+export const inArchive = (archiveId: string, path = '') => `/a/${archiveId}${path}`;
+
+/** People and places live on the People & places page; every other note is a story. */
+export const isEntity = (type: string) => type === 'person' || type === 'place';
+
+export const noteHref = (archiveId: string, note: { id: string; type: string }) =>
+  inArchive(archiveId, `${isEntity(note.type) ? '/people' : '/stories'}/${note.id}`);
