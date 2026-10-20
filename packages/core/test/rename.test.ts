@@ -37,7 +37,8 @@ describe('renameLinkTargets', () => {
     // a title is spliced verbatim into referrer link text — link syntax would
     // forge or corrupt links in other members' bodies
     expect(validateNoteTitle('Beach Trip')).toBeNull();
-    expect(validateNoteTitle('할머니와 바다-여행 (1987)')).toBeNull();
+    expect(validateNoteTitle('Grandma and the Sea-Trip (1987)')).toBeNull();
+    expect(validateNoteTitle('Caf\u{E9} Royal')).toBeNull();
     for (const bad of [
       'Trip #3',
       'Either|Or',

@@ -55,11 +55,14 @@ describe('wikilink parser', () => {
     expect(spaced.embed).toBe(false);
   });
 
-  it('is deterministic and handles korean titles', () => {
-    const body = '나는 [[엄마]]와 [[부산 여행#첫날|그 여행]]을 기억한다. ![[사진.jpg]]';
+  it('is deterministic and handles accented titles and astral characters', () => {
+    // the emoji is two UTF-16 code units, so a parser that counted code points
+    // would put every position after it off by one
+    const body =
+      '\u{1F600} I went with [[Zo\u{EB}]] and [[Caf\u{E9} Royal#Day One|that trip]] and remember it. ![[photo.jpg]]';
     const first = extractWikilinks(body);
-    expect(first.map((l) => l.target)).toEqual(['엄마', '부산 여행', '사진.jpg']);
-    expect(first[1]).toMatchObject({ heading: '첫날', alias: '그 여행' });
+    expect(first.map((l) => l.target)).toEqual(['Zo\u{EB}', 'Caf\u{E9} Royal', 'photo.jpg']);
+    expect(first[1]).toMatchObject({ heading: 'Day One', alias: 'that trip' });
     // positions are UTF-16 code-unit indices — slicing must reproduce the raw token exactly
     for (const l of first) expect(body.slice(l.start, l.end)).toBe(l.raw);
     // determinism: identical input, identical output (deep equality across repeated runs)

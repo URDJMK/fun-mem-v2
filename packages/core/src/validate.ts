@@ -51,7 +51,7 @@ export function validateFrontmatter(fm: Record<string, unknown>): ValidationResu
  *
  * NFC is applied LAST, matching `normalize(lower(btrim(x)), NFC)` in SQL. An
  * expression index is matched on expression TEXT, not semantics: the two orders
- * happen to agree for Hangul, but the operand must be written the same way on
+ * happen to agree for most text, but the operand must be written the same way on
  * both sides or the index is silently not used.
  *
  * NFC, not NFKC. NFKC folds `Ⅳ`→`IV`, `①`→`1`, `ﬀ`→`ff` — for titles that are

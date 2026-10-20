@@ -16,13 +16,13 @@ function rng(seed: number): () => number {
 }
 const pick = <T>(r: () => number, xs: readonly T[]): T => xs[Math.floor(r() * xs.length)]!;
 
-const TITLES = ['Grandma Kim', '엄마', 'The 1994 beach trip: part #2', 'Mr. O\'Neil — "uncle"'];
+const TITLES = ['Grandma Kim', 'Zo\u{EB}', 'The 1994 beach trip: part #2', 'Mr. O\'Neil — "uncle"'];
 const BODIES = [
   '',
   'One line.',
   'First memory. ^b1\n\nSecond paragraph with [[links]].\n',
   '---\nA body that starts with a dash line.\n\n```\ncode ^not-an-anchor\n```\n',
-  '기억 하나: 부산에서.\n',
+  'Memory one: Zo\u{EB} at the caf\u{E9}.\n',
 ];
 const OCCURRED = [undefined, '1994', '1994-07', '~1948', 'unknown'];
 
@@ -36,7 +36,7 @@ function genNote(r: () => number, i: number): Note {
       ...(r() > 0.5 && { recorded: '2026-07-15T09:30:00Z' }),
       ...(r() > 0.7 && { revised: '2026-07-15T10:00:00+09:00' }),
       ...(r() > 0.5 && { contributors: ['noah', 'aunt-mira'].slice(0, 1 + Math.floor(r() * 2)) }),
-      extra: r() > 0.5 ? { mood: pick(r, ['warm', '그리움']), pinned: r() > 0.5 } : {},
+      extra: r() > 0.5 ? { mood: pick(r, ['warm', 'wistful']), pinned: r() > 0.5 } : {},
     },
     body: pick(r, BODIES),
   };

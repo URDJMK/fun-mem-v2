@@ -9,24 +9,24 @@ const note = (id: string, title: string, body: string): Note => ({
   body,
 });
 
-const MOM = note('u-mom', '엄마', '# About mom\n');
+const ZOE = note('u-zoe', 'Zo\u{EB}', '# About Zo\u{EB}\n');
 const BEACH = note(
   'u-beach',
   'Beach Trip',
-  'We went with [[엄마]] to the sea. ^b1\n\nAlso [[Uncle Joe|joe]] came, twice: [[Uncle Joe]].\n',
+  'We went with [[Zo\u{EB}]] to the sea. ^b1\n\nAlso [[Uncle Joe|joe]] came, twice: [[Uncle Joe]].\n',
 );
 
 describe('link index', () => {
   it('indexes occurrences with source target position and snippet', () => {
     const idx = new LinkIndex();
-    idx.upsert(MOM);
+    idx.upsert(ZOE);
     idx.upsert(BEACH);
     const rows = idx.snapshot();
     expect(rows).toHaveLength(3); // one row PER occurrence — Uncle Joe twice
-    const momRow = rows.find((r) => r.target === '엄마')!;
-    expect(momRow).toMatchObject({ sourceId: 'u-beach', resolvedId: 'u-mom', embed: false });
-    expect(BEACH.body.slice(momRow.start, momRow.end)).toBe('[[엄마]]');
-    expect(momRow.snippet).toBe('We went with [[엄마]] to the sea. ^b1');
+    const zoeRow = rows.find((r) => r.target === 'Zo\u{EB}')!;
+    expect(zoeRow).toMatchObject({ sourceId: 'u-beach', resolvedId: 'u-zoe', embed: false });
+    expect(BEACH.body.slice(zoeRow.start, zoeRow.end)).toBe('[[Zo\u{EB}]]');
+    expect(zoeRow.snippet).toBe('We went with [[Zo\u{EB}]] to the sea. ^b1');
   });
 
   it('resolves case-insensitively and enumerates unresolved deterministically', () => {
@@ -63,14 +63,14 @@ describe('link index', () => {
 
   it('backlinks are queryable per target with snippets', () => {
     const idx = new LinkIndex();
-    idx.upsert(MOM);
+    idx.upsert(ZOE);
     idx.upsert(BEACH);
-    idx.upsert(note('u-k', 'Kitchen', '[[엄마]] cooked here.\n'));
-    const back = idx.backlinks('u-mom');
+    idx.upsert(note('u-k', 'Kitchen', '[[Zo\u{EB}]] cooked here.\n'));
+    const back = idx.backlinks('u-zoe');
     expect(back.map((r) => r.sourceId).sort()).toEqual(['u-beach', 'u-k']);
-    expect(back.find((r) => r.sourceId === 'u-k')!.snippet).toBe('[[엄마]] cooked here.');
+    expect(back.find((r) => r.sourceId === 'u-k')!.snippet).toBe('[[Zo\u{EB}]] cooked here.');
     // derived, not truth: re-upserting a source replaces its rows exactly
     idx.upsert(note('u-k', 'Kitchen', 'no links now.\n'));
-    expect(idx.backlinks('u-mom').map((r) => r.sourceId)).toEqual(['u-beach']);
+    expect(idx.backlinks('u-zoe').map((r) => r.sourceId)).toEqual(['u-beach']);
   });
 });

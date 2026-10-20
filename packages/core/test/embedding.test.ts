@@ -15,9 +15,9 @@ describe('DeterministicEmbeddingProvider', () => {
     expect(p.modelVersion).toBe('funmem-det-1024-v1');
     expect(p.dims).toBe(1024);
 
-    // stable: same text (Korean included) ⇒ byte-identical vector, every call
-    const [a1] = await p.embed(['우리는 바다에 갔다']);
-    const [a2] = await p.embed(['우리는 바다에 갔다']);
+    // stable: same text ⇒ byte-identical vector, every call
+    const [a1] = await p.embed(['We went to the sea together']);
+    const [a2] = await p.embed(['We went to the sea together']);
     expect(a1).toEqual(a2);
     expect(a1!.length).toBe(1024);
 
@@ -26,19 +26,41 @@ describe('DeterministicEmbeddingProvider', () => {
     expect(Math.abs(norm - 1)).toBeLessThan(1e-9);
 
     // batch order matches input order and distinct texts get distinct vectors
-    const [b, c] = await p.embed(['바다 여행 사진', '회사 회의 일정 정리']);
+    const [b, c] = await p.embed(['sea trip photos', 'company meeting schedule review']);
     expect(b).not.toEqual(c);
     expect(await p.embed([])).toEqual([]);
 
     // controllable similarity: shared tokens pull vectors together — the
     // property every fusion fixture in server/api relies on
-    const simNear = cosine(a1!, b!); // shares 바다-ish content
+    const simNear = cosine(a1!, b!); // shares the word 'sea'
     const simFar = cosine(a1!, c!); // disjoint topic
     expect(simNear).toBeGreaterThan(simFar);
 
-    // particle variants overlap through character bigrams (바다 vs 바다에):
-    // closer than an unrelated text, the honest Korean-morphology property
-    const [sea, seaAt, other] = await p.embed(['바다', '바다에 갔다', '등산로 정비 계획']);
-    expect(cosine(sea!, seaAt!)).toBeGreaterThan(cosine(sea!, other!));
+    // inflected forms overlap through character bigrams (swim vs swimming):
+    // closer than an unrelated text, the honest morphology property
+    const [swim, swimming, other] = await p.embed([
+      'swim',
+      'swimming in the lake',
+      'mountain trail maintenance plan',
+    ]);
+    expect(cosine(swim!, swimming!)).toBeGreaterThan(cosine(swim!, other!));
+  });
+
+  it('text in a script the English rules cannot read is embedded as plain text', async () => {
+    // Tokens are runs of letters and digits in any script, so another language
+    // gets real vectors, not the fixed vector that token-free text gets: it
+    // stays searchable by its own words and never collapses into one point.
+    const p = new DeterministicEmbeddingProvider();
+    const [a1, a2, same, unrelated, tokenFree] = await p.embed([
+      'бабушка родилась в Лиссабоне',
+      'бабушка родилась в Лиссабоне',
+      'бабушка любила море',
+      'квартальный бюджет собрание',
+      '?! ...',
+    ]);
+    expect(a1).toEqual(a2); // stable
+    expect(a1).not.toEqual(tokenFree);
+    expect(cosine(a1!, same!)).toBeGreaterThan(cosine(a1!, unrelated!));
+    expect(cosine(a1!, same!)).toBeGreaterThan(0.1); // above the search leg's noise floor
   });
 });

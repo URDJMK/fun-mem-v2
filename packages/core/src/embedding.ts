@@ -45,8 +45,11 @@ const BIGRAM_WEIGHT = 0.7;
  * fusion fixtures can assert exact rank order (LangChain
  * DeterministicFakeEmbedding precedent, structure-preserving variant). Each
  * word token and each character bigram contributes a PRNG unit direction
- * seeded by its own hash — a word and an identical bigram share a direction,
- * which is the honest morphological bridge (바다 ↔ 바다에). It is a real
+ * seeded by its own hash — inflected forms share the bigrams they are built
+ * from, and a two-letter word shares a direction with the identical bigram
+ * inside a longer one, which is the honest morphological bridge (swim ↔
+ * swimming, ox ↔ oxen). Tokens are runs of letters and digits in any script, so
+ * text the English rules cannot read is still embedded as plain text. It is a real
  * interface implementation — the drain, the model_version recording, and the
  * pgvector write path run unmodified — not a bypass. Also the runtime
  * fallback when the real model cannot load.

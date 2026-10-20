@@ -112,8 +112,8 @@ const ADVERSARIAL: Array<[string, string]> = [
   ['empty body', ''],
   ['whitespace only', '   \n\n  \t \n'],
   [
-    'korean memorial skeleton',
-    '# 할머니 ^halmeoni\n\n## 어린 시절\n\n### 바다\n\n우리는 바다에 갔다. ^sea\n\n## 요리\n\n김치를 담그셨다.',
+    'memorial skeleton: nested headings and anchors',
+    '# Grandma ^grandma\n\n## Childhood\n\n### The sea\n\nWe went to the sea. ^sea\n\n## Cooking\n\nShe baked bread every Sunday.',
   ],
 ];
 
@@ -138,7 +138,7 @@ function generateBody(seed: number): string {
     else if (kind === 5) lines.push(`body ${i}`);
     else if (kind === 6) lines.push(`body ${i} ^${id}`);
     else if (kind === 7) lines.push('```');
-    else if (kind === 8) lines.push('우리는 바다에 갔다');
+    else if (kind === 8) lines.push('We went to the sea');
     else if (kind === 9)
       lines.push(`# H${i} ^${id}   `); // trailing spaces
     else if (kind === 10) lines.push('\t');

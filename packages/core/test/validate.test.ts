@@ -45,8 +45,9 @@ describe('title resolver', () => {
     expect(r.resolve('  GRANDMA KIM ')).toBe('uuid-1');
     expect(() => r.register('GRANDMA KIM', 'uuid-2')).toThrow(/unique|taken/i);
     r.register('Grandma Kim', 'uuid-1'); // same id re-register is a no-op
-    r.register('엄마', 'uuid-3');
-    expect(r.resolve('엄마')).toBe('uuid-3');
+    r.register('Zo\u{EB}', 'uuid-3');
+    expect(r.resolve('ZO\u{CB}')).toBe('uuid-3'); // case-insensitive beyond ASCII
+    expect(r.resolve('Zoe\u{308}')).toBe('uuid-3'); // and the decomposed spelling is the same title
     expect(r.resolve('nobody')).toBeNull();
   });
 });
