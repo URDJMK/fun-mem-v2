@@ -545,7 +545,7 @@ const LABEL_BEFORE =
  * "In 1950 things got hard" must stay a year (a plural noun after it is not enough).
  */
 const AMOUNT_EN = new Set(
-  'won dollars dollar bucks pounds yen euros cents francs marks chickens cows pigs sheep goats hens ducks people men women soldiers workers students days hours minutes miles kilometers km meters feet acres books trees bags boxes jars eggs bottles sacks bushels'.split(
+  'dollars dollar bucks pounds yen euros cents francs marks chickens cows pigs sheep goats hens ducks people men women soldiers workers students days hours minutes miles kilometers km meters feet acres books trees bags boxes jars eggs bottles sacks bushels'.split(
     ' ',
   ),
 );
@@ -614,8 +614,8 @@ function numbersWithUnits(text: string): Num[] {
       unit = KIN_EN[w] ?? singular(w.replace(/['’]s$/, ''));
       if (unit === 'year' && words[k + 1] === 'old') unit = 'age';
     }
-    // a year is a bare four-digit number: "2000 won" and "1950 days" are amounts (review round
-    // 3, F10: "sold the cow for 2000 won" disagreed with "in 1950")
+    // a year is a bare four-digit number: "2000 dollars" and "1950 days" are amounts (review
+    // round 3, F10: "sold the cow for 2000 dollars" disagreed with "in 1950")
     const isYear = /^\d{4}$/.test(raw) && value >= 1800 && value <= 2099 && !amount;
     if (isYear) {
       out.push({ kind: 'year', unit: '', value, approx });

@@ -286,7 +286,7 @@ const MONEY_VERB =
 /** After one of these a number is money when the sentence talks about money: "sold it for nineteen fifty". */
 const MONEY_PREP = /^(?:for|of|at)$/i;
 const MONEY_WORD =
-  /(?:[$₩€£]|\b(?:dollars?|bucks|cents?|pounds?|won|euros?|yen|quid|price|prices|cost|costs|paid|pay|wages?|salary|rent|sold|bought|money)\b)/i;
+  /(?:[$€£]|\b(?:dollars?|bucks|cents?|pounds?|euros?|yen|quid|price|prices|cost|costs|paid|pay|wages?|salary|rent|sold|bought|money)\b)/i;
 /**
  * After these ("around 1970", "about nineteen fifty") a number is a YEAR unless the sentence
  * speaks of money outright: "Sometime around 1970 we bought the shop" is a date, "He paid around
@@ -294,10 +294,10 @@ const MONEY_WORD =
  */
 const APPROX_PREP = /^(?:about|around|nearly|almost|roughly|approximately|only|just|over|under)$/i;
 const STRONG_MONEY_WORD =
-  /(?:[$₩€£¥]|\b(?:dollars?|bucks|cents?|pounds?|euros?|yen|quid|price|prices|cost|costs|paid|pay|wages?|salary|money)\b|\d\s*won\b)/i;
+  /(?:[$€£¥]|\b(?:dollars?|bucks|cents?|pounds?|euros?|yen|quid|price|prices|cost|costs|paid|pay|wages?|salary|money)\b)/i;
 /** A noun within two words after a number makes it a quantity: "two thousand people", "eighteen hundred acres". */
 const QUANTITY =
-  /^(?:dollars?|bucks|cents?|pounds?|won|euros?|yen|quid|grand|cows?|cattle|chickens?|hens?|pigs?|sheep|goats?|horses?|head|fish|people|persons?|men|women|kids|children|students|graduates|soldiers|workers|families|households|houses|homes|acres?|hectares?|years?|months?|weeks?|days?|hours?|minutes?|seconds?|miles?|kilomet(?:er|re)s?|km|meters?|metres?|feet|foot|ft|inches|kilos?|kilograms?|kg|grams?|tons?|tonnes?|lbs?|gallons?|liters?|litres?|bags?|boxes|sacks?|bushels?|trees|times|percent|%|words|pages|copies|items|units|rooms|steps|hundred|thousand|million|billion)$/i;
+  /^(?:dollars?|bucks|cents?|pounds?|euros?|yen|quid|grand|cows?|cattle|chickens?|hens?|pigs?|sheep|goats?|horses?|head|fish|people|persons?|men|women|kids|children|students|graduates|soldiers|workers|families|households|houses|homes|acres?|hectares?|years?|months?|weeks?|days?|hours?|minutes?|seconds?|miles?|kilomet(?:er|re)s?|km|meters?|metres?|feet|foot|ft|inches|kilos?|kilograms?|kg|grams?|tons?|tonnes?|lbs?|gallons?|liters?|litres?|bags?|boxes|sacks?|bushels?|trees|times|percent|%|words|pages|copies|items|units|rooms|steps|hundred|thousand|million|billion)$/i;
 /** An address is not a year either: "1946 Main Street". */
 const ADDRESS =
   /^(?:street|st|road|rd|avenue|ave|lane|ln|drive|dr|boulevard|blvd|way|place|court|highway)$/i;

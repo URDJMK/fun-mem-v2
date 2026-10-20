@@ -39,7 +39,7 @@ const DIGITS = String.raw`\d{1,6}(?:[,.]\d{1,3}){0,2}`;
 const NUMW = String.raw`(?:zero|oh|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|thirteen|fourteen|fifteen|sixteen|seventeen|eighteen|nineteen|twenty|thirty|forty|fifty|sixty|seventy|eighty|ninety|hundred|thousand|and|${DIGITS})`;
 /** up to eight number words or numbers in a row ("nineteen hundred and forty-six") */
 const NUMSEQ = String.raw`(?:${NUMW}[\s-]+){0,7}${NUMW}`;
-const QTY = String.raw`(?:dollars?|bucks?|cents?|pounds?|euros?|won|yen|pesos?|cows?|chickens?|pigs?|sheep|goats?|horses?|ducks?|people|persons?|men|women|children|kids|boys|girls|soldiers|workers|guests|students|neighbou?rs|acres?|miles?|feet|foot|yards?|inches|meters?|metres?|kilometers?|kilometres?|years?|months?|weeks?|days?|hours?|minutes?|tons?|bags?|bushels?|percent|per\s+cent|times|steps)`;
+const QTY = String.raw`(?:dollars?|bucks?|cents?|pounds?|euros?|yen|pesos?|cows?|chickens?|pigs?|sheep|goats?|horses?|ducks?|people|persons?|men|women|children|kids|boys|girls|soldiers|workers|guests|students|neighbou?rs|acres?|miles?|feet|foot|yards?|inches|meters?|metres?|kilometers?|kilometres?|years?|months?|weeks?|days?|hours?|minutes?|tons?|bags?|bushels?|percent|per\s+cent|times|steps)`;
 const YEAR = String.raw`(?:1[89]\d{2}|20[0-4]\d)`;
 /** "maybe ten families in 1950" hedges the count, not the year */
 const SMALL_NUMBER = String.raw`zero|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|thirteen|fourteen|fifteen|sixteen|seventeen|eighteen|nineteen|twenty|thirty|forty|fifty|sixty|seventy|eighty|ninety|hundred|thousand|few|several|couple|dozen`;
@@ -51,7 +51,7 @@ const PRICE_VERB = new RegExp(
   String.raw`\b(?:paid|cost|costs|costing|priced?|worth|(?:sold|bought|sell|buy|traded)(?:\s+\S+){0,3}?\s+for)\s+(?:about\s+|around\s+|only\s+|just\s+|over\s+|almost\s+|nearly\s+)?${NUMSEQ}`,
   'gi',
 );
-const MONEY_SIGN = new RegExp(String.raw`[$€£₩¥]\s?${DIGITS}`, 'g');
+const MONEY_SIGN = new RegExp(String.raw`[$€£¥]\s?${DIGITS}`, 'g');
 /** "twenty-twenty vision", "20/20 vision" */
 const VISION = /\b(?:twenty[\s-]+twenty|20[/-]20)\s+vision\b/gi;
 /** a model year before a brand: "a 1957 Chevy", "my nineteen fifty-two Farmall" (Capitalised word after it) */

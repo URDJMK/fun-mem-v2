@@ -265,7 +265,7 @@ describe('N-F2: an approximate number or a bound is not a point (F2)', () => {
 
 describe('N-F10: a four-digit amount is not a year (F10)', () => {
   it.each([
-    ['Minho sold the cow for 2000 won.', 'Minho sold the cow in nineteen fifty.'],
+    ['Minho sold the cow for 2000 pounds.', 'Minho sold the cow in nineteen fifty.'],
     ['Minho sold the cow for 2000 dollars.', 'Minho sold the cow in 1950.'],
     ['Minho sold the cow for $1900.', 'Minho sold the cow in 1950.'],
     ['We kept 2000 chickens on the farm.', 'We kept chickens on the farm in 1950.'],

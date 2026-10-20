@@ -139,6 +139,11 @@ describe('spoken years: the forms people say, and never a price or a quantity', 
     ['She was born in nineteen oh five.', 'She was born in 1905.'],
     ['In the winter of nineteen fifty-eight it froze.', 'In the winter of 1958 it froze.'],
     ['It was around nineteen seventy.', 'It was around 1970.'],
+    // "won" is the verb, not money ("won" used to count as a currency and hid the year)
+    [
+      'My father won the race in the summer of nineteen sixty.',
+      'My father won the race in the summer of 1960.',
+    ],
   ])('%s', (from, to) => expect(spokenYearsToDigits(from)).toBe(to));
 
   it.each([

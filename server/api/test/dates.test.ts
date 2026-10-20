@@ -154,8 +154,8 @@ describe('numbers that name a thing, and years nobody is dating a memory by', ()
 
 describe('round-3 review: prices, model years and times of day are not dates', () => {
   it('a price or a quantity followed by more words does not hide the real year', () => {
-    expect(readMemoryDate('The bus fare was 1950 won, but it went up in 1960.')).toBe('1960');
-    expect(readMemoryDate('Coal was 2000 won a sack. We moved in 1975.')).toBe('1975');
+    expect(readMemoryDate('The bus fare was 1950 cents, but it went up in 1960.')).toBe('1960');
+    expect(readMemoryDate('Coal was 2000 pounds a sack. We moved in 1975.')).toBe('1975');
     expect(readMemoryDate('My allowance was 1990 dollars a year. It was winter 1998.')).toBe(
       '1998',
     );
@@ -164,12 +164,16 @@ describe('round-3 review: prices, model years and times of day are not dates', (
     expect(readMemoryDate('We had 1950 chickens. We sold them in 1960.')).toBe('1960');
     expect(readMemoryDate('1950 people came. It was the spring of 1960.')).toBe('1960');
     for (const t of [
-      'The bus fare was 1980 won.',
+      'The bus fare was 1980 cents.',
       'Her wage was 1950 dollars.',
       'The house cost 1950 dollars.',
     ]) {
       expect(readMemoryDate(t), t).toBeNull();
     }
+  });
+
+  it('"won" is the verb, not a currency: the year beside it stays a year', () => {
+    expect(readMemoryDate('Our team in 1958 won the county cup.')).toBe('1958');
   });
 
   it('"twenty-twenty vision", a model year before a brand, and a time of day are not years', () => {
