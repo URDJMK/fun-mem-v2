@@ -19,7 +19,7 @@ import { Avatar, Failed, Loading } from '../components/ui';
 
 export const ROLE_TEXT: Record<string, { label: string; text: string }> = {
   owner: { label: 'Owner', text: 'Started the project and decides who is in it' },
-  steward: { label: 'Steward', text: 'Records and edits, and invites or removes people' },
+  steward: { label: 'Steward', text: 'Records and edits, and invites people' },
   contributor: { label: 'Contributor', text: 'Records interviews and adds memories' },
   viewer: { label: 'Viewer', text: 'Reads the stories, the timeline and the people' },
 };

@@ -53,7 +53,14 @@ export async function grantTranscriptionToken(
   };
 }
 
+/**
+ * Tokens one person may have in a minute. A recording takes one (two on a call) and one more
+ * each time its connection drops; this is far above that, and far below running up a bill.
+ */
+const TOKENS_PER_MINUTE = 10;
+
 export function registerTranscriptionRoutes(app: App, deps: AppDeps): void {
+  const handed = new Map<string, number[]>();
   app.post('/v1/archives/:archiveId/transcription-token', async (c) => {
     const archiveId = (c.req.param('archiveId') ?? '').toLowerCase();
     const role = await memberRole(deps.pool, c.get('userId'), archiveId);
@@ -69,6 +76,20 @@ export function registerTranscriptionRoutes(app: App, deps: AppDeps): void {
         403,
       );
     }
+    const userId = c.get('userId');
+    const now = Date.now();
+    const recent = (handed.get(userId) ?? []).filter((t) => now - t < 60_000);
+    if (recent.length >= TOKENS_PER_MINUTE) {
+      return c.json(
+        { error: 'too many recordings started; wait a minute', code: 'rate_limited' },
+        429,
+        {
+          'retry-after': '60',
+        },
+      );
+    }
+    recent.push(now);
+    handed.set(userId, recent);
     try {
       return c.json(await grantTranscriptionToken(deps.transcriptionKey));
     } catch (e) {

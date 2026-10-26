@@ -165,7 +165,8 @@ export type StartFailure = LiveFailure | 'mic' | 'no_call_audio';
 
 export const FAILURE: Record<StartFailure, string> = {
   not_configured:
-    'Live transcription isn’t set up on this server yet: it needs a DEEPGRAM_API_KEY in the .env file.',
+    'Live transcription isn’t available here yet. You can still bring in a recorded transcript.',
+  rate_limited: 'Too many recordings were started just now. Wait a minute, then try again.',
   token: 'Couldn’t start transcribing. Check your connection and try again.',
   connection: 'The connection to the transcription service was lost. What was said so far is kept.',
   unsupported: 'This browser can’t record audio for transcription. Try Chrome or Edge.',

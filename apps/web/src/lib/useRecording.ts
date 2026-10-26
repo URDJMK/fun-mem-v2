@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { listNotes, transcriptionToken } from './api';
-import { keytermsFor } from './keyterms';
+import { keytermsFor, withPeople } from './keyterms';
 import { openSources, type Mode, type StartFailure } from './interview';
 import { LiveTranscriber, liveSupported, type LiveStatus } from './live';
 import { SIMULATE, SimulatedRecorder, type Recorder } from './live-sim';
@@ -20,6 +20,8 @@ export function useRecording(opts: {
   const rec = useRef<Recorder | null>(null);
   const streams = useRef<MediaStream[]>([]);
   const baseTerms = useRef<string[]>([]);
+  /** the people in the room, as named so far: may come before the recording has started */
+  const people = useRef<string[]>([]);
   const [, redraw] = useState(0);
   const [status, setStatus] = useState<LiveStatus>('connecting');
   const [mic, setMic] = useState<MediaStream | null>(null);
@@ -62,7 +64,7 @@ export function useRecording(opts: {
                 { stream: s[1]!, speaker: 'call' },
               ],
           { onChange: changed, onStatus: setStatus, onFail: (f) => cb.current.onFail(f) },
-          baseTerms.current,
+          withPeople(baseTerms.current, people.current),
         );
         rec.current = t;
         void t.start();
@@ -92,8 +94,9 @@ export function useRecording(opts: {
     callEnded,
     /** the people in the room, added to the archive's names Deepgram listens for */
     addNames(names: string[]) {
-      const extra = names.flatMap((n) => [n, ...n.split(/\s+/)]).filter((n) => n.length > 1);
-      rec.current?.setKeyterms([...new Set([...baseTerms.current, ...extra])].slice(0, 50));
+      // kept for the recording yet to start, and given to the one running
+      people.current = names;
+      rec.current?.setKeyterms(withPeople(baseTerms.current, names));
     },
     async finish() {
       await rec.current?.stop();

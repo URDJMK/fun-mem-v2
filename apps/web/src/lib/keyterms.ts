@@ -18,7 +18,11 @@ const MAX_CHARS = 1200;
 const KIN =
   /^(?:grandma|grandpa|granny|gran|nana|nanna|papa|mama|grandmother|grandfather|great|aunt|auntie|uncle|cousin|mom|mum|dad|mother|father|mrs?|ms|dr|miss|sister|brother)\.?$/i;
 
-export function keytermsFor(subjectName: string, notes: NoteSummary[]): string[] {
+/** titles that go with the name after them: "Mrs. Harju" is called "Mrs. Harju" */
+const HONORIFIC = /^(?:mrs?|ms|dr|miss)\.?$/i;
+
+/** A list of names to listen for: no family word on its own, nobody twice, within the budget. */
+function termList(): { out: string[]; add: (raw: string) => void } {
   const out: string[] = [];
   const seen = new Set<string>();
   let chars = 0;
@@ -35,13 +39,46 @@ export function keytermsFor(subjectName: string, notes: NoteSummary[]): string[]
     chars += term.length;
     out.push(term);
   };
+  return { out, add };
+}
 
-  add(subjectName);
-  for (const part of subjectName.split(/\s+/)) if (/^\p{Lu}/u.test(part)) add(part);
+/** A name, and the names inside it ("Grandma Nell" → "Grandma Nell", "Nell"). */
+function addName(add: (raw: string) => void, name: string): void {
+  add(name);
+  for (const part of name.split(/\s+/)) if (/^\p{Lu}/u.test(part)) add(part);
+}
+
+export function keytermsFor(subjectName: string, notes: NoteSummary[]): string[] {
+  const { out, add } = termList();
+  addName(add, subjectName);
 
   const entities = notes
     .filter((n) => isEntity(n.type))
     .sort((a, b) => (b.revised ?? '').localeCompare(a.revised ?? ''));
   for (const n of entities) add(n.title);
   return out;
+}
+
+/**
+ * The people in the room first, then the archive's names (`base`). The people are who will be
+ * named most, and the ones least likely to be spelled right: a long archive must not crowd
+ * them out of the list.
+ */
+export function withPeople(base: readonly string[], people: readonly string[]): string[] {
+  const { out, add } = termList();
+  for (const name of people) addName(add, name);
+  for (const term of base) add(term);
+  return out;
+}
+
+/**
+ * What to call someone, in a question read out to them: their given name ("Nell Marsh" →
+ * "Nell"), past a family word ("Grandma Nell" → "Nell"), and a title with the name it goes
+ * with ("Mrs. Harju"). Never the surname alone.
+ */
+export function callName(name: string): string {
+  const parts = name.trim().split(/\s+/).filter(Boolean);
+  if (parts.length === 0) return name.trim();
+  if (HONORIFIC.test(parts[0]!)) return parts.join(' ');
+  return parts.find((p) => !KIN.test(p)) ?? parts[0]!;
 }

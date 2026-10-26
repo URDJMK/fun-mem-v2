@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import {
   coachPrompt,
   midSentence,
@@ -8,7 +8,7 @@ import {
   suggest,
   type CoachRequest,
 } from '../src/interview-coach';
-import type { ChatModel } from '../src/nim';
+import { ModelError, type ChatModel } from '../src/nim';
 
 const base = {
   narrator: 'Nell',
@@ -168,10 +168,82 @@ describe('suggest', () => {
     expect(calls).toBe(2);
   });
 
-  it('holds the model to the move the interviewer chose', async () => {
+  it('holds the model to the move the interviewer chose, and never passes another off as it', async () => {
     const req = readCoachRequest({ ...base, want: 'close' }) as CoachRequest;
-    const s = await suggest(answering('{"move":"follow_up","question":"Describe the coop."}'), req);
-    expect(s.move).toBe('close');
     expect(coachPrompt(req)).toContain('the move must be "close"');
+    // a follow-up is not a closing question: relabelled, it would be read out as one
+    await expect(
+      suggest(answering('{"move":"follow_up","question":"Describe the coop."}'), req),
+    ).rejects.toMatchObject({ code: 'unreadable' });
+    // asked again, an answer that keeps to the chosen move is the one used
+    let calls = 0;
+    const second: ChatModel = {
+      id: 'x',
+      complete: async () =>
+        ++calls === 1
+          ? '{"move":"wait","question":"Give her a moment."}'
+          : '{"move":"close","kind":"reflect","question":"What would you want your family to remember?"}',
+    };
+    const s = await suggest(second, req);
+    expect(s).toMatchObject({ move: 'close', kind: 'reflect' });
+    expect(calls).toBe(2);
+  });
+
+  it('tries once more when the model failed quickly, as NVIDIA sometimes does', async () => {
+    let calls = 0;
+    const model: ChatModel = {
+      id: 'x',
+      complete: async () => {
+        if (++calls === 1) throw new ModelError('upstream 500', 'unavailable', true, 500);
+        return '{"move":"follow_up","question":"Describe the coop."}';
+      },
+    };
+    expect((await suggest(model, readCoachRequest(base) as CoachRequest)).question).toBe(
+      'Describe the coop.',
+    );
+    expect(calls).toBe(2);
+  });
+
+  it('does not try again what will not change, and logs why without a word of the interview', async () => {
+    const logged: string[] = [];
+    const spy = vi.spyOn(console, 'error').mockImplementation((...a: unknown[]) => {
+      logged.push(a.map(String).join(' '));
+    });
+    let calls = 0;
+    const refused: ChatModel = {
+      id: 'x',
+      complete: async () => {
+        calls++;
+        throw new ModelError('Authorization failed', 'auth', false, 403);
+      },
+    };
+    try {
+      await expect(suggest(refused, readCoachRequest(base) as CoachRequest)).rejects.toMatchObject({
+        code: 'unavailable',
+      });
+    } finally {
+      spy.mockRestore();
+    }
+    expect(calls).toBe(1);
+    expect(logged.join('\n')).toContain('auth 403');
+    expect(logged.join('\n')).not.toContain('coop');
+  });
+
+  it('knows the narrator by the name the transcript gives them, however they are called', async () => {
+    // the app calls her "Nell"; her voice is labelled with her full name
+    const req = readCoachRequest({
+      ...base,
+      transcript: [
+        { who: 'Theo', text: 'Tell me about your mother.' },
+        { who: 'Nell Marsh', text: 'And one winter she took me out on the ice and she said' },
+      ],
+    }) as CoachRequest;
+    expect(midSentence(req)).toBe(true);
+    // the interviewer's own unfinished words are not the narrator's
+    const theirs = readCoachRequest({
+      ...base,
+      transcript: [{ who: 'Theo', text: 'And then you went to' }],
+    }) as CoachRequest;
+    expect(midSentence(theirs)).toBe(false);
   });
 });

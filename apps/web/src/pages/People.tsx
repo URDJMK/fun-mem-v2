@@ -107,7 +107,8 @@ export function People({ noteId }: { noteId?: string }) {
                         <span style={{ fontSize: 13 }} className="muted">
                           {n.backlinks === 0
                             ? 'Not mentioned elsewhere yet'
-                            : `Comes up in ${count(n.backlinks as number, 'memory', 'memories')}`}
+                            : // the API counts mentions (one memory may name them twice), not memories
+                              `Mentioned ${count(n.backlinks as number, 'time', 'times')}`}
                         </span>
                       )}
                     </span>

@@ -1,6 +1,7 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { gsap } from 'gsap';
-import { coachSuggest, type CoachSuggestion } from '../lib/api';
+import { ApiError, coachSuggest, type CoachSuggestion } from '../lib/api';
+import { afterCoachFailure } from '../lib/coach-retry';
 import type { Setup } from '../lib/interview';
 import type { Segment } from '../lib/live';
 import { wordCount } from '../lib/listen';
@@ -105,11 +106,13 @@ export function Coach({
   const inFlight = useRef<AbortController | null>(null);
   const lastAt = useRef({ seg: -1, time: 0 });
   const aiDownUntil = useRef(0);
+  const retryTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const live = useRef(true);
   useEffect(
     () => () => {
       live.current = false;
       inFlight.current?.abort();
+      if (retryTimer.current) clearTimeout(retryTimer.current);
     },
     [],
   );
@@ -215,13 +218,16 @@ export function Coach({
     };
   }
 
-  function request(want: Exclude<Move, 'wait'> | null) {
+  function request(want: Exclude<Move, 'wait'> | null, attempt = 0) {
     inFlight.current?.abort();
+    if (retryTimer.current) clearTimeout(retryTimer.current);
+    retryTimer.current = null;
     const at = segments.length;
     lastAt.current = { seg: at, time: Date.now() };
     const chosen = want !== null;
     if (Date.now() < aiDownUntil.current) {
       setOffer({ s: bank(want), at, chosen, from: 'bank' });
+      setLoading(false);
       return;
     }
     const ctrl = new AbortController();
@@ -249,17 +255,30 @@ export function Coach({
         setOffer({ s, at, chosen, from: 'ai' });
         if (s.threads.length) setThreads((t) => [...new Set([...t, ...s.threads])].slice(-8));
       })
-      .catch(() => {
+      .catch((e: unknown) => {
         if (!live.current || ctrl.signal.aborted) return;
-        // no AI for a minute: the question bank stands in
-        aiDownUntil.current = Date.now() + 60_000;
+        const next = afterCoachFailure(e instanceof ApiError ? e : null, attempt);
+        if ('retryInMs' in next) {
+          // the last ask for this project is still being answered: ask again in a moment, with
+          // the conversation as it is by then
+          retryTimer.current = setTimeout(() => {
+            retryTimer.current = null;
+            if (live.current) askAgain.current(want, attempt + 1);
+          }, next.retryInMs);
+          return;
+        }
+        // the question bank stands in, for a while or (no coach here) for the rest of it
+        aiDownUntil.current = Date.now() + next.bankForMs;
         setOffer({ s: bank(want), at, chosen, from: 'bank' });
       })
       .finally(() => {
         if (inFlight.current === ctrl) inFlight.current = null;
-        if (live.current) setLoading(false);
+        // a newer ask, or one about to be made again, is still loading
+        if (live.current && !inFlight.current && !retryTimer.current) setLoading(false);
       });
   }
+  const askAgain = useRef(request);
+  askAgain.current = request;
 
   // after an answer and a short pause, ask quietly, so it is ready when the pause has lasted
   useEffect(() => {

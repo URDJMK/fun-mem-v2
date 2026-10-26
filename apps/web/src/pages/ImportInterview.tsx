@@ -139,7 +139,12 @@ export function ImportInterview() {
   return (
     <ArchiveLayout title="Add an interview">
       {step.kind === 'form' && (
-        <TranscriptForm name={archive.subjectName} initial={req} onStart={(r) => void run(r)} />
+        <TranscriptForm
+          name={archive.subjectName}
+          family={archive.kind === 'family'}
+          initial={req}
+          onStart={(r) => void run(r)}
+        />
       )}
       {step.kind === 'running' && (
         <Running
@@ -212,15 +217,18 @@ export function ImportInterview() {
 
 function TranscriptForm({
   name,
+  family,
   initial,
   onStart,
 }: {
   name: string;
+  /** a family project's name is the family's, not a person's: who is telling is asked, not assumed */
+  family: boolean;
   initial: ImportRequest;
   onStart: (r: ImportRequest) => void;
 }) {
   const [transcript, setTranscript] = useState(initial.transcript);
-  const [teller, setTeller] = useState(initial.teller ?? name);
+  const [teller, setTeller] = useState(initial.teller ?? (family ? '' : name));
   const [source, setSource] = useState(initial.source ?? '');
   const [fileError, setFileError] = useState<string | null>(null);
 
@@ -239,8 +247,9 @@ function TranscriptForm({
       <div className="stack" style={{ gap: 3 }}>
         <h1 className="page-title">Add an interview</h1>
         <p className="muted" style={{ fontSize: 13 }}>
-          Bring in the transcript of a conversation with {name}. It becomes memories in their own
-          words, and you read every one before it joins the project.
+          Bring in the transcript of a conversation with {family ? 'someone in the family' : name}.
+          It becomes memories in their own words, and you read every one before it joins the
+          project.
         </p>
       </div>
       <form
@@ -264,7 +273,7 @@ function TranscriptForm({
             required
             value={transcript}
             onChange={(e) => setTranscript(e.target.value)}
-            placeholder={`Theo: Where did you grow up?\n${name}: On Garfield Avenue, in a house with a green door…`}
+            placeholder={`Theo: Where did you grow up?\n${family ? 'Nell' : name}: On Garfield Avenue, in a house with a green door…`}
           />
           <span className="hint">
             Paste it here, or open the file. Plain text, subtitles (SRT, VTT) and WhisperX JSON all
@@ -293,8 +302,17 @@ function TranscriptForm({
         <div className="grid-auto" style={{ '--min': '240px', gap: 8 } as CSSProperties}>
           <label className="field">
             Who is telling?
-            <input className="input" value={teller} onChange={(e) => setTeller(e.target.value)} />
-            <span className="hint">The person whose memories these are.</span>
+            <input
+              className="input"
+              value={teller}
+              onChange={(e) => setTeller(e.target.value)}
+              placeholder={family ? 'Grandma Nell' : undefined}
+            />
+            <span className="hint">
+              {family
+                ? 'The person whose memories these are, as the transcript names them. Left empty, Firepit asks after reading it.'
+                : 'The person whose memories these are.'}
+            </span>
           </label>
           <label className="field">
             What should we call this interview?
