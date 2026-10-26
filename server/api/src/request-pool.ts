@@ -37,16 +37,20 @@ export class RequestPools {
   async run<T>(fn: () => Promise<T>, ctx?: { waitUntil(p: Promise<unknown>): void }): Promise<T> {
     const pool = new Pool(this.config);
     // A connection that dies must cost only the requests using it (see main.ts): pg reports
-    // it as an 'error' event, and with no listener that event would end the isolate.
+    // it as an 'error' event, and with no listener that event would end the isolate. Once the
+    // request is done its connections are closed on purpose, and workerd's socket reports that
+    // as an error too: no loss, so nothing to say.
+    let closing = false;
     pool.on('connect', (client) => {
       client.on('error', (e: unknown) => {
-        console.error(`database connection lost: ${describeError(e)}`);
+        if (!closing) console.error(`database connection lost: ${describeError(e)}`);
       });
     });
     pool.on('error', () => undefined);
     try {
       return await this.current.run(pool, fn);
     } finally {
+      closing = true;
       const closed = pool.end().catch(() => undefined);
       if (ctx) ctx.waitUntil(closed);
       else await closed;

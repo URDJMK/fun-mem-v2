@@ -1,4 +1,5 @@
-import { describe, expect, it } from 'vitest';
+import type { PoolClient } from 'pg';
+import { describe, expect, it, vi } from 'vitest';
 import { RequestPools } from '../src/request-pool';
 import { DB_URL } from './helpers';
 
@@ -69,5 +70,25 @@ describe('RequestPools', () => {
 
   it('refuses a query made outside any request, saying so', async () => {
     await expect(pools.pool.query('select 1')).rejects.toThrow(/outside a request/);
+  });
+
+  it('a connection lost mid-request is logged; one closing because the request is done is not', async () => {
+    // workerd's socket rejects its pending read as the pool closes it: an 'error' event that
+    // is no loss at all, and would otherwise log "connection lost" after every request
+    const said = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    try {
+      let held!: PoolClient;
+      await pools.run(async () => {
+        held = await pools.pool.connect();
+        held.emit('error', new TypeError('the connection really dropped'));
+        held.release();
+      });
+      expect(said.mock.calls.flat().join(' ')).toContain('database connection lost');
+      said.mockClear();
+      held.emit('error', new TypeError('This ReadableStream is closed'));
+      expect(said).not.toHaveBeenCalled();
+    } finally {
+      said.mockRestore();
+    }
   });
 });
