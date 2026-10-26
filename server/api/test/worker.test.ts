@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { afterAll, describe, expect, it, vi } from 'vitest';
+import { afterAll, afterEach, describe, expect, it, vi } from 'vitest';
 import { DB_URL, SUPABASE_URL, testContext } from './helpers';
 
 /**
@@ -14,6 +14,7 @@ import { DB_URL, SUPABASE_URL, testContext } from './helpers';
 const ctx = testContext();
 const RUN = randomUUID().slice(0, 8);
 afterAll(() => ctx.close());
+afterEach(() => vi.unstubAllEnvs());
 
 interface Message {
   body: { jobId: string };
@@ -53,6 +54,7 @@ const call = async (
   method: string,
   path: string,
   body?: unknown,
+  bindings: Record<string, unknown> = env,
 ): Promise<Response> => {
   const ec = executionContext();
   const res = await w.fetch(
@@ -64,7 +66,7 @@ const call = async (
       },
       ...(body !== undefined ? { body: JSON.stringify(body) } : {}),
     }),
-    env,
+    bindings,
     ec,
   );
   await Promise.all(ec.pending);
@@ -163,6 +165,55 @@ describe('the Worker', () => {
     );
     expect(saved.status).toBe(200);
     expect(((await saved.json()) as { status: string }).status).toBe('saved');
+  });
+
+  it('the live interview: Deepgram and the coach come from its secrets, and say so when absent', async () => {
+    // the session running the tests may hold real keys: each test here says which it has
+    for (const name of ['DEEPGRAM_API_KEY', 'NVIDIA_API_KEY', 'NIM_BASE_URL', 'INTERVIEW_MODEL'])
+      vi.stubEnv(name, '');
+    const s = await ctx.realSession(`worker-live-${RUN}@test.local`);
+    const w = await isolate();
+    const prov = await call(w, s.token, 'POST', '/v1/provision', {
+      subjectName: `Worker live ${RUN}`,
+      jurisdiction: 'US',
+    });
+    const { archiveId } = (await prov.json()) as { archiveId: string };
+    const ask = {
+      narrator: 'Nell',
+      interviewer: 'Theo',
+      topics: [],
+      minutes: 3,
+      transcript: [
+        { who: 'Theo', text: 'Tell me about the farm.' },
+        { who: 'Nell', text: 'My father built the chicken coop.' },
+      ],
+      threads: [],
+      asked: [],
+    };
+    const token = `/v1/archives/${archiveId}/transcription-token`;
+    const suggest = `/v1/archives/${archiveId}/interview/suggest`;
+
+    const bare = await call(w, s.token, 'POST', token, {});
+    expect(bare.status).toBe(503);
+    expect(await bare.json()).toMatchObject({ code: 'not_configured' });
+    const noCoach = await call(w, s.token, 'POST', suggest, ask);
+    expect(noCoach.status).toBe(503);
+    expect(await noCoach.json()).toMatchObject({ code: 'not_configured' });
+
+    // with the secrets set: each reaches its service (Deepgram refuses a key that is not real;
+    // the model's address here refuses connections), so the answer is "it failed", not "absent"
+    const keyed = {
+      ...env,
+      DEEPGRAM_API_KEY: 'not-a-real-key',
+      NVIDIA_API_KEY: 'not-a-real-key',
+      NIM_BASE_URL: 'http://127.0.0.1:9/v1',
+    };
+    const w2 = await isolate();
+    const granted = await call(w2, s.token, 'POST', token, {}, keyed);
+    expect(granted.status).toBe(502);
+    const coached = await call(w2, s.token, 'POST', suggest, ask, keyed);
+    expect(coached.status).toBe(502);
+    expect(await coached.json()).toMatchObject({ code: 'unavailable' });
   });
 
   it('the cron lets go of expired import jobs', async () => {

@@ -42,7 +42,11 @@ enabled = true
 #   FUNMEM_DB_URL        Supabase's transaction pooler connection string (port 6543)
 #   FUNMEM_SUPABASE_URL  the project URL, https://<project-ref>.supabase.co
 #   NVIDIA_API_KEY       optional: without it an import keeps the speaker's own words, and the
-#                        assistant answers 503
+#                        assistant and the interview coach answer 503
+#   DEEPGRAM_API_KEY     optional: without it live interviews can't be recorded (a recorded
+#                        transcript can still be brought in)
+# Optional, not secret: INTERVIEW_MODEL, the coach's NVIDIA model (src/interview-coach.ts has the
+# default); set it under [vars] or with `wrangler secret put`.
 # For `wrangler dev`, the same names go in server/api/.dev.vars (git-ignored).
 
 # Workers Paid only: the Free plan allows 10 ms of CPU per request, which an import's reading

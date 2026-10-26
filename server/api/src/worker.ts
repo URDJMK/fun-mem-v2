@@ -17,6 +17,7 @@ import { createNimAgentModel } from './agent';
 import { createApp, type App } from './app';
 import { WorkersAiEmbeddingProvider, type AiBinding } from './embeddings-workers-ai';
 import { createNimChat } from './ingest';
+import { INTERVIEW_MODEL_DEFAULT } from './interview-coach';
 import { RequestPools } from './request-pool';
 
 interface IngestMessage {
@@ -28,8 +29,12 @@ export interface Env {
   /** Supabase's transaction pooler (port 6543) */
   FUNMEM_DB_URL?: string;
   FUNMEM_SUPABASE_URL?: string;
-  /** absent: imports keep the speaker's own words, the assistant answers 503 */
+  /** absent: imports keep the speaker's own words, the assistant and the interview coach answer 503 */
   NVIDIA_API_KEY?: string;
+  /** absent: live transcription answers 503 (a recorded transcript can still be brought in) */
+  DEEPGRAM_API_KEY?: string;
+  /** the interview coach's model; absent: INTERVIEW_MODEL_DEFAULT */
+  INTERVIEW_MODEL?: string;
   /** `workers-ai` (default), `deterministic` (tests, wrangler dev) or `none` (keyword search only) */
   FUNMEM_EMBEDDING_PROVIDER?: string;
   INGEST_QUEUE?: { send(body: IngestMessage): Promise<unknown> };
@@ -54,9 +59,9 @@ let built: Built | null = null;
 function build(env: Env): Built {
   if (built) return built;
   // The code reads its settings from process.env (nim.ts, ingest-jobs.ts), as on Node; a
-  // Worker's vars and secrets arrive in `env`.
+  // Worker's vars and secrets arrive in `env`, and they are what this Worker was given.
   for (const [name, value] of Object.entries(env)) {
-    if (typeof value === 'string' && process.env[name] === undefined) process.env[name] = value;
+    if (typeof value === 'string') process.env[name] = value;
   }
   const need = (name: 'FUNMEM_DB_URL' | 'FUNMEM_SUPABASE_URL'): string => {
     const v = env[name];
@@ -74,6 +79,15 @@ function build(env: Env): Built {
     embeddings,
     chat: createNimChat(),
     agentModel: createNimAgentModel(),
+    transcriptionKey: process.env.DEEPGRAM_API_KEY || null,
+    // the interview coach answers within a pause: a fast model, one attempt, a short deadline
+    // (as in main.ts)
+    interviewChat: createNimChat({
+      model: process.env.INTERVIEW_MODEL || INTERVIEW_MODEL_DEFAULT,
+      timeoutMs: 9000,
+      attempts: 1,
+      hedgeMs: 0,
+    }),
     auth: {
       jwksUrl: `${supabaseUrl}/auth/v1/.well-known/jwks.json`,
       issuer: `${supabaseUrl}/auth/v1`,

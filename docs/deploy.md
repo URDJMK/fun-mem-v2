@@ -6,7 +6,8 @@ browser ──► Vercel (apps/web, static)          ──/v1/*──►  Cloud
                                                             │  Cron Trigger (every minute): embeddings, job sweep
 browser ──► Supabase Auth (Google sign-in)                  │  Queue: interview imports
                                                             │  Workers AI: bge-m3 embeddings
-                                                            └──► Supabase Postgres, transaction pooler (6543)
+browser ──► Deepgram (live interview audio, with a          │  NVIDIA: reading imports, the assistant, the coach
+            30-second token the Worker hands out)           └──► Supabase Postgres, transaction pooler (6543)
 ```
 
 The browser talks to Supabase only to sign in; every read and write goes through the API
@@ -59,6 +60,7 @@ npx wrangler queues create funmem-ingest
 npx wrangler secret put FUNMEM_DB_URL         # the transaction pooler string (6543)
 npx wrangler secret put FUNMEM_SUPABASE_URL   # https://<project-ref>.supabase.co
 npx wrangler secret put NVIDIA_API_KEY        # optional: without it imports keep the speaker's own words
+npx wrangler secret put DEEPGRAM_API_KEY      # optional: without it live interviews can't be recorded
 npx wrangler deploy
 ```
 
@@ -75,6 +77,7 @@ What the Worker runs, and why it differs from the Node server:
 | embedding drain, job sweep | timers | Cron Trigger, every minute, through `/internal/*` |
 | an import nobody waits on | runs in the process | Queue `funmem-ingest`; the consumer runs it (≤ 15 min) |
 | import jobs | `public.ingest_jobs` | the same table: any isolate carries any job |
+| live interview limits (one coach ask at a time per project, ten transcription tokens a minute per person) | for the process | for each isolate: a guard against a runaway page, not a hard cap |
 | shutdown | drains, then closes the pool | nothing to do |
 
 **Plan limits.** The Workers Free plan allows 10 ms of CPU per request, and 50 subrequests. Reading
@@ -111,10 +114,17 @@ Sign in with Google at the Vercel URL, create an archive, write a note, search f
 it, import a short transcript and save it, then undo the import. A minute after writing, the
 note's chunks have Workers AI vectors (`select count(*) from public.chunk_embeddings`).
 
+With `DEEPGRAM_API_KEY` set, start an interview from the project's home page (Chrome or Edge;
+allow the microphone): words appear as they are said, the coach suggests a question in the
+pauses (with `NVIDIA_API_KEY`), and "Turn into memories" brings it into the import.
+
 ## Who sees the data
 
 Supabase (database, sign-in), Cloudflare (the Worker, the queue, Workers AI for embeddings),
 Vercel (the static site; it forwards `/v1` and sees those requests), Google (sign-in: name, email,
-photo), and NVIDIA when `NVIDIA_API_KEY` is set (interview text for the AI step). NVIDIA's free
+photo), Deepgram when `DEEPGRAM_API_KEY` is set (a live interview's audio, streamed from the
+browser with `mip_opt_out=true`, which opts out of Deepgram's Model Improvement Program: the
+audio is not kept for training or used in it), and NVIDIA
+when `NVIDIA_API_KEY` is set (interview text for the AI step, and the coach's recent lines). NVIDIA's free
 API catalog is a trial: its terms do not allow production use or personal data, so a real
 deployment needs a paid plan or another provider before real interviews go in.
