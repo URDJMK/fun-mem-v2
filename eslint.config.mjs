@@ -1,6 +1,7 @@
 import tseslint from 'typescript-eslint';
 
 export default tseslint.config(
-  { ignores: ['**/dist/**', '**/node_modules/**', '**/reports/**', 'docs/**'] },
+  // .wrangler: wrangler dev's bundles (tens of MB of generated JS)
+  { ignores: ['**/dist/**', '**/node_modules/**', '**/reports/**', '**/.wrangler/**', 'docs/**'] },
   ...tseslint.configs.recommended,
 );

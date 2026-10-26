@@ -10,12 +10,15 @@
     "build": "tsc --noEmit",
     "test": "vitest run",
     "typecheck": "tsc --noEmit",
-    "start": "exec vite-node src/main.ts"
+    "start": "exec vite-node src/main.ts",
+    "worker:dev": "wrangler dev",
+    "worker:deploy": "wrangler deploy"
   },
   "devDependencies": {
     "@supabase/supabase-js": "^2.118.0",
     "@types/pg": "^8.23.1",
-    "vite-node": "^6.0.0"
+    "vite-node": "^6.0.0",
+    "wrangler": "^4.152.0"
   },
   "dependencies": {
     "@ai-sdk/openai-compatible": "^3.0.71",

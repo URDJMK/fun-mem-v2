@@ -12,6 +12,7 @@ import { registerDraftRoutes } from './drafts';
 import { registerAgentRoutes, type AgentModelConfig } from './agent';
 import { registerIngestRoutes, type ChatModel } from './ingest';
 import type { IngestJobsOptions } from './ingest-jobs';
+import { registerInternalRoutes } from './internal';
 import type { EmbeddingProvider } from '@funmem/core';
 
 export interface AppDeps {
@@ -38,6 +39,12 @@ export interface AppDeps {
    * sharing jobs with every instance that uses the default scope (the Node server).
    */
   ingestJobs?: IngestJobsOptions;
+  /**
+   * Turns on the /internal routes (internal.ts) and is what a request to them must carry: the
+   * Worker's cron and queue handlers reach the drain and the import runner through them.
+   * Absent (the Node server, which runs those on its own timers): there are no such routes.
+   */
+  internalSecret?: string | null;
 }
 
 export type App = Hono<{ Variables: AuthVariables }>;
@@ -101,8 +108,9 @@ export function createApp(deps: AppDeps): App {
   registerSearchRoutes(app, deps);
   registerAskRoutes(app, deps);
   registerDraftRoutes(app, deps);
-  registerIngestRoutes(app, deps);
+  const jobs = registerIngestRoutes(app, deps);
   registerAgentRoutes(app, deps);
+  registerInternalRoutes(app, deps, jobs);
 
   return app;
 }

@@ -164,7 +164,8 @@ const NOT_FOUND = { error: 'not found' } as const;
 const roleRefused = (c: Context, message: string) =>
   c.json({ error: message, code: 'forbidden', reason: 'role' }, 403);
 
-export function registerIngestRoutes(app: App, deps: AppDeps): void {
+/** Registers the routes, and returns the job store they use (the /internal routes run it too). */
+export function registerIngestRoutes(app: App, deps: AppDeps): IngestJobs {
   const jobs = new IngestJobs(deps);
   // a note deleted by hand takes with it what any preview of this archive still quotes of it
   onNotesErased(deps, (archiveId, noteIds) =>
@@ -397,4 +398,5 @@ export function registerIngestRoutes(app: App, deps: AppDeps): void {
       return c.json({ error: 'something went wrong; nothing was changed', code: 'internal' }, 500);
     }
   });
+  return jobs;
 }
