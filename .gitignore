@@ -10,3 +10,8 @@ reports/
 # Supabase CLI scratch (never commit)
 supabase/.temp/
 supabase/.branches/
+
+# Vercel and Wrangler local state; .dev.vars holds the Worker's local secrets
+.vercel/
+.wrangler/
+.dev.vars
