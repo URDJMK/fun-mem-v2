@@ -105,7 +105,8 @@ test provider. `--test-scheduled` adds `/__scheduled` to run the cron by hand.
 3. Environment variables (Production, and Preview if you use previews):
    - `VITE_SUPABASE_URL` = the Project URL
    - `VITE_SUPABASE_ANON_KEY` = the anon / publishable key
-   They are read at build time: change one, redeploy.
+   They are read at build time: change one, redeploy. A Vercel build without them stops (the
+   same guard): the site would otherwise try to sign in against a local Supabase.
 4. Deploy, then finish Supabase step 7 and the Google origins with the domain Vercel gave you.
 
 ## 4. Check it
