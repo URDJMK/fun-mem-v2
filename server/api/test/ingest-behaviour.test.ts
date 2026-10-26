@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi, type MockInstance } from 'vitest';
 import { ingestTranscript, type IngestResult } from '../src/ingest-pipeline';
 import { ModelError, type ChatModel, type ModelErrorKind } from '../src/nim';
 import { applyRoles, parseTranscript, type Turn } from '../src/transcript';
@@ -263,7 +263,7 @@ function misbehaving(kind: Behaviour, r: Rand): ChatModel {
 
 /* ── the property ────────────────────────────────────────────────────── */
 
-let warn: ReturnType<typeof vi.spyOn>;
+let warn: MockInstance<typeof console.warn>;
 beforeEach(() => {
   warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
 });
