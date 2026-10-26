@@ -30,12 +30,16 @@ copy where; no value in this file is real.
    (or `supabase link` and `supabase db push`). Never edit a migration that has run.
 4. **Project Settings → API**: copy the **Project URL** (`https://<project-ref>.supabase.co`) and the
    **anon / publishable key**. Both are public; the web app ships them.
-5. **Authentication → Providers → Google**: turn it on with the OAuth client from Google Cloud
+5. **Project Settings → JWT Keys**: the project must sign with an **asymmetric** key (ECC P-256 or
+   RSA). The API checks every sign-in against `https://<project-ref>.supabase.co/auth/v1/.well-known/jwks.json`,
+   which lists only asymmetric keys: a project still on the legacy shared secret answers every API
+   call `401`. If it says "legacy JWT secret", create a new asymmetric signing key and rotate to it.
+6. **Authentication → Providers → Google**: turn it on with the OAuth client from Google Cloud
    (below). The app signs in with Google only, so turn **Email** sign-ups off: an email account
    nobody confirmed should never exist.
-6. **Authentication → URL Configuration** (after step 3 gives you the Vercel domain): **Site URL**
+7. **Authentication → URL Configuration** (once section 3 has given you the Vercel domain): **Site URL**
    `https://<your-vercel-domain>`; **Redirect URLs** the same, plus `https://<your-vercel-domain>/**`.
-7. Recommended: **Database → Settings → SSL enforcement** on.
+8. Recommended: **Database → Settings → SSL enforcement** on.
 
 **Google Cloud Console** → APIs & Services → Credentials → OAuth client ID (Web application):
 - Authorized JavaScript origins: `https://<your-vercel-domain>`
@@ -99,7 +103,7 @@ test provider. `--test-scheduled` adds `/__scheduled` to run the cron by hand.
    - `VITE_SUPABASE_URL` = the Project URL
    - `VITE_SUPABASE_ANON_KEY` = the anon / publishable key
    They are read at build time: change one, redeploy.
-4. Deploy, then finish Supabase step 6 and the Google origins with the domain Vercel gave you.
+4. Deploy, then finish Supabase step 7 and the Google origins with the domain Vercel gave you.
 
 ## 4. Check it
 

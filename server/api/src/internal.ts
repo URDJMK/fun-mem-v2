@@ -32,15 +32,22 @@ export function registerInternalRoutes(app: App, deps: AppDeps, jobs: IngestJobs
     await next();
   });
 
-  /** Embed what is waiting for a vector, for at most DRAIN_BUDGET_MS. */
+  /**
+   * Embed what is waiting for a vector, for at most DRAIN_BUDGET_MS: in every archive (the
+   * cron), or in the one `?archive=` names (a test, an operator catching one archive up).
+   */
   app.post('/internal/embeddings/drain', async (c) => {
+    const archive = c.req.query('archive')?.toLowerCase();
+    if (archive !== undefined && !UUID_RE.test(archive)) {
+      return c.json({ error: 'archive must be an id', code: 'bad_request' }, 400);
+    }
     if (!deps.embeddings)
       return c.json({ error: 'no embedding provider', code: 'no_provider' }, 503);
     try {
       const written = await drainOnce(
         deps.pool,
         deps.embeddings,
-        undefined,
+        archive,
         AbortSignal.timeout(DRAIN_BUDGET_MS),
       );
       return c.json({ written });

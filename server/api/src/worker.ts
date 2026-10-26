@@ -30,7 +30,7 @@ export interface Env {
   FUNMEM_SUPABASE_URL?: string;
   /** absent: imports keep the speaker's own words, the assistant answers 503 */
   NVIDIA_API_KEY?: string;
-  /** `workers-ai` (default) or `deterministic` (keyword search only; tests) */
+  /** `workers-ai` (default), `deterministic` (tests, wrangler dev) or `none` (keyword search only) */
   FUNMEM_EMBEDDING_PROVIDER?: string;
   INGEST_QUEUE?: { send(body: IngestMessage): Promise<unknown> };
   AI?: AiBinding;
@@ -110,6 +110,8 @@ function build(env: Env): Built {
  */
 function provider(env: Env): EmbeddingProvider | null {
   const want = env.FUNMEM_EMBEDDING_PROVIDER ?? 'workers-ai';
+  // keyword search only, on purpose: nothing is embedded, nothing drained
+  if (want === 'none') return null;
   if (want === 'deterministic') return new DeterministicEmbeddingProvider();
   if (want === 'workers-ai' && env.AI) return new WorkersAiEmbeddingProvider(env.AI);
   console.error(

@@ -38,31 +38,41 @@ describe('/internal', () => {
     expect((await internal('/internal/embeddings/drain', 'not-it')).status).toBe(404);
   });
 
-  it('drain: embeds the chunks still waiting for a vector', async () => {
+  it('drain: embeds the chunks still waiting for a vector, in the one archive it is given', async () => {
+    // scoped, as every test's drain is: a drain of everything would embed other files'
+    // archives too (boot.test.ts counts on one of them staying unembedded)
     const s = await ctx.realSession(`internal-${RUN}@test.local`);
-    const archive = await ctx.provisionArchive(s, `Internal ${RUN}`);
-    const created = await ctx.api(s.token, 'POST', `/v1/archives/${archive}/notes`, {
-      title: `The boat yard ${RUN}`,
-      type: 'place',
-      body: 'My father repaired boats in the yard by the river every summer.',
-    });
-    expect(created.status).toBe(201);
-    const { id } = (await created.json()) as { id: string };
-    const res = await internal('/internal/embeddings/drain');
+    const note = async (archive: string, title: string) => {
+      const created = await ctx.api(s.token, 'POST', `/v1/archives/${archive}/notes`, {
+        title,
+        type: 'place',
+        body: 'My father repaired boats in the yard by the river every summer.',
+      });
+      expect(created.status).toBe(201);
+      return ((await created.json()) as { id: string }).id;
+    };
+    const here = await ctx.provisionArchive(s, `Internal ${RUN}`);
+    const elsewhere = await ctx.provisionArchive(s, `Internal elsewhere ${RUN}`);
+    const id = await note(here, `The boat yard ${RUN}`);
+    const other = await note(elsewhere, `The other yard ${RUN}`);
+    const res = await internal(`/internal/embeddings/drain?archive=${here}`);
     expect(res.status).toBe(200);
     expect(((await res.json()) as { written: number }).written).toBeGreaterThan(0);
-    const rows = await ctx.pool.query(
-      `select model_version from public.chunk_embeddings where note_id = $1`,
-      [id],
-    );
-    expect(rows.rows.map((r: { model_version: string }) => r.model_version)).toContain(
-      ctx.embeddings.modelVersion,
-    );
+    const embedded = async (noteId: string) =>
+      (
+        await ctx.pool.query(
+          `select model_version from public.chunk_embeddings where note_id = $1`,
+          [noteId],
+        )
+      ).rows.map((r: { model_version: string }) => r.model_version);
+    expect(await embedded(id)).toContain(ctx.embeddings.modelVersion);
+    expect(await embedded(other)).toEqual([]);
+    expect((await internal('/internal/embeddings/drain?archive=not-an-id')).status).toBe(400);
   });
 
   it('drain: without an embedding provider there is nothing it can do', async () => {
     const none = createApp({ ...ctx.deps, embeddings: null, internalSecret: SECRET });
-    const res = await none.request('/internal/embeddings/drain', {
+    const res = await none.request(`/internal/embeddings/drain?archive=${randomUUID()}`, {
       method: 'POST',
       headers: { 'x-funmem-internal': SECRET },
     });

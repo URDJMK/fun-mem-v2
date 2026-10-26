@@ -165,24 +165,25 @@ describe('the Worker', () => {
     expect(((await saved.json()) as { status: string }).status).toBe('saved');
   });
 
-  it('the cron drains embeddings', async () => {
-    const s = await ctx.realSession(`worker-cron-${RUN}@test.local`);
-    const w = await isolate();
-    const prov = await call(w, s.token, 'POST', '/v1/provision', {
-      subjectName: `Worker cron ${RUN}`,
-      jurisdiction: 'US',
-    });
-    const { archiveId } = (await prov.json()) as { archiveId: string };
-    const made = await call(w, s.token, 'POST', `/v1/archives/${archiveId}/notes`, {
-      title: `The orchard ${RUN}`,
-      type: 'place',
-      body: 'The apple orchard behind the school, where we picked in October.',
-    });
-    const { id } = (await made.json()) as { id: string };
-    await (await isolate()).scheduled({ cron: '* * * * *' }, env, executionContext());
-    const rows = await ctx.pool.query(`select 1 from public.chunk_embeddings where note_id = $1`, [
-      id,
+  it('the cron lets go of expired import jobs', async () => {
+    // No embedding provider here: the cron's drain covers every archive, and a drain of
+    // everything would embed other test files' archives (boot.test.ts counts on one of them
+    // staying unembedded). The drain itself: internal.test.ts, scoped, and wrangler dev.
+    const old = new Date(Date.now() - 2 * 60 * 60_000);
+    const r = await ctx.pool.query(
+      `insert into public.ingest_jobs
+         (scope, archive_id, user_id, status, stage, started_at, finished_at, touched_at, heartbeat_at)
+       values ('default', $1, $2, 'failed', 'done', $3, $3, $3, $3) returning id`,
+      [randomUUID(), randomUUID(), old],
+    );
+    const ec = executionContext();
+    await (
+      await isolate()
+    ).scheduled({ cron: '* * * * *' }, { ...env, FUNMEM_EMBEDDING_PROVIDER: 'none' }, ec);
+    await Promise.all(ec.pending);
+    const left = await ctx.pool.query('select 1 from public.ingest_jobs where id = $1', [
+      r.rows[0].id,
     ]);
-    expect(rows.rowCount).toBeGreaterThan(0);
+    expect(left.rowCount).toBe(0);
   });
 });
