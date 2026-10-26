@@ -15,6 +15,7 @@ import {
   type NoteSummary,
 } from '../lib/api';
 import { inArchive, noteHref, useArchive } from '../lib/archive';
+import { writeDraft } from '../lib/interview';
 import { ArchiveLayout } from '../components/ArchiveLayout';
 import { Linked, splitNote } from '../components/NoteText';
 import { count, Failed, Icon, whenLabel } from '../components/ui';
@@ -79,15 +80,25 @@ export function ImportInterview() {
 
   // a recorded interview arrives with its transcript (components/InterviewReview.tsx) and starts at once;
   // the state is cleared so a reload shows the form instead of importing it twice
-  const handed = (useLocation().state as { request?: ImportRequest } | null)?.request;
+  const handedState = useLocation().state as { request?: ImportRequest; fromLive?: boolean } | null;
+  const handed = handedState?.request;
   const navigate = useNavigate();
   const started = useRef(false);
+  /** it came from a live interview, whose draft is let go once its memories are saved */
+  const fromLive = useRef(false);
   useEffect(() => {
     if (!handed || started.current) return;
     started.current = true;
+    fromLive.current = handedState?.fromLive === true;
     void navigate('.', { replace: true, state: null });
     void run(handed);
   }, []);
+
+  /** Saved: the live interview it came from has done its work, and is let go. */
+  function saved(outcome: ImportOutcome) {
+    if (fromLive.current) writeDraft(archive.id, null);
+    setStep({ kind: 'saved', outcome });
+  }
 
   /** Start, then follow the job until it finishes: a long interview takes a few minutes. */
   async function run(request: ImportRequest) {
@@ -121,7 +132,7 @@ export function ImportInterview() {
     const o = job.outcome;
     if (o.status === 'needs_confirmation') setStep({ kind: 'confirm', jobId: job.id, outcome: o });
     else if (o.status === 'duplicate') setStep({ kind: 'duplicate', outcome: o });
-    else if (o.status === 'saved') setStep({ kind: 'saved', outcome: o });
+    else if (o.status === 'saved') saved(o);
     else setStep({ kind: 'review', jobId: job.id, outcome: o });
   }
 
@@ -191,7 +202,7 @@ export function ImportInterview() {
           jobId={step.jobId}
           outcome={step.outcome}
           name={archive.subjectName}
-          onSaved={(o) => setStep({ kind: 'saved', outcome: o })}
+          onSaved={saved}
         />
       )}
       {step.kind === 'saved' && <Saved archiveId={archive.id} outcome={step.outcome} />}

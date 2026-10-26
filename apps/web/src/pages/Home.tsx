@@ -139,7 +139,10 @@ export function Home() {
                   className="btn btn-primary home-start-btn"
                   data-flip-id="start"
                   data-testid="start-interview"
-                  disabled={!liveSupported()}
+                  // one unfinished interview is kept per project: pick it up or discard it first,
+                  // so a new one never takes its place unasked
+                  disabled={!liveSupported() || left !== null}
+                  title={left ? 'Pick up or discard the unfinished interview first' : undefined}
                   onClick={() => (family ? setChoosing(true) : begin(name, start.current))}
                 >
                   <Icon name="mic" size={20} />

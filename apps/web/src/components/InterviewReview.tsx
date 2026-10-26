@@ -2,14 +2,7 @@ import { useState } from 'react';
 import { useNavigate } from 'react-router';
 import type { ImportRequest } from '../lib/api';
 import { inArchive } from '../lib/archive';
-import {
-  clock,
-  speakerLabels,
-  tellerVoice,
-  turnsOf,
-  writeDraft,
-  type Draft,
-} from '../lib/interview';
+import { clock, speakerLabels, tellerVoice, turnsOf, type Draft } from '../lib/interview';
 import { Transcript } from './Transcript';
 
 /**
@@ -70,9 +63,9 @@ export function InterviewReview({
       })),
     });
     const request: ImportRequest = { transcript, teller: name, source: source.trim() || undefined };
-    // the words are handed to the import; the draft goes once they are read and saved there
-    writeDraft(archiveId, null);
-    void navigate(inArchive(archiveId, '/interviews/new'), { state: { request } });
+    // The words are handed to the import, but the draft stays until they are saved there
+    // (pages/ImportInterview.tsx): an import that fails, or a page left mid-way, loses nothing.
+    void navigate(inArchive(archiveId, '/interviews/new'), { state: { request, fromLive: true } });
   }
 
   function download() {
