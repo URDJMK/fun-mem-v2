@@ -11,6 +11,7 @@ import { registerAskRoutes } from './ask';
 import { registerDraftRoutes } from './drafts';
 import { registerAgentRoutes, type AgentModelConfig } from './agent';
 import { registerIngestRoutes, type ChatModel } from './ingest';
+import type { IngestJobsOptions } from './ingest-jobs';
 import type { EmbeddingProvider } from '@funmem/core';
 
 export interface AppDeps {
@@ -32,6 +33,11 @@ export interface AppDeps {
   chat?: ChatModel | null;
   /** Model for the archive assistant (Mastra Agent). Absent = POST /agent answers 503. */
   agentModel?: AgentModelConfig | null;
+  /**
+   * How interview imports run (ingest-jobs.ts). Absent: in this process, swept every minute,
+   * sharing jobs with every instance that uses the default scope (the Node server).
+   */
+  ingestJobs?: IngestJobsOptions;
 }
 
 export type App = Hono<{ Variables: AuthVariables }>;

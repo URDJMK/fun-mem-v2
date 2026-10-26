@@ -501,18 +501,28 @@ export async function scrubQuotesOf(
  * Who is told, per app, that notes were erased: the import jobs, whose previews may still hold
  * quotes of them. Keyed by the app's deps, so two apps in one process never hear each other.
  */
-const erasureListeners = new WeakMap<AppDeps, (archiveId: string, noteIds: string[]) => void>();
+const erasureListeners = new WeakMap<
+  AppDeps,
+  (archiveId: string, noteIds: string[]) => void | Promise<void>
+>();
 
 export function onNotesErased(
   deps: AppDeps,
-  listener: (archiveId: string, noteIds: string[]) => void,
+  listener: (archiveId: string, noteIds: string[]) => void | Promise<void>,
 ): void {
   erasureListeners.set(deps, listener);
 }
 
-/** After the erasing transaction has committed. */
-export function notesErased(deps: AppDeps, archiveId: string, noteIds: string[]): void {
-  if (noteIds.length > 0) erasureListeners.get(deps)?.(archiveId.toLowerCase(), noteIds);
+/**
+ * After the erasing transaction has committed. Awaited: what a listener changes is in the
+ * database now (the import jobs), and a Worker may stop work left running after its response.
+ */
+export async function notesErased(
+  deps: AppDeps,
+  archiveId: string,
+  noteIds: string[],
+): Promise<void> {
+  if (noteIds.length > 0) await erasureListeners.get(deps)?.(archiveId.toLowerCase(), noteIds);
 }
 
 /**
@@ -1134,7 +1144,7 @@ export function registerNotesRoutes(app: App, deps: AppDeps): void {
         return stone.rows[0].deleted_at as string;
       });
       // an import preview still quoting it lets go of the quote too
-      notesErased(deps, archiveId, [noteId.toLowerCase()]);
+      await notesErased(deps, archiveId, [noteId.toLowerCase()]);
       return c.json({ id: noteId, deletedAt });
     } catch (e) {
       return respondError(c, e);

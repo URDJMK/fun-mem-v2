@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import { createClient, type SupabaseClient } from '@supabase/supabase-js';
 import { Pool } from 'pg';
 import { DeterministicEmbeddingProvider, type EmbeddingProvider } from '@funmem/core';
@@ -83,6 +84,10 @@ export function testContext(overrides?: { embeddings?: TestContext['embeddings']
       jwksUrl: `${SUPABASE_URL}/auth/v1/.well-known/jwks.json`,
       issuer: `${SUPABASE_URL}/auth/v1`,
     },
+    // import jobs live in the database: each test file's app gets jobs (and limits) of its own,
+    // as each in-memory store used to be, rather than sharing them with every file running
+    // (and no sweep timer, which would outlive the pool a file closes)
+    ingestJobs: { scope: randomUUID(), sweepEveryMs: null },
   };
   const app = createApp(deps);
 

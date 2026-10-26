@@ -61,6 +61,13 @@ reviewing one, then try again); the server at most 500 finished jobs and 256 MB.
 minutes stops an import that hangs, in any stage before `saving` (`INGEST_HARD_LIMIT_MS` overrides it;
 `INGEST_USER_BYTES` and `INGEST_TOTAL_BYTES` override the byte caps).
 
+Jobs are kept in the database (`public.ingest_jobs`), so every instance of the API sees the same ones:
+a job started through one can be followed, cancelled and saved through another, and "the server" in
+the limits above is the whole deployment. A job whose runner stopped (a server restart, a Worker
+isolate let go) is reported `failed` with `code: "interrupted"` once it has been silent for two
+minutes; nothing of it was saved, and importing again is safe. The transcript itself is never kept:
+only while a job waits for the Worker's queue, and it is cleared the moment the job is picked up.
+
 ## The outcome
 
 `outcome.status` is one of
@@ -106,7 +113,7 @@ importer's own.
 `too_many_segments` · `too_large` (413, the request) · `bad_request` · `busy` (429, with `retry-after`
 and `reason: archive|user|server|previews`) · `duplicate` (409) · `cannot_save` · `forbidden` (403, with
 `reason: "role"`) · `too_late` (409, cancel while saving) · `timeout` (504) · `cancelled` (409) ·
-`internal` (500). A transcript the reader cannot make sense of is `unreadable` (400), whatever went wrong
+`interrupted` (a job's `error` only: its runner stopped) · `internal` (500). A transcript the reader cannot make sense of is `unreadable` (400), whatever went wrong
 inside the reader. No answer and no log line repeats the transcript's or a note's words.
 
 A refused save (`cannot_save`) says why in a code, so a page need not read the sentence:
