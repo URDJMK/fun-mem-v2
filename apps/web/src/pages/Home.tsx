@@ -1,172 +1,329 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { Link } from 'react-router';
-import { listImports, listNotes, type ImportRun, type NoteSummary } from '../lib/api';
-import { inArchive, isEntity, noteHref, useArchive } from '../lib/archive';
-import { byDecade } from '../lib/timeline';
+import { Flip } from 'gsap/Flip';
+import { createNote, listPeople, type PersonSummary } from '../lib/api';
+import { inArchive, useArchive } from '../lib/archive';
+import {
+  FAILURE,
+  readDraft,
+  SHARE_HOW,
+  writeDraft,
+  type Draft,
+  type Mode,
+  type StartFailure,
+} from '../lib/interview';
+import { liveSupported } from '../lib/live';
 import { ArchiveLayout } from '../components/ArchiveLayout';
-import { Decades } from '../components/Decades';
-import { Avatar, count, Failed, Icon, Loading, whenLabel } from '../components/ui';
+import { InterviewReview } from '../components/InterviewReview';
+import { Studio } from '../components/Studio';
+import { Avatar, Failed, Icon, useAccountName } from '../components/ui';
 
-interface Loaded {
-  notes: NoteSummary[];
-  imports: ImportRun[];
-}
+type Phase =
+  | { kind: 'idle' }
+  | {
+      kind: 'studio';
+      /** who is being interviewed: the project's person, or one of its family */
+      narrator: string;
+      mode: Mode;
+      startedAt: string;
+      flip: Flip.FlipState | null;
+    }
+  | { kind: 'review'; narrator: string; draft: Draft };
 
-/** One person's archive at a glance: how much is kept, where to add more, and their life so far. */
+const flipFrom = (el: Element | null) =>
+  el ? Flip.getState(el, { props: 'borderRadius,backgroundColor' }) : null;
+
+/** who a saved interview was with: its narrator, as set up, or the project's person */
+const narratorOf = (d: Draft, fallback: string) =>
+  d.setup?.people.find((p) => p.role === 'teller')?.name ?? fallback;
+
+/**
+ * A project, and one thing to do: sit down and talk. In a personal project Start interview turns
+ * straight into the interview (components/Studio.tsx); in a family one it first asks who you are
+ * talking with, from the family recorded so far or someone new, who then becomes one of its
+ * people. Ending an interview leads to reading it over.
+ */
 export function Home() {
   const archive = useArchive();
-  const [data, setData] = useState<Loaded | null | 'failed'>(null);
-
-  useEffect(() => {
-    let live = true;
-    Promise.all([listNotes(archive.id), listImports(archive.id)])
-      .then(([notes, imports]) => live && setData({ notes, imports }))
-      .catch(() => live && setData('failed'));
-    return () => {
-      live = false;
-    };
-  }, [archive.id]);
-
   const name = archive.subjectName;
+  const family = archive.kind === 'family';
+  const account = useAccountName();
+  const interviewer = account.includes('@') ? '' : (account.split(' ')[0] ?? '');
+  const [phase, setPhase] = useState<Phase>({ kind: 'idle' });
+  const [mode, setMode] = useState<Mode>('room');
+  const [error, setError] = useState<string | null>(null);
+  const [left, setLeft] = useState(() => readDraft(archive.id));
+  const [choosing, setChoosing] = useState(false);
+  const start = useRef<HTMLButtonElement>(null);
 
+  function begin(narrator: string, from: Element | null) {
+    setError(null);
+    setChoosing(false);
+    setPhase({
+      kind: 'studio',
+      narrator,
+      mode,
+      startedAt: new Date().toISOString(),
+      flip: flipFrom(from),
+    });
+  }
+
+  const studio = phase.kind === 'studio';
   return (
-    <ArchiveLayout title="Home">
-      <section className="row" style={{ gap: '13px 18px' }}>
-        <Avatar name={name} size={48} />
-        <div className="stack" style={{ gap: 4, flex: '1 1 300px' }}>
-          <h1 style={{ fontSize: 24, lineHeight: 1.05 }}>{name}</h1>
-          {data && data !== 'failed' && (
-            <p className="muted" data-testid="archive-counts">
-              {summary(data)}
-            </p>
-          )}
-        </div>
-      </section>
+    <ArchiveLayout title="Home" wide focus={studio}>
+      {/* the light of a fire across the whole screen: a glow that breathes and embers rising
+          (looks.css). Rendered into <body> so it sits behind everything, sidebar included.
+          During the interview it stays, quieter, and the embers rest. */}
+      {phase.kind !== 'review' &&
+        createPortal(
+          <div className={studio ? 'home-aura home-aura-quiet' : 'home-aura'} aria-hidden="true">
+            {!studio &&
+              Array.from({ length: 14 }, (_, i) => <span key={i} className="home-ember" />)}
+          </div>,
+          document.body,
+        )}
 
-      {archive.writer && (
-        <section className="glow" aria-labelledby="start-h">
-          <div className="glow-blobs" aria-hidden="true">
-            <span />
-            <span />
-            <span />
+      {phase.kind === 'idle' && (
+        <section className="home-start">
+          <header className="home-caption">
+            <Avatar name={name} size={28} />
+            <h1 className="home-name">{name}</h1>
+          </header>
+
+          <div className="home-middle">
+            {error && <Failed>{error}</Failed>}
+            {left && (
+              <div className="notice notice-wonder spread home-left">
+                <span>
+                  An interview from {new Date(left.startedAt).toLocaleString()} wasn’t finished.
+                </span>
+                <span className="row">
+                  <button
+                    type="button"
+                    className="btn btn-outline btn-sm"
+                    onClick={() =>
+                      setPhase({ kind: 'review', narrator: narratorOf(left, name), draft: left })
+                    }
+                  >
+                    Pick it up
+                  </button>
+                  <button
+                    type="button"
+                    className="btn btn-quiet btn-sm"
+                    onClick={() => {
+                      writeDraft(archive.id, null);
+                      setLeft(null);
+                    }}
+                  >
+                    Discard
+                  </button>
+                </span>
+              </div>
+            )}
           </div>
-          <div className="glow-content">
-            <h2 id="start-h" style={{ fontSize: 24, textWrap: 'balance' }}>
-              Sat down with {name} lately?
-            </h2>
-            <p style={{ fontSize: 15, color: 'var(--muted)', maxWidth: '40ch' }}>
-              Bring in the transcript of your conversation. Every memory waits for you to read it
-              before it joins the archive.
-            </p>
-            <Link
-              to={inArchive(archive.id, '/interviews/new')}
-              className="btn btn-primary btn-lg"
-              style={{ minHeight: 32 }}
-            >
-              <Icon name="mic" size={20} />
-              Add an interview
-            </Link>
-            <Link
-              to={inArchive(archive.id, '/stories/new')}
-              className="small"
-              style={{
-                color: 'var(--muted)',
-                minHeight: 32,
-                display: 'inline-flex',
-                alignItems: 'center',
-              }}
-            >
-              or write down a memory yourself
-            </Link>
-          </div>
+
+          {archive.writer ? (
+            <div className="home-bottom">
+              {choosing ? (
+                <ChooseNarrator
+                  archiveId={archive.id}
+                  family={name}
+                  onPick={begin}
+                  onCancel={() => setChoosing(false)}
+                />
+              ) : (
+                <button
+                  ref={start}
+                  type="button"
+                  className="btn btn-primary home-start-btn"
+                  data-flip-id="start"
+                  data-testid="start-interview"
+                  disabled={!liveSupported()}
+                  onClick={() => (family ? setChoosing(true) : begin(name, start.current))}
+                >
+                  <Icon name="mic" size={20} />
+                  Start interview
+                </button>
+              )}
+              <div className="home-mode" role="radiogroup" aria-label="Where are you talking?">
+                {(['room', 'call'] as const).map((m) => (
+                  <button
+                    key={m}
+                    type="button"
+                    role="radio"
+                    aria-checked={mode === m}
+                    onClick={() => setMode(m)}
+                  >
+                    <Icon name={m === 'room' ? 'mic' : 'phone'} size={14} />
+                    {m === 'room' ? 'In the room' : 'On a call'}
+                  </button>
+                ))}
+              </div>
+              {mode === 'call' && <p className="home-hint">{SHARE_HOW}</p>}
+              {!liveSupported() && <p className="home-hint">{FAILURE.unsupported}</p>}
+              <Link to={inArchive(archive.id, '/interviews/new')} className="small muted">
+                or bring in a recorded transcript
+              </Link>
+            </div>
+          ) : (
+            <div className="home-bottom">
+              <Link to={inArchive(archive.id, '/stories')} className="btn btn-outline">
+                {family ? 'Read the family’s stories' : `Read ${name}’s stories`}
+              </Link>
+            </div>
+          )}
         </section>
       )}
 
-      {data === null ? (
-        <Loading what="Opening the archive…" />
-      ) : data === 'failed' ? (
-        <Failed>Could not load the archive. Reload the page.</Failed>
-      ) : (
-        <Overview archiveId={archive.id} name={name} notes={data.notes} />
+      {phase.kind === 'studio' && (
+        <Studio
+          archiveId={archive.id}
+          name={phase.narrator}
+          project={family ? name : null}
+          interviewer={interviewer}
+          mode={phase.mode}
+          startedAt={phase.startedAt}
+          flipFrom={phase.flip}
+          onEnd={(draft, failed: StartFailure | null) => {
+            setError(failed ? FAILURE[failed] : null);
+            if (draft.segments.length > 0)
+              setPhase({ kind: 'review', narrator: phase.narrator, draft });
+            else setPhase({ kind: 'idle' });
+          }}
+        />
+      )}
+
+      {phase.kind === 'review' && (
+        <InterviewReview
+          archiveId={archive.id}
+          name={phase.narrator}
+          draft={phase.draft}
+          onDiscard={() => {
+            writeDraft(archive.id, null);
+            setLeft(null);
+            setPhase({ kind: 'idle' });
+          }}
+        />
       )}
     </ArchiveLayout>
   );
 }
 
-function summary({ notes, imports }: Loaded): string {
-  const stories = notes.filter((n) => !isEntity(n.type)).length;
-  const entities = notes.length - stories;
-  const interviews = imports.filter((r) => !r.undone).length;
-  if (notes.length === 0 && interviews === 0) return 'Nothing kept yet.';
-  return [
-    count(stories, 'story', 'stories'),
-    count(entities, 'person or place', 'people and places'),
-    count(interviews, 'interview', 'interviews'),
-  ].join(' · ');
-}
-
-function Overview({
+/**
+ * Who you are talking with today, in a family project: someone already in it (most talked about
+ * first), or someone new, who is added to the project as a person before the interview starts.
+ */
+function ChooseNarrator({
   archiveId,
-  name,
-  notes,
+  family,
+  onPick,
+  onCancel,
 }: {
   archiveId: string;
-  name: string;
-  notes: NoteSummary[];
+  family: string;
+  onPick: (name: string, from: Element | null) => void;
+  onCancel: () => void;
 }) {
-  const decades = byDecade(notes);
-  const recent = [...notes]
-    .filter((n) => !isEntity(n.type))
-    .sort((a, b) => (b.revised ?? '').localeCompare(a.revised ?? ''))
-    .slice(0, 4);
+  const [people, setPeople] = useState<PersonSummary[] | null>(null);
+  const [adding, setAdding] = useState(false);
+  const [newName, setNewName] = useState('');
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    let live = true;
+    listPeople(archiveId)
+      .then((p) => live && setPeople([...p].sort((a, b) => b.backlinks - a.backlinks)))
+      .catch(() => live && setPeople([]));
+    return () => {
+      live = false;
+    };
+  }, [archiveId]);
+
+  async function addAndStart(el: Element | null) {
+    const name = newName.trim();
+    if (!name) return;
+    setSaving(true);
+    try {
+      // the new narrator becomes one of the family's people; if that fails (a note by that
+      // name already exists), the interview still goes ahead
+      await createNote(archiveId, {
+        title: name,
+        type: 'person',
+        body: `Part of ${family}. First interviewed ${new Date().toLocaleDateString(undefined, {
+          day: 'numeric',
+          month: 'long',
+          year: 'numeric',
+        })}.`,
+        occurred: null,
+      });
+    } catch {
+      /* already a person here, or the save failed: either way, talk to them */
+    }
+    onPick(name, el);
+  }
 
   return (
-    <>
-      <section aria-labelledby="life-h" className="card stack" style={{ gap: 10 }}>
-        <div className="spread">
-          <h2 id="life-h" style={{ fontSize: 16 }}>
-            {name}’s life so far
-          </h2>
-          <Link to={inArchive(archiveId, '/timeline')} className="small">
-            See the timeline
-          </Link>
+    <div className="narrator-pick" data-flip-id="start">
+      <div className="spread" style={{ gap: 8 }}>
+        <span className="narrator-title">Who are you talking with today?</span>
+        <button type="button" className="btn btn-quiet btn-sm" onClick={onCancel}>
+          Cancel
+        </button>
+      </div>
+      {people === null ? (
+        <p className="small muted">Finding the family…</p>
+      ) : (
+        <div className="narrator-people">
+          {people.map((p) => (
+            <button
+              key={p.id}
+              type="button"
+              className="narrator-person"
+              onClick={(e) => onPick(p.title, e.currentTarget.closest('.narrator-pick'))}
+            >
+              <Avatar name={p.title} size={24} />
+              {p.title}
+            </button>
+          ))}
+          {!adding && (
+            <button
+              type="button"
+              className="narrator-person narrator-new"
+              onClick={() => setAdding(true)}
+            >
+              <Icon name="plus" size={14} /> Someone new
+            </button>
+          )}
         </div>
-        {decades.length === 0 ? (
-          <p className="muted">
-            No dated memories yet. When a memory says when it happened, it shows up here.
-          </p>
-        ) : (
-          <>
-            <Decades decades={decades} />
-            <p className="small muted">
-              Each dot is a memory. The dashed decades haven’t come up yet.
-            </p>
-          </>
-        )}
-      </section>
-
-      <section aria-labelledby="recent-h" className="stack" style={{ gap: 8 }}>
-        <h2 id="recent-h" className="label-heading">
-          Recently added or changed
-        </h2>
-        {recent.length === 0 ? (
-          <p className="empty">No stories yet.</p>
-        ) : (
-          <ul className="list">
-            {recent.map((n) => (
-              <li key={n.id}>
-                <Link to={noteHref(archiveId, n)} className="list-row">
-                  <span className="stack" style={{ flex: '1 1 260px' }}>
-                    <span className="row-title">{n.title}</span>
-                    {n.occurred && <span className="small muted">{whenLabel(n.occurred)}</span>}
-                  </span>
-                  <Icon name="next" />
-                </Link>
-              </li>
-            ))}
-          </ul>
-        )}
-      </section>
-    </>
+      )}
+      {adding && (
+        <form
+          className="row"
+          onSubmit={(e) => {
+            e.preventDefault();
+            void addAndStart(e.currentTarget.closest('.narrator-pick'));
+          }}
+        >
+          <input
+            id="narrator-new-name"
+            className="input"
+            style={{ flex: '1 1 200px' }}
+            autoFocus
+            placeholder="Their name, e.g. Aunt Carol"
+            value={newName}
+            onChange={(e) => setNewName(e.target.value)}
+          />
+          <button type="submit" className="btn btn-primary" disabled={!newName.trim() || saving}>
+            <Icon name="mic" size={16} /> Start interview
+          </button>
+        </form>
+      )}
+      {people?.length === 0 && !adding && (
+        <p className="small muted">
+          Nobody is in this project yet. Add the first person you are talking with.
+        </p>
+      )}
+    </div>
   );
 }

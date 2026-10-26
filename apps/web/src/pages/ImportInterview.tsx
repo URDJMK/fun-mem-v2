@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type CSSProperties } from 'react';
-import { Link, useNavigate } from 'react-router';
+import { Link, useLocation, useNavigate } from 'react-router';
 import {
   ApiError,
   cancelImport,
@@ -36,7 +36,7 @@ function importFailure(code: string | null | undefined): string {
     case 'busy':
       return 'The server is busy with other imports. Wait a minute and try again.';
     case 'forbidden':
-      return 'In this archive you can read, but not bring in interviews.';
+      return 'In this project you can read, but not bring in interviews.';
     case 'timeout':
       return 'It took too long and was stopped. Try a shorter part of the interview.';
     case 'cancelled':
@@ -49,7 +49,7 @@ function importFailure(code: string | null | undefined): string {
 const STAGE: Record<ImportJob['stage'], string> = {
   reading: 'Reading the transcript',
   organizing: 'Sorting it into memories',
-  checking: 'Checking each memory against what was said, and against the archive',
+  checking: 'Checking each memory against what was said, and against the project',
   saving: 'Saving',
   done: 'Done',
 };
@@ -75,6 +75,18 @@ export function ImportInterview() {
     return () => {
       live.current = false;
     };
+  }, []);
+
+  // a recorded interview arrives with its transcript (components/InterviewReview.tsx) and starts at once;
+  // the state is cleared so a reload shows the form instead of importing it twice
+  const handed = (useLocation().state as { request?: ImportRequest } | null)?.request;
+  const navigate = useNavigate();
+  const started = useRef(false);
+  useEffect(() => {
+    if (!handed || started.current) return;
+    started.current = true;
+    void navigate('.', { replace: true, state: null });
+    void run(handed);
   }, []);
 
   /** Start, then follow the job until it finishes: a long interview takes a few minutes. */
@@ -217,7 +229,7 @@ function TranscriptForm({
         <h1 className="page-title">Add an interview</h1>
         <p className="muted" style={{ fontSize: 13 }}>
           Bring in the transcript of a conversation with {name}. It becomes memories in their own
-          words, and you read every one before it joins the archive.
+          words, and you read every one before it joins the project.
         </p>
       </div>
       <form
@@ -497,7 +509,7 @@ function Review({
         <h1 className="page-title">A few things to read over</h1>
         <p className="muted">
           {count(memories.length, 'memory', 'memories')} from this interview. Nothing joins {name}’s
-          archive until you save it.
+          project until you save it.
         </p>
       </div>
 
@@ -536,7 +548,7 @@ function Review({
             ? m.speakerName
               ? `${m.speakerName}’s own words`
               : 'Their own words'
-            : 'Tidied up by Varve, checked against what was said'}
+            : 'Tidied up by Firepit, checked against what was said'}
         </span>
         {editing ? (
           <MemoryEditor
@@ -716,7 +728,7 @@ function Saved({ archiveId, outcome }: { archiveId: string; outcome: ImportOutco
   const saved = outcome.saved ?? [];
   return (
     <div className="stack" style={{ gap: 12 }}>
-      <h1 className="page-title">Added to the archive</h1>
+      <h1 className="page-title">Added to the project</h1>
       <p role="status" className="notice notice-sage">
         {count(saved.length, 'memory was', 'memories were')} saved. Thank you! If something’s not
         right, you can fix it on its page, or undo the whole interview from Interviews.

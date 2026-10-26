@@ -12,6 +12,7 @@ import { DeterministicEmbeddingProvider } from '@funmem/core';
 import { createApp } from './app';
 import { createNimAgentModel } from './agent';
 import { createNimChat } from './ingest';
+import { INTERVIEW_MODEL_DEFAULT } from './interview-coach';
 import { describeError } from './ingest-jobs';
 import { startEmbeddingLoop } from './embeddings';
 import { createBgeM3Provider, type RealProvider } from './embeddings-real';
@@ -140,6 +141,14 @@ async function main(): Promise<void> {
     embeddings: provider,
     chat: createNimChat(),
     agentModel: createNimAgentModel(),
+    transcriptionKey: process.env.DEEPGRAM_API_KEY || null,
+    // the interview coach answers within a pause: a fast model, one attempt, a short deadline
+    interviewChat: createNimChat({
+      model: process.env.INTERVIEW_MODEL || INTERVIEW_MODEL_DEFAULT,
+      timeoutMs: 9000,
+      attempts: 1,
+      hedgeMs: 0,
+    }),
     auth: {
       jwksUrl: `${supabaseUrl}/auth/v1/.well-known/jwks.json`,
       issuer: `${supabaseUrl}/auth/v1`,

@@ -186,6 +186,16 @@ describe('FM-014 auth wiring + tenant provisioning', () => {
     });
     expect(noJur.status).toBe(400);
 
+    // and it must be a real country code: free text is refused, not stored
+    for (const jurisdiction of ['USA', 'my house', 'ZZ']) {
+      const bad = await app.request('/v1/provision', {
+        method: 'POST',
+        headers: { authorization: `Bearer ${s.token}`, 'content-type': 'application/json' },
+        body: JSON.stringify({ subjectName: 'Bad Jurisdiction', jurisdiction }),
+      });
+      expect(bad.status).toBe(400);
+    }
+
     // atomicity: a userId absent from auth.users makes the LAST insert (membership FK)
     // fail — the earlier tenant+archive inserts must roll back, leaving no orphans.
     const marker = `orphan-${RUN}`;

@@ -50,7 +50,9 @@ export function Stories() {
           <span className="muted">
             {notes && notes !== 'failed' && stories.length > 0
               ? `${count(stories.length, 'story', 'stories')}, in the order they happened`
-              : `What ${archive.subjectName} and the family remember`}
+              : archive.kind === 'family'
+                ? `What ${archive.subjectName} remember`
+                : `What ${archive.subjectName} and the family remember`}
           </span>
         </div>
         {archive.writer && (

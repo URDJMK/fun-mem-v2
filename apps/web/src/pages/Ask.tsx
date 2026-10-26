@@ -66,7 +66,11 @@ export function Ask() {
       <div className="stack" style={{ gap: 5, textAlign: 'center', alignItems: 'center' }}>
         <h1 className="page-title">What would you like to know?</h1>
         <p className="muted">
-          Answers use only what {archive.subjectName} and the family have shared — never guesses.
+          Answers use only what{' '}
+          {archive.kind === 'family'
+            ? 'the family has'
+            : `${archive.subjectName} and the family have`}{' '}
+          shared — never guesses.
         </p>
       </div>
 
@@ -84,7 +88,11 @@ export function Ask() {
             data-testid="ask-input"
             value={question}
             onChange={(e) => setQuestion(e.target.value)}
-            placeholder={`Where did ${archive.subjectName} work after the war?`}
+            placeholder={
+              archive.kind === 'family'
+                ? 'Where did the family live after the war?'
+                : `Where did ${archive.subjectName} work after the war?`
+            }
           />
         </label>
         <button

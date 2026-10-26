@@ -17,7 +17,7 @@ function saveFailure(e: unknown): string {
   if (e.code === 'too_long' || e.code === 'too_large')
     return 'The text is too long. Split it into more than one memory.';
   if (e.code === 'too_many_links') return 'This memory links to too many others.';
-  if (e.status === 403) return 'In this archive you can read, but not write.';
+  if (e.status === 403) return 'In this project you can read, but not write.';
   if (e.status === 400) return 'A title cannot contain [ ] # ^ or |.';
   return 'Could not save.';
 }

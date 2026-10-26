@@ -34,7 +34,7 @@ export function SignIn() {
 
   return (
     <div className="stack" style={{ minHeight: '100vh', fontSize: 15 }}>
-      <title>Sign in · Varve</title>
+      <title>Sign in · Firepit</title>
       <header className="public-header" style={{ width: '100%' }}>
         <Brand />
         <Link

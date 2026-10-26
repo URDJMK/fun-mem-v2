@@ -11,6 +11,10 @@ import { registerAskRoutes } from './ask';
 import { registerDraftRoutes } from './drafts';
 import { registerAgentRoutes, type AgentModelConfig } from './agent';
 import { registerIngestRoutes, type ChatModel } from './ingest';
+import { registerTranscriptionRoutes } from './transcription';
+import { registerCoachRoutes } from './interview-coach';
+import { registerInviteRoutes } from './invites';
+import { registerProjectSettingsRoutes } from './project-settings';
 import type { EmbeddingProvider } from '@funmem/core';
 
 export interface AppDeps {
@@ -32,6 +36,17 @@ export interface AppDeps {
   chat?: ChatModel | null;
   /** Model for the archive assistant (Mastra Agent). Absent = POST /agent answers 503. */
   agentModel?: AgentModelConfig | null;
+  /**
+   * Deepgram API key for live interview transcription. Absent = the token route answers 503
+   * `not_configured`; everything else, importing a transcript included, works as before.
+   */
+  transcriptionKey?: string | null;
+  /**
+   * A fast model for the live interview coach (INTERVIEW_MODEL at the composition root): one
+   * short call after each answer, so it must answer within a pause. Absent = the coach route
+   * answers 503 and the app suggests from its own question bank.
+   */
+  interviewChat?: ChatModel | null;
 }
 
 export type App = Hono<{ Variables: AuthVariables }>;
@@ -51,6 +66,7 @@ export function createApp(deps: AppDeps): App {
       subjectName?: string;
       jurisdiction?: string;
       tenantName?: string;
+      kind?: string;
     };
     try {
       const provisioned = await provisionSignup(deps.pool, {
@@ -58,6 +74,7 @@ export function createApp(deps: AppDeps): App {
         subjectName: body.subjectName ?? '',
         jurisdiction: body.jurisdiction ?? '',
         tenantName: body.tenantName,
+        kind: body.kind as 'personal' | 'family' | undefined,
       });
       return c.json(provisioned, 201);
     } catch (e) {
@@ -70,7 +87,7 @@ export function createApp(deps: AppDeps): App {
   // row to leak; a brand-new Google sign-in gets [] and the web app provisions.
   app.get('/v1/archives', async (c) => {
     const r = await deps.pool.query(
-      `select a.id, a.subject_name as "subjectName", m.role
+      `select a.id, a.subject_name as "subjectName", a.kind, a.jurisdiction, m.role
          from public.archives a
          join public.memberships m on m.archive_id = a.id
         where m.user_id = $1
@@ -97,6 +114,10 @@ export function createApp(deps: AppDeps): App {
   registerDraftRoutes(app, deps);
   registerIngestRoutes(app, deps);
   registerAgentRoutes(app, deps);
+  registerTranscriptionRoutes(app, deps);
+  registerCoachRoutes(app, deps);
+  registerInviteRoutes(app, deps);
+  registerProjectSettingsRoutes(app, deps);
 
   return app;
 }

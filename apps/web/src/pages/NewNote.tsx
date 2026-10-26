@@ -23,7 +23,9 @@ export function NewNote() {
       <div className="stack" style={{ gap: 4 }}>
         <h1 className="page-title">Write a memory</h1>
         <p className="muted">
-          Something you remember about {archive.subjectName}, or something they told you.
+          {archive.kind === 'family'
+            ? 'Something you remember about the family, or something one of them told you.'
+            : `Something you remember about ${archive.subjectName}, or something they told you.`}
         </p>
       </div>
       {archive.writer ? (
@@ -39,7 +41,7 @@ export function NewNote() {
           />
         </div>
       ) : (
-        <p className="notice notice-wonder">In this archive you can read, but not write.</p>
+        <p className="notice notice-wonder">In this project you can read, but not write.</p>
       )}
     </ArchiveLayout>
   );

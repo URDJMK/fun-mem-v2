@@ -26,7 +26,11 @@ export function Timeline() {
   return (
     <ArchiveLayout title="Timeline">
       <div className="stack" style={{ gap: 3 }}>
-        <h1 className="page-title">{archive.subjectName}’s life, year by year</h1>
+        <h1 className="page-title">
+          {archive.kind === 'family'
+            ? `${archive.subjectName}, year by year`
+            : `${archive.subjectName}’s life, year by year`}
+        </h1>
         <span className="muted">
           Exact years when we know them, “around” when we don’t. A date is never made up.
         </span>

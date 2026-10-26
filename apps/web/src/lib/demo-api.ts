@@ -1,4 +1,5 @@
-import { extractWikilinks, normalizeTitle } from '@funmem/core';
+import { countryCode, extractWikilinks, normalizeTitle } from '@funmem/core';
+import { DEMO_NAME } from './demo';
 
 /**
  * The API, played in the browser for demo mode (lib/demo.ts). It keeps the same shapes as the
@@ -28,9 +29,86 @@ interface DemoRun {
 interface DemoArchive {
   id: string;
   subjectName: string;
+  /** absent in sample data saved before projects had kinds: personal */
+  kind?: 'personal' | 'family';
+  /** absent in sample data saved before it was shown: US */
+  jurisdiction?: string;
   role: string;
   notes: DemoNote[];
   runs: DemoRun[];
+  /** the other people in it; the demo person is always in, with `role` */
+  members?: Array<{ userId: string; name: string; role: string; joinedAt: string }>;
+  invites?: DemoInvite[];
+}
+
+interface DemoInvite {
+  id: string;
+  /** an account found by search (one of DEMO_PEOPLE), or an email with no account yet */
+  userId?: string;
+  email?: string;
+  role: string;
+  createdAt: string;
+  expiresAt: string;
+  answeredAt?: string;
+  revokedAt?: string;
+}
+
+const DEMO_USER = 'demo-user';
+
+/** other people on Firepit, made up, for search to find */
+const DEMO_PEOPLE = [
+  { userId: 'demo-carol', name: 'Carol Marsh', email: 'carol.marsh@example.com' },
+  { userId: 'demo-june', name: 'June Okafor', email: 'june.okafor@example.com' },
+  { userId: 'demo-sam', name: 'Sam Marsh', email: 'sammarsh@example.com' },
+  { userId: 'demo-ruth', name: 'Ruth Lindqvist', email: 'ruth.l@example.com' },
+  { userId: 'demo-theo2', name: 'Theo Marsh Jr.', email: 'theo.junior@example.com' },
+];
+const mask = (email: string) => {
+  const at = email.indexOf('@');
+  return `${email.slice(0, Math.min(3, at))}•••${email.slice(at)}`;
+};
+// link invitations saved by an older demo have neither, and are left out
+const isOpen = (i: DemoInvite) =>
+  !!(i.userId || i.email) && !i.answeredAt && !i.revokedAt && new Date(i.expiresAt) > new Date();
+
+/** invitations to the demo person, from projects they are not in yet */
+interface DemoInboxItem {
+  id: string;
+  role: string;
+  createdAt: string;
+  projectName: string;
+  kind: 'personal' | 'family';
+  invitedBy: string;
+}
+const INBOX = 'firepit-demo-inbox';
+const seedInbox = (): DemoInboxItem[] => [
+  {
+    id: 'demo-invite-okafor',
+    role: 'contributor',
+    createdAt: new Date(Date.now() - 2 * 86_400_000).toISOString(),
+    projectName: 'The Okafor family',
+    kind: 'family',
+    invitedBy: 'June Okafor',
+  },
+];
+let inbox: DemoInboxItem[] | null = null;
+function myInbox(): DemoInboxItem[] {
+  if (inbox) return inbox;
+  try {
+    const raw = window.localStorage.getItem(INBOX);
+    if (raw) inbox = JSON.parse(raw) as DemoInboxItem[];
+  } catch {
+    /* the sample invitation instead */
+  }
+  inbox ??= seedInbox();
+  return inbox;
+}
+function persistInbox() {
+  try {
+    window.localStorage.setItem(INBOX, JSON.stringify(inbox));
+  } catch {
+    /* lasts as long as the page */
+  }
 }
 
 interface DemoJob {
@@ -45,7 +123,7 @@ interface DemoJob {
   runId?: string;
 }
 
-const STORE = 'varve-demo-data';
+const STORE = 'firepit-demo-data';
 const NELL = '00000000-0000-4000-8000-00000000a001';
 
 export class DemoError extends Error {
@@ -170,7 +248,22 @@ function seed(): DemoArchive[] {
       ],
     },
     { id: uid(), subjectName: 'Grandpa Walter', role: 'contributor', notes: [], runs: [] },
-  ];
+  ].map((a, i) =>
+    // Grandma Nell's project has Aunt Carol in it too, to show what the Members page lists
+    i === 0
+      ? {
+          ...a,
+          members: [
+            {
+              userId: 'demo-carol',
+              name: 'Carol Marsh',
+              role: 'contributor',
+              joinedAt: new Date(Date.now() - 20 * 86_400_000).toISOString(),
+            },
+          ],
+        }
+      : a,
+  );
 }
 
 let data: DemoArchive[] | null = null;
@@ -200,6 +293,8 @@ function persist() {
 export function resetDemo() {
   data = seed();
   persist();
+  inbox = seedInbox();
+  persistInbox();
 }
 
 const summary = (n: DemoNote) => ({
@@ -323,10 +418,43 @@ function ask(a: DemoArchive, question: string) {
   };
 }
 
+function segmentsOf(
+  transcript: string,
+): { turns: Array<{ who: string; text: string }>; interviewee?: string } | null {
+  try {
+    const j = JSON.parse(transcript) as {
+      interviewee?: unknown;
+      segments?: Array<{ speaker?: unknown; text?: unknown }>;
+    };
+    if (!Array.isArray(j.segments)) return null;
+    const turns: Array<{ who: string; text: string }> = [];
+    for (const s of j.segments) {
+      const who = String(s.speaker ?? 'Speaker');
+      const text = String(s.text ?? '').trim();
+      if (!text) continue;
+      const last = turns[turns.length - 1];
+      if (last?.who === who) last.text += ` ${text}`;
+      else turns.push({ who, text });
+    }
+    return {
+      turns,
+      ...(typeof j.interviewee === 'string' ? { interviewee: j.interviewee } : {}),
+    };
+  } catch {
+    return null;
+  }
+}
+
 /** Each of the teller's turns of a sentence or more becomes one memory, in their own words. */
 function prepare(transcript: string, teller: string | undefined, source: string | null) {
   const turns: Array<{ who: string; text: string }> = [];
-  for (const line of transcript.split('\n')) {
+  // a recorded interview arrives as WhisperX-style JSON: its segments are the turns
+  const json = transcript.trimStart().startsWith('{') ? segmentsOf(transcript) : null;
+  if (json) {
+    turns.push(...json.turns);
+    teller ??= json.interviewee;
+  }
+  for (const line of json ? [] : transcript.split('\n')) {
     const m = /^\s*\[?([^:\]]{1,40})\]?\s*:\s*(.+)$/.exec(line);
     if (m) turns.push({ who: m[1]!.trim(), text: m[2]!.trim() });
     else if (line.trim() && turns.length > 0) turns[turns.length - 1]!.text += ` ${line.trim()}`;
@@ -407,11 +535,58 @@ export async function demoFetch(method: string, path: string, body?: unknown): P
   const all = db();
 
   if (method === 'GET' && path === '/archives')
-    return all.map(({ id, subjectName, role }) => ({ id, subjectName, role }));
+    return all.map(({ id, subjectName, kind, jurisdiction, role }) => ({
+      id,
+      subjectName,
+      kind: kind ?? 'personal',
+      jurisdiction: jurisdiction ?? 'US',
+      role,
+    }));
+  // invitations to the demo person (server/api/src/invites.ts)
+  if (method === 'GET' && path === '/invites') return myInbox();
+  if (method === 'POST' && p[0] === 'invites' && p[1]) {
+    const box = myInbox();
+    const item = box.find((x) => x.id === p[1]);
+    if (!item || (p[2] !== 'accept' && p[2] !== 'decline')) throw new DemoError(404, null);
+    inbox = box.filter((x) => x !== item);
+    persistInbox();
+    if (p[2] === 'decline') return { declined: true };
+    const joined: DemoArchive = {
+      id: uid(),
+      subjectName: item.projectName,
+      kind: item.kind,
+      jurisdiction: 'GB',
+      role: item.role,
+      notes: [],
+      runs: [],
+      members: [
+        {
+          userId: 'demo-june',
+          name: item.invitedBy,
+          role: 'owner',
+          joinedAt: item.createdAt,
+        },
+      ],
+    };
+    all.push(joined);
+    persist();
+    return { archiveId: joined.id, role: item.role };
+  }
   if (method === 'POST' && path === '/provision') {
     const subjectName = typeof b.subjectName === 'string' ? b.subjectName.trim() : '';
-    if (!subjectName) throw new DemoError(400, null);
-    const a: DemoArchive = { id: uid(), subjectName, role: 'owner', notes: [], runs: [] };
+    // the same rule as the server (server/api/src/provision.ts): a real country code only
+    if (!subjectName || !countryCode(typeof b.jurisdiction === 'string' ? b.jurisdiction : ''))
+      throw new DemoError(400, null);
+    const kind = b.kind === 'family' ? 'family' : 'personal';
+    const a: DemoArchive = {
+      id: uid(),
+      subjectName,
+      kind,
+      jurisdiction: countryCode(String(b.jurisdiction)) ?? 'US',
+      role: 'owner',
+      notes: [],
+      runs: [],
+    };
     all.push(a);
     persist();
     return { tenantId: uid(), archiveId: a.id };
@@ -419,6 +594,149 @@ export async function demoFetch(method: string, path: string, body?: unknown): P
   if (p[0] !== 'archives' || !p[1]) throw new DemoError(404, null);
   const a = archiveOf(p[1]);
   const [, , what, id, sub] = p;
+
+  /* ── the project itself (server/api/src/project-settings.ts) ── */
+  if (!what && method === 'PATCH') {
+    if (b.subjectName !== undefined) {
+      if (a.role !== 'owner' && a.role !== 'steward') throw new DemoError(403, 'forbidden');
+      const name = typeof b.subjectName === 'string' ? b.subjectName.trim() : '';
+      if (!name || name.length > 120) throw new DemoError(400, 'bad_request');
+      a.subjectName = name;
+    }
+    if (b.kind !== undefined) {
+      if (a.role !== 'owner') throw new DemoError(403, 'forbidden');
+      if (b.kind !== 'family') throw new DemoError(400, 'bad_request');
+      a.kind = 'family';
+    }
+    persist();
+    return { id: a.id, subjectName: a.subjectName, kind: a.kind ?? 'personal' };
+  }
+  if (!what && method === 'DELETE') {
+    if (a.role !== 'owner') throw new DemoError(403, 'forbidden');
+    if (String(b.confirm ?? '').trim() !== a.subjectName)
+      throw new DemoError(400, 'confirm_mismatch');
+    all.splice(all.indexOf(a), 1);
+    persist();
+    return { deleted: true };
+  }
+
+  /* ── members and invites ── */
+  const manage = a.role === 'owner' || a.role === 'steward';
+  if (what === 'members' && !id && method === 'GET') {
+    return [
+      { userId: DEMO_USER, name: DEMO_NAME, role: a.role, joinedAt: now(), you: true },
+      ...(a.members ?? []).map((m) => ({ ...m, you: false })),
+    ];
+  }
+  if (what === 'members' && id && method === 'DELETE') {
+    if (id === DEMO_USER) {
+      // leaving: anyone but the owner
+      if (a.role === 'owner') throw new DemoError(400, 'bad_request');
+      all.splice(all.indexOf(a), 1);
+    } else {
+      if (a.role !== 'owner') throw new DemoError(403, 'forbidden');
+      a.members = (a.members ?? []).filter((m) => m.userId !== id);
+    }
+    persist();
+    return { removed: true };
+  }
+  if (what === 'members' && id && method === 'PATCH') {
+    if (a.role !== 'owner') throw new DemoError(403, 'forbidden');
+    const role = String(b.role ?? '');
+    if (id === DEMO_USER || !['steward', 'contributor', 'viewer'].includes(role))
+      throw new DemoError(400, 'bad_request');
+    const m = (a.members ?? []).find((x) => x.userId === id);
+    if (!m) throw new DemoError(404, null);
+    m.role = role;
+    persist();
+    return { userId: id, role };
+  }
+  if (what === 'people-search' && method === 'GET') {
+    if (!manage) throw new DemoError(403, 'forbidden');
+    const q = (url.searchParams.get('q') ?? '').trim().toLowerCase();
+    if (q.length < 3) return [];
+    const inIt = new Set((a.members ?? []).map((m) => m.userId));
+    return DEMO_PEOPLE.filter(
+      (x) =>
+        x.email.startsWith(q) ||
+        x.name.toLowerCase().startsWith(q) ||
+        x.name.toLowerCase().includes(` ${q}`),
+    )
+      .slice(0, 6)
+      .map((x) => ({
+        userId: x.userId,
+        name: x.name,
+        email: x.email === q ? x.email : mask(x.email),
+        member: inIt.has(x.userId),
+        invited: (a.invites ?? []).some((i) => i.userId === x.userId && isOpen(i)),
+      }));
+  }
+  if (what === 'invites' && !id) {
+    if (!manage) throw new DemoError(403, 'forbidden');
+    const open = (a.invites ?? []).filter(isOpen);
+    if (method === 'GET')
+      return open.map((i) => {
+        const who = DEMO_PEOPLE.find((x) => x.userId === i.userId);
+        return {
+          id: i.id,
+          role: i.role,
+          createdAt: i.createdAt,
+          expiresAt: i.expiresAt,
+          invitedBy: DEMO_NAME,
+          hasAccount: !!who,
+          inviteeName: who?.name ?? i.email,
+          inviteeEmail: who ? mask(who.email) : i.email,
+        };
+      });
+    if (method === 'POST') {
+      const role = String(b.role ?? '');
+      const may =
+        a.role === 'owner' ? ['steward', 'contributor', 'viewer'] : ['contributor', 'viewer'];
+      if (!['steward', 'contributor', 'viewer'].includes(role))
+        throw new DemoError(400, 'bad_request');
+      if (!may.includes(role)) throw new DemoError(403, 'forbidden');
+      const email = typeof b.email === 'string' ? b.email.trim().toLowerCase() : '';
+      const who =
+        typeof b.userId === 'string'
+          ? DEMO_PEOPLE.find((x) => x.userId === b.userId)
+          : DEMO_PEOPLE.find((x) => x.email === email);
+      if (typeof b.userId === 'string' && !who) throw new DemoError(404, null);
+      if (!who && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email))
+        throw new DemoError(400, 'bad_request');
+      if (who && (a.members ?? []).some((m) => m.userId === who.userId))
+        throw new DemoError(409, 'member');
+      if (
+        (a.invites ?? []).some(
+          (i) => isOpen(i) && (who ? i.userId === who.userId : i.email === email),
+        )
+      )
+        throw new DemoError(409, 'invited');
+      const inv: DemoInvite = {
+        id: uid(),
+        ...(who ? { userId: who.userId } : { email }),
+        role,
+        createdAt: now(),
+        expiresAt: new Date(Date.now() + 30 * 86_400_000).toISOString(),
+      };
+      a.invites = [...(a.invites ?? []), inv];
+      persist();
+      return {
+        id: inv.id,
+        role,
+        createdAt: inv.createdAt,
+        expiresAt: inv.expiresAt,
+        hasAccount: !!who,
+      };
+    }
+  }
+  if (what === 'invites' && id && method === 'DELETE') {
+    if (!manage) throw new DemoError(403, 'forbidden');
+    const inv = (a.invites ?? []).find((i) => i.id === id && isOpen(i));
+    if (!inv) throw new DemoError(404, null);
+    inv.revokedAt = now();
+    persist();
+    return { revoked: true };
+  }
 
   if (what === 'notes' && !id) {
     if (method === 'GET') return a.notes.map(summary);
@@ -536,6 +854,24 @@ export async function demoFetch(method: string, path: string, body?: unknown): P
     r.undone = true;
     persist();
     return { erased: before - a.notes.length, kept: [], alreadyUndone: false };
+  }
+  if (what === 'transcription-token' && method === 'POST') {
+    // the one demo call that leaves the browser: the dev server holds the Deepgram key
+    const r = await fetch('/demo/transcription-token', { method: 'POST' });
+    const out = (await r.json().catch(() => null)) as { code?: string } | null;
+    if (!r.ok) throw new DemoError(r.status, out?.code ?? null);
+    return out;
+  }
+  if (what === 'interview' && id === 'suggest' && method === 'POST') {
+    // the dev server runs the API's own coach with the NVIDIA key from .env
+    const r = await fetch('/demo/interview-suggest', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+    const out = (await r.json().catch(() => null)) as { code?: string } | null;
+    if (!r.ok) throw new DemoError(r.status, out?.code ?? null);
+    return out;
   }
   if (what === 'ingest' && !id && method === 'POST') {
     const transcript = typeof b.transcript === 'string' ? b.transcript : '';

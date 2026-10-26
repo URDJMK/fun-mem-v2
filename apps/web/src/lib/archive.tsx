@@ -1,16 +1,22 @@
 import { createContext, useCallback, useContext, useEffect, useState, type ReactNode } from 'react';
 import { Link, useParams } from 'react-router';
-import { listArchives, type ArchiveSummary } from './api';
+import { listArchives, type ArchiveSummary, type ProjectKind } from './api';
 import { storeArchiveId } from './supabase';
 import { canWrite } from './words';
 import { Failed, TopBar } from '../components/ui';
 
 export interface Archive {
   id: string;
+  /** the person (personal) or the family's name (family) */
   subjectName: string;
+  kind: ProjectKind;
+  /** ISO country code whose privacy law the project follows */
+  jurisdiction: string;
   role: string;
   /** may this person add and change memories here (the server checks again) */
   writer: boolean;
+  /** ask the server again, after the project itself changed (renamed, grown into a family) */
+  reload: () => Promise<void>;
 }
 
 const ArchiveContext = createContext<Archive | null>(null);
@@ -49,7 +55,7 @@ export function useArchives(): {
  */
 export function ArchiveRoute({ children }: { children: ReactNode }) {
   const { archiveId = '' } = useParams<{ archiveId: string }>();
-  const { archives } = useArchives();
+  const { archives, reload } = useArchives();
 
   if (archives === null) return null;
   if (archives === 'failed') {
@@ -57,7 +63,7 @@ export function ArchiveRoute({ children }: { children: ReactNode }) {
       <>
         <TopBar />
         <main className="page">
-          <Failed>Could not load this archive. Reload the page.</Failed>
+          <Failed>Could not load this project. Reload the page.</Failed>
         </main>
       </>
     );
@@ -68,9 +74,9 @@ export function ArchiveRoute({ children }: { children: ReactNode }) {
       <>
         <TopBar />
         <main className="page">
-          <Failed>This archive could not be found, or you are not a member of it.</Failed>
+          <Failed>This project could not be found, or you are not a member of it.</Failed>
           <p>
-            <Link to="/">Back to your archives</Link>
+            <Link to="/">Back to your projects</Link>
           </p>
         </main>
       </>
@@ -78,11 +84,17 @@ export function ArchiveRoute({ children }: { children: ReactNode }) {
   }
   storeArchiveId(found.id);
   return (
-    <ArchiveContext.Provider key={found.id} value={{ ...found, writer: canWrite(found.role) }}>
+    <ArchiveContext.Provider
+      key={found.id}
+      value={{ ...found, writer: canWrite(found.role), reload }}
+    >
       {children}
     </ArchiveContext.Provider>
   );
 }
+
+/** owners and stewards look after who is in the project */
+export const canManage = (role: string) => role === 'owner' || role === 'steward';
 
 /** The address of a page inside an archive. */
 export const inArchive = (archiveId: string, path = '') => `/a/${archiveId}${path}`;

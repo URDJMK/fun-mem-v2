@@ -83,7 +83,7 @@ export function Landing() {
 
   return (
     <div ref={root} className="lp">
-      <title>Varve — keep their stories, in their own words</title>
+      <title>Firepit — keep their stories, in their own words</title>
       <header className="public-header">
         <Brand />
         <div className="row">
@@ -99,7 +99,7 @@ export function Landing() {
       <section className="lp-hero">
         <h1 className="display">Their stories, in their own words.</h1>
         <Link to="/sign-in" className="btn btn-primary btn-lg">
-          Start an archive
+          Start a project
         </Link>
 
         <div
@@ -153,12 +153,12 @@ export function Landing() {
             ))}
           </ol>
         </div>
-        <p className="small muted">An example archive.</p>
+        <p className="small muted">An example project.</p>
       </section>
 
       <section className="lp-scene">
         <h2 className="lp-word">Ask.</h2>
-        <div className="lp-ask" role="img" aria-label="Two questions asked of the example archive">
+        <div className="lp-ask" role="img" aria-label="Two questions asked of the example project">
           <div className="ask-box" aria-hidden="true">
             <span className="lp-typed lp-q1" />
             <span className="icon-btn lp-send">
@@ -247,7 +247,7 @@ export function Landing() {
 
       <footer className="footer">
         <div className="footer-inner">
-          <span>Varve</span>
+          <span>Firepit</span>
           <span>Terms · Privacy</span>
         </div>
       </footer>

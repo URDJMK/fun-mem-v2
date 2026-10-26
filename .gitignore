@@ -10,3 +10,4 @@ reports/
 # Supabase CLI scratch (never commit)
 supabase/.temp/
 supabase/.branches/
+.gstack/

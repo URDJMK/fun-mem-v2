@@ -1,0 +1,919 @@
+/*
+ * Home and the interview (pages/Home.tsx, components/Studio.tsx). Home is the name at the top
+ * left and Start interview at the bottom; the button then becomes the interview assistant, a
+ * large card in the middle of the page, and the transcript floats in a small box beside it.
+ * Loaded after looks.css and uses its tokens.
+ */
+
+/* ── during an interview the sidebar slides away ─────── */
+.app-focus .sidebar {
+  position: fixed;
+  inset: 0 auto 0 0;
+  width: 240px;
+  z-index: 3;
+  transform: translateX(-105%);
+  opacity: 0;
+  transition:
+    transform 0.7s var(--ease-out),
+    opacity 0.5s var(--ease-out);
+}
+.app-focus .main {
+  padding-bottom: 24px;
+}
+
+/* ── home: name top left, the start at the bottom ─────── */
+.home-start {
+  min-height: calc(100vh - 88px);
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+.home-caption {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  animation: fp-rise 0.6s var(--ease-out) both;
+}
+.home-name,
+.studio-caption span {
+  font-family: var(--serif);
+  font-weight: 400;
+  font-size: 22px;
+  line-height: 1.2;
+  letter-spacing: -0.01em;
+}
+.home-middle {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+}
+.home-left {
+  width: min(100%, 600px);
+}
+.home-bottom {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  padding-bottom: 12px;
+  animation: fp-rise 0.7s var(--ease-out) 120ms both;
+}
+.home-start-btn {
+  position: relative;
+  min-height: 56px;
+  padding: 0 34px;
+  font-size: 16px;
+  /* a real radius and a solid colour under the gradient, so the card it becomes grows out of a
+     rounded orange shape (Flip reads both) rather than a grey oval */
+  border-radius: 28px;
+  background-color: var(--sage);
+  gap: 10px;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.25),
+    0 2px 4px rgba(0, 0, 0, 0.12),
+    0 16px 36px -10px rgba(var(--glow), 0.75);
+}
+.home-start-btn::before {
+  content: '';
+  position: absolute;
+  inset: -7px;
+  border-radius: inherit;
+  border: 1.5px solid rgba(var(--glow), 0.45);
+  animation: fp-ring 2.8s var(--ease-out) infinite;
+  pointer-events: none;
+}
+.home-start-btn:hover {
+  transform: translateY(-2px);
+}
+.home-mode {
+  display: inline-flex;
+  padding: 3px;
+  gap: 2px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--card) 70%, transparent);
+  border: 1px solid var(--line);
+  backdrop-filter: blur(8px);
+}
+.home-mode button {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 28px;
+  padding: 0 12px;
+  border: 0;
+  border-radius: 999px;
+  background: none;
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  transition:
+    background-color 0.2s,
+    color 0.2s;
+}
+.home-mode button[aria-checked='true'] {
+  background: var(--card);
+  color: var(--ink);
+  box-shadow: var(--shadow-1);
+}
+.home-hint {
+  max-width: 54ch;
+  text-align: center;
+  font-size: 13px;
+  color: var(--muted);
+}
+.home-aura {
+  transition: opacity 1s var(--ease-out);
+}
+.home-aura-quiet {
+  opacity: 0.55;
+}
+
+/* ── the interview: the assistant in the middle ───────── */
+.studio {
+  min-height: calc(100vh - 48px);
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+.studio-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 10px 16px;
+}
+.studio-caption {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.studio-bar-live {
+  gap: 10px;
+}
+.assist {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 18px;
+  padding: 12px 0 140px;
+}
+.assist-card {
+  position: relative;
+  width: min(100%, 760px);
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: 24px;
+  overflow: hidden;
+  box-shadow:
+    var(--shadow-3),
+    0 0 0 6px rgba(var(--glow), 0.07);
+}
+.assist-inner {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  padding: 26px 34px 30px;
+}
+.assist-step {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--sage);
+}
+.assist-step .btn {
+  text-transform: none;
+  letter-spacing: 0;
+}
+.assist-prompt {
+  font-family: var(--serif);
+  font-weight: 400;
+  font-size: clamp(26px, 3.4vw, 36px);
+  line-height: 1.22;
+  letter-spacing: -0.015em;
+  text-wrap: balance;
+}
+.assist-question {
+  font-size: clamp(28px, 3.8vw, 40px);
+}
+.assist-eyebrow {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--muted);
+  margin-bottom: -8px;
+}
+.assist-hearing,
+.assist-state {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 14px;
+  color: var(--muted);
+}
+.assist-wave {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  height: 16px;
+}
+.assist-wave span {
+  width: 3px;
+  height: 5px;
+  border-radius: 2px;
+  background: var(--sage);
+  opacity: 0.55;
+}
+.assist-hearing[data-talking='true'] .assist-wave span {
+  opacity: 1;
+  animation: assist-wave 0.9s ease-in-out infinite;
+}
+.assist-hearing[data-talking='true'] .assist-wave span:nth-child(2) {
+  animation-delay: 0.15s;
+}
+.assist-hearing[data-talking='true'] .assist-wave span:nth-child(3) {
+  animation-delay: 0.3s;
+}
+@keyframes assist-wave {
+  50% {
+    height: 15px;
+  }
+}
+.assist-pulse {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: var(--sage);
+  box-shadow: 0 0 0 0 rgba(var(--glow), 0.5);
+  animation: assist-pulse 1.6s ease-out infinite;
+}
+@keyframes assist-pulse {
+  to {
+    box-shadow: 0 0 0 10px rgba(var(--glow), 0);
+  }
+}
+.assist-state[data-state='listening'] {
+  color: var(--sage-ink);
+  font-weight: 500;
+}
+
+/* what the assistant has learned so far */
+.assist-learned {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.assist-person {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 34px;
+  padding: 0 14px 0 8px;
+  border-radius: 999px;
+  border: 1px dashed var(--dashed);
+  color: var(--muted);
+  font-size: 15px;
+  transition:
+    background-color 0.3s,
+    border-color 0.3s,
+    color 0.3s;
+}
+.assist-person[data-heard='true'] {
+  border: 1px solid color-mix(in srgb, var(--sage) 40%, var(--line));
+  background: var(--sage-tint);
+  color: var(--sage-ink);
+  font-weight: 600;
+  animation: fp-pop 0.45s var(--ease-spring) both;
+}
+.assist-person-dot {
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  border: 1.5px solid currentColor;
+  display: grid;
+  place-items: center;
+  opacity: 0.7;
+}
+.assist-person[data-heard='true'] .assist-person-dot {
+  background: var(--sage);
+  border-color: var(--sage);
+  color: var(--on-sage);
+  opacity: 1;
+}
+.assist-person-wait {
+  font-size: 12px;
+  font-weight: 400;
+}
+.assist-who {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px 14px;
+  border-radius: 14px;
+  background: var(--wonder-2);
+  animation: fp-rise 0.45s var(--ease-out) both;
+}
+.assist-note {
+  font-size: 13px;
+  color: var(--muted-2);
+}
+.assist-quote {
+  font-family: var(--serif);
+  font-size: 18px;
+  color: var(--ink-3);
+  animation: fp-rise 0.45s var(--ease-out) both;
+}
+.assist-topics {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.assist-topics .chip {
+  min-height: 34px;
+  padding: 0 14px;
+  font-size: 14px;
+  border-radius: 999px;
+  transition:
+    background-color 0.25s,
+    border-color 0.25s,
+    color 0.25s,
+    transform 0.25s var(--ease-spring);
+}
+.assist-topics .chip[aria-pressed='true'] {
+  transform: scale(1.04);
+}
+.assist-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  padding-top: 4px;
+}
+/* fills while the assistant waits for a pause before moving on by itself */
+.assist-progress {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 3px;
+  background: var(--sage);
+  transform-origin: left;
+  transition: transform 0.25s linear;
+}
+.assist-aside {
+  width: min(100%, 760px);
+  display: grid;
+  grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr);
+  gap: 14px;
+  animation: fp-rise 0.6s var(--ease-out) 0.2s both;
+}
+.assist-next {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.assist-next ol {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.assist-next button {
+  width: 100%;
+  text-align: left;
+  padding: 8px 10px;
+  border: 0;
+  border-radius: 8px;
+  background: none;
+  color: var(--ink-3);
+  font-size: 14px;
+  line-height: 1.45;
+  cursor: pointer;
+  transition: background-color 0.2s;
+}
+.assist-next button:hover {
+  background: color-mix(in srgb, var(--card) 70%, transparent);
+}
+.assist-tip {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 12px 14px;
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--wonder-2) 85%, transparent);
+  font-size: 14px;
+  line-height: 1.5;
+  align-self: start;
+  animation: fp-rise 0.5s var(--ease-out) both;
+}
+
+/* ── the transcript, floating, Granola-style ───────────── */
+.float-transcript {
+  position: fixed;
+  right: 24px;
+  bottom: 24px;
+  z-index: 20;
+  width: min(360px, calc(100vw - 32px));
+  display: flex;
+  flex-direction: column;
+  background: color-mix(in srgb, var(--card) 92%, transparent);
+  backdrop-filter: blur(14px);
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  box-shadow: var(--shadow-3);
+  overflow: hidden;
+}
+.float-transcript-closed {
+  width: min(420px, calc(100vw - 32px));
+  border-radius: 999px;
+}
+.float-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 40px;
+  padding: 0 6px 0 14px;
+  cursor: grab;
+  user-select: none;
+  touch-action: none;
+}
+.float-head:active {
+  cursor: grabbing;
+}
+.float-transcript:not(.float-transcript-closed) .float-head {
+  border-bottom: 1px solid var(--line);
+}
+.float-title {
+  flex: 1;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--muted-2);
+}
+.float-latest {
+  flex: 1;
+  min-width: 0;
+  font-size: 13px;
+  color: var(--ink-3);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.float-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--muted-2);
+  flex: none;
+}
+.float-dot-live {
+  background: var(--ember-hot);
+  box-shadow: 0 0 8px rgba(226, 85, 58, 0.7);
+}
+.float-toggle {
+  width: 30px;
+  height: 30px;
+  border: 0;
+  border-radius: 50%;
+  background: none;
+  color: var(--muted);
+  display: grid;
+  place-items: center;
+  cursor: pointer;
+}
+.float-toggle:hover {
+  background: var(--soft-2);
+}
+.float-body {
+  max-height: min(46vh, 420px);
+  overflow-y: auto;
+  padding: 12px 16px 16px;
+}
+.float-body .live-transcript {
+  gap: 10px;
+}
+.float-body .live-turn p {
+  font-size: 14px;
+  line-height: 1.5;
+}
+.transcript-empty {
+  color: var(--muted-2);
+  font-size: 14px;
+}
+
+/* ── reading it over ──────────────────────────────────── */
+.review {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  animation: fp-rise 0.6s var(--ease-out) both;
+}
+.review-box {
+  max-height: 60vh;
+  overflow-y: auto;
+  padding: 16px 20px;
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: 14px;
+}
+
+/* ── the coach: one suggested move at a time ──────────── */
+.coach-thinking {
+  font-size: 12px;
+  font-weight: 500;
+  letter-spacing: 0;
+  text-transform: none;
+  color: var(--muted-2);
+  animation: guide-pulse 1.4s ease-in-out infinite;
+}
+@keyframes guide-pulse {
+  50% {
+    opacity: 0.4;
+  }
+}
+.coach-eyebrow {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: -6px;
+}
+.coach-eyebrow[data-state='offer'] {
+  color: var(--sage);
+}
+.coach-eyebrow[data-state='moment'] {
+  color: var(--muted-2);
+}
+.assist-question {
+  transition:
+    opacity 0.5s var(--ease-out),
+    color 0.5s;
+}
+/* while the narrator talks, the question steps back: the answer matters, not the prompt */
+.assist-question[data-dim='true'] {
+  opacity: 0.42;
+}
+.assist-label {
+  font-size: clamp(22px, 2.6vw, 28px);
+  font-style: italic;
+}
+.coach-reason {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 14px;
+  color: var(--muted);
+}
+.coach-source {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  padding: 2px 6px;
+  border-radius: 4px;
+  background: var(--sage-tint);
+  color: var(--sage-ink);
+}
+.coach-moves {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding-top: 4px;
+}
+.coach-moves .btn {
+  min-height: 36px;
+  padding: 0 14px;
+}
+.coach-topics {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 12px;
+  border-radius: 12px;
+  background: var(--soft-2);
+  animation: fp-rise 0.35s var(--ease-out) both;
+}
+.coach-thread {
+  border-style: dashed;
+}
+.coach-extra {
+  color: var(--muted);
+}
+.coach-privacy {
+  font-size: 12px;
+  color: var(--muted-2);
+  padding-top: 6px;
+  border-top: 1px solid var(--line);
+}
+.coach-threads {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.coach-threads button {
+  min-height: 30px;
+  padding: 0 12px;
+  border: 1px dashed var(--dashed);
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--card) 70%, transparent);
+  color: var(--ink-3);
+  font-size: 13px;
+  cursor: pointer;
+  animation: fp-pop 0.4s var(--ease-spring) both;
+  transition:
+    border-color 0.2s,
+    background-color 0.2s;
+}
+.coach-threads button:hover {
+  border-color: var(--sage);
+  background: var(--sage-tint);
+}
+.coach-time {
+  padding: 10px 12px;
+  border-radius: 10px;
+  font-size: 13px;
+  background: var(--soft-2);
+  color: var(--muted);
+}
+.coach-time[data-strong='true'] {
+  background: var(--wonder);
+  color: var(--ink);
+}
+/* the interview has reached its thanks: End stands out */
+.coach-end {
+  animation: coach-end 1.8s var(--ease-out) infinite;
+}
+@keyframes coach-end {
+  0% {
+    box-shadow: 0 0 0 0 rgba(var(--glow), 0.5);
+  }
+  100% {
+    box-shadow: 0 0 0 12px rgba(var(--glow), 0);
+  }
+}
+
+.studio-with {
+  font-size: 14px;
+  color: var(--muted);
+  font-family: var(--sans);
+}
+
+/* ── a family project: who are you talking with ───────── */
+.narrator-pick {
+  width: min(100%, 560px);
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 18px 20px;
+  border-radius: 20px;
+  background: var(--card);
+  border: 1px solid var(--line);
+  box-shadow:
+    var(--shadow-3),
+    0 0 0 6px rgba(var(--glow), 0.07);
+  animation: fp-rise 0.45s var(--ease-out) both;
+}
+.narrator-title {
+  font-family: var(--serif);
+  font-size: 22px;
+  letter-spacing: -0.01em;
+}
+.narrator-people {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.narrator-person {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 38px;
+  padding: 0 14px 0 8px;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  background: var(--card);
+  color: var(--ink);
+  font-size: 15px;
+  cursor: pointer;
+  transition:
+    border-color 0.2s,
+    background-color 0.2s,
+    transform 0.2s var(--ease-out);
+}
+.narrator-person:hover {
+  border-color: var(--sage);
+  background: var(--sage-tint);
+  transform: translateY(-1px);
+}
+.narrator-new {
+  border-style: dashed;
+  color: var(--muted);
+  padding-left: 12px;
+}
+
+@media (max-width: 760px) {
+  .assist-inner {
+    padding: 20px 20px 24px;
+  }
+  .assist-aside {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* ── choosing a country ───────────────────────────────── */
+.country-chosen {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 34px;
+  font-weight: 400;
+}
+.country-picker {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  max-width: 360px;
+  font-weight: 400;
+}
+.country-list {
+  list-style: none;
+  margin: 0;
+  padding: 4px;
+  max-height: 232px;
+  overflow-y: auto;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--card);
+  box-shadow: var(--shadow-2);
+}
+.country-list li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-height: 32px;
+  padding: 0 10px;
+  border-radius: 6px;
+  font-size: 14px;
+  cursor: pointer;
+}
+.country-list li[data-active='true'] {
+  background: var(--soft-2);
+}
+.country-list li[aria-selected='true'] {
+  color: var(--sage-ink);
+  font-weight: 600;
+}
+.country-code {
+  font-size: 12px;
+  color: var(--muted-2);
+  font-variant-numeric: tabular-nums;
+}
+.country-list .country-empty {
+  color: var(--muted-2);
+  cursor: default;
+}
+
+/* ── a new project: which kind ────────────────────────── */
+.kind-cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 8px;
+  font-weight: 400;
+}
+
+/* ── members and invites ──────────────────────────────── */
+.invite-roles {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 8px;
+}
+.invite-search {
+  gap: 6px;
+}
+.invite-results {
+  list-style: none;
+  margin: 0;
+  padding: 4px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--card);
+}
+.invite-result {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 7px 8px;
+  border: 0;
+  border-radius: 6px;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.invite-result:hover:not(:disabled),
+.invite-result:focus-visible {
+  background: var(--sage-tint);
+}
+.invite-result:disabled {
+  cursor: default;
+  opacity: 0.6;
+}
+.invite-none {
+  padding: 8px;
+}
+.invite-mail {
+  width: 28px;
+  height: 28px;
+  font-weight: 600;
+}
+.invite-picked,
+.invite-waiting {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px 12px;
+}
+.invite-picked {
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+}
+
+/* ── project settings ─────────────────────────────────── */
+.settings-card {
+  gap: 0;
+  padding: 0;
+}
+.settings-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px 16px;
+  padding: 14px 16px;
+}
+.settings-row + .settings-row {
+  border-top: 1px solid var(--line);
+}
+.settings-what {
+  gap: 2px;
+  min-width: 0;
+}
+.settings-row > .settings-what {
+  flex: 1 1 260px;
+}
+.settings-control {
+  flex: 1 1 280px;
+  flex-wrap: nowrap;
+}
+.settings-control .input {
+  flex: 1;
+  min-width: 0;
+}
+.settings-confirm {
+  flex: 1 1 100%;
+  gap: 8px;
+}
+.settings-danger {
+  gap: 12px;
+  padding: 14px 16px;
+  border-color: color-mix(in oklab, var(--danger) 35%, var(--line));
+}
+.settings-danger > .settings-row {
+  padding: 0;
+}
+.btn-danger-solid {
+  background: var(--danger);
+  color: #fff;
+  border: 1px solid transparent;
+}
+.btn-danger-solid:disabled {
+  opacity: 0.45;
+}
+.member-role {
+  width: auto;
+  min-height: 28px;
+  padding: 0 8px;
+  font-size: 13px;
+}

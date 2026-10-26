@@ -1438,3 +1438,144 @@ a.when-card:hover {
     padding: 4px 8px;
   }
 }
+
+/* ── home: one thing to do ───────────────────────────── */
+
+/* ── a live interview ────────────────────────────────── */
+.live-modes {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 8px;
+}
+.live-mode {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+  text-align: left;
+  padding: 12px;
+  border-radius: 8px;
+  border: 1px solid var(--line);
+  background: var(--card);
+  color: var(--ink);
+  font: inherit;
+  cursor: pointer;
+}
+.live-mode > svg {
+  margin-top: 1px;
+  flex: none;
+}
+.live-mode[aria-checked='true'],
+.live-mode[data-on='true'] {
+  border: 1.5px solid var(--sage);
+  background: var(--sage-tint);
+}
+.live-mode input {
+  margin-top: 3px;
+  accent-color: var(--sage);
+}
+.live-who-pick {
+  border: 0;
+  padding: 0;
+  margin: 0;
+  max-width: 640px;
+}
+.live-sample {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.live-clock {
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+  font-size: 15px;
+  min-width: 44px;
+}
+.live-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--muted-2);
+}
+.live-dot-live {
+  background: #d93a2f;
+  animation: live-pulse 1.6s ease-in-out infinite;
+}
+.live-dot-reconnecting {
+  background: var(--wonder-ink);
+}
+@keyframes live-pulse {
+  50% {
+    opacity: 0.35;
+  }
+}
+.live-level {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  height: 16px;
+  --level: 0;
+}
+.live-level span {
+  width: 3px;
+  border-radius: 2px;
+  background: var(--sage);
+  height: calc(3px + 13px * var(--level));
+  transition: height 80ms linear;
+}
+.live-level span:nth-child(2),
+.live-level span:nth-child(4) {
+  height: calc(3px + 9px * var(--level));
+}
+.live-level span:nth-child(1),
+.live-level span:nth-child(5) {
+  height: calc(3px + 5px * var(--level));
+}
+
+.live-transcript {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+.live-turn {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.live-turn p {
+  margin: 0;
+  font-size: 15px;
+  line-height: 1.6;
+}
+.live-who {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 8px;
+  font-size: 13px;
+  font-weight: 600;
+}
+.live-who-sage {
+  color: var(--sage-ink);
+}
+.live-who-family {
+  color: var(--family-ink);
+}
+.live-who-keep {
+  color: var(--keep-ink);
+}
+.live-who-wonder {
+  color: var(--wonder-ink);
+}
+.live-time {
+  font-weight: 400;
+  color: var(--muted-2);
+  font-variant-numeric: tabular-nums;
+}
+.live-partial {
+  color: var(--muted-2);
+}
+@media (prefers-reduced-motion: reduce) {
+  .live-dot-live {
+    animation: none;
+  }
+}

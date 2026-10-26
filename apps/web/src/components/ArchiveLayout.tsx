@@ -12,17 +12,22 @@ const NAV: Array<{ path: string; label: string; icon: IconName; end?: boolean }>
   { path: '/people', label: 'People & places', icon: 'person' },
   { path: '/timeline', label: 'Timeline', icon: 'timeline' },
   { path: '/ask', label: 'Ask', icon: 'search' },
+  { path: '/members', label: 'Members', icon: 'people' },
+  { path: '/settings', label: 'Settings', icon: 'gear' },
 ];
 
 /** Every page inside one archive: the sidebar, and the page itself beside it. */
 export function ArchiveLayout({
   title,
   wide = false,
+  focus = false,
   children,
 }: {
   /** the browser tab's title, before the archive's name */
   title: string;
   wide?: boolean;
+  /** during an interview: the sidebar slides away so nothing pulls you off the page */
+  focus?: boolean;
   children: ReactNode;
 }) {
   const archive = useArchive();
@@ -41,24 +46,24 @@ export function ArchiveLayout({
   }, [archive.id]);
 
   return (
-    <div className="app">
-      <title>{`${title} · ${archive.subjectName} · Varve`}</title>
-      <aside aria-label="Sidebar" className="sidebar">
+    <div className={focus ? 'app app-focus' : 'app'}>
+      <title>{`${title} · ${archive.subjectName} · Firepit`}</title>
+      <aside aria-label="Sidebar" className="sidebar" inert={focus}>
         <div style={{ padding: '0 5px', minHeight: 32, display: 'flex', alignItems: 'center' }}>
           <Brand small />
         </div>
-        <Link to="/" className="switcher" aria-label={`${archive.subjectName}. Switch archive`}>
+        <Link to="/" className="switcher" aria-label={`${archive.subjectName}. Switch project`}>
           <Avatar name={archive.subjectName} size={24} />
           <span className="stack" style={{ lineHeight: 1.25, flex: 1, minWidth: 0 }}>
             <span style={{ fontWeight: 600, fontSize: 13 }}>{archive.subjectName}</span>
             <span className="muted" style={{ fontSize: 13 }}>
-              Switch archive
+              Switch project
             </span>
           </span>
           <Icon name="updown" size={16} />
         </Link>
 
-        <nav aria-label="Archive" className="side-nav">
+        <nav aria-label="Project" className="side-nav">
           {archive.writer && (
             <NavLink to={inArchive(archive.id, '/interviews/new')} data-testid="nav-import">
               <span

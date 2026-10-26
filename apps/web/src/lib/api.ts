@@ -12,7 +12,12 @@ export class ApiError extends Error {
 }
 
 /** Same-origin /v1 (the Vite proxy); the Bearer token is read from the live session at call time. */
-async function apiFetch<T>(method: string, path: string, body?: unknown): Promise<T> {
+async function apiFetch<T>(
+  method: string,
+  path: string,
+  body?: unknown,
+  signal?: AbortSignal,
+): Promise<T> {
   // demo mode: answered in the browser from the sample archive (lib/demo-api.ts)
   if (SKIP_LOGIN) {
     const { demoFetch, DemoError } = await import('./demo-api');
@@ -32,6 +37,7 @@ async function apiFetch<T>(method: string, path: string, body?: unknown): Promis
       ...(body !== undefined ? { 'content-type': 'application/json' } : {}),
     },
     ...(body !== undefined ? { body: JSON.stringify(body) } : {}),
+    signal,
   });
   if (!res.ok) {
     const payload = (await res.json().catch(() => null)) as { code?: unknown } | null;
@@ -40,9 +46,15 @@ async function apiFetch<T>(method: string, path: string, body?: unknown): Promis
   return (await res.json()) as T;
 }
 
+/** personal: about one person (subjectName is them); family: about everyone in it (the family's name) */
+export type ProjectKind = 'personal' | 'family';
+
 export interface ArchiveSummary {
   id: string;
   subjectName: string;
+  kind: ProjectKind;
+  /** ISO country code: whose privacy law the project follows; set once */
+  jurisdiction: string;
   role: string;
 }
 
@@ -82,11 +94,105 @@ export interface NoteFields {
 
 export const listArchives = () => apiFetch<ArchiveSummary[]>('GET', '/archives');
 
-export const provisionArchive = (subjectName: string, jurisdiction: string) =>
+export const provisionArchive = (subjectName: string, jurisdiction: string, kind: ProjectKind) =>
   apiFetch<{ tenantId: string; archiveId: string }>('POST', '/provision', {
     subjectName,
     jurisdiction,
+    kind,
   });
+
+/* ── who is in a project, and inviting people (server/api/src/invites.ts) ── */
+
+export type InviteRole = 'steward' | 'contributor' | 'viewer';
+
+export interface Member {
+  userId: string;
+  name: string;
+  role: string;
+  joinedAt: string;
+  you: boolean;
+}
+
+/** an invitation waiting for an answer, as those who look after the project see it */
+export interface Invite {
+  id: string;
+  role: InviteRole;
+  createdAt: string;
+  expiresAt: string;
+  invitedBy?: string;
+  /** their name, or the email it was sent to; an account's email comes back mostly hidden */
+  inviteeName: string;
+  inviteeEmail: string;
+  /** false: sent to an email with no account yet, waiting for them to sign in */
+  hasAccount: boolean;
+}
+
+/** someone found by searching, to invite */
+export interface PersonFound {
+  userId: string;
+  name: string;
+  /** mostly hidden (the•••@gmail.com), unless the whole address was typed */
+  email: string;
+  member: boolean;
+  invited: boolean;
+}
+
+/** an invitation to this person, from their projects page */
+export interface MyInvite {
+  id: string;
+  role: InviteRole;
+  createdAt: string;
+  projectName: string;
+  kind: ProjectKind;
+  invitedBy: string;
+}
+
+export const listMembers = (archive: string) =>
+  apiFetch<Member[]>('GET', `/archives/${archive}/members`);
+export const removeMember = (archive: string, userId: string) =>
+  apiFetch<{ removed: true }>('DELETE', `/archives/${archive}/members/${userId}`);
+/** the owner changes what someone can do (never to or from owner) */
+export const setMemberRole = (archive: string, userId: string, role: InviteRole) =>
+  apiFetch<{ userId: string; role: InviteRole }>(
+    'PATCH',
+    `/archives/${archive}/members/${userId}`,
+    { role },
+  );
+/** rename (owner, steward), or grow a personal project into a family one (owner) */
+export const updateProject = (archive: string, change: { subjectName?: string; kind?: 'family' }) =>
+  apiFetch<ArchiveSummary>('PATCH', `/archives/${archive}`, change);
+/** the owner deletes it all; `confirm` is the project's name, typed out */
+export const deleteProject = (archive: string, confirm: string) =>
+  apiFetch<{ deleted: true }>('DELETE', `/archives/${archive}`, { confirm });
+export const listInvites = (archive: string) =>
+  apiFetch<Invite[]>('GET', `/archives/${archive}/invites`);
+/** by name or the start of an email; three letters at least. Only for owners and stewards. */
+export const searchPeople = (archive: string, q: string, signal?: AbortSignal) =>
+  apiFetch<PersonFound[]>(
+    'GET',
+    `/archives/${archive}/people-search?q=${encodeURIComponent(q)}`,
+    undefined,
+    signal,
+  );
+/** someone found by search, or an email address (which may not have an account yet) */
+export const createInvite = (
+  archive: string,
+  role: InviteRole,
+  who: { userId: string } | { email: string },
+) =>
+  apiFetch<{ id: string; role: InviteRole; hasAccount: boolean }>(
+    'POST',
+    `/archives/${archive}/invites`,
+    { role, ...who },
+  );
+export const revokeInvite = (archive: string, inviteId: string) =>
+  apiFetch<{ revoked: true }>('DELETE', `/archives/${archive}/invites/${inviteId}`);
+export const myInvites = () => apiFetch<MyInvite[]>('GET', '/invites');
+export const answerInvite = (inviteId: string, answer: 'accept' | 'decline') =>
+  apiFetch<{ archiveId?: string; role?: string; declined?: true }>(
+    'POST',
+    `/invites/${inviteId}/${answer}`,
+  );
 
 export const listNotes = (archive: string) =>
   apiFetch<NoteSummary[]>('GET', `/archives/${archive}/notes`);
@@ -200,6 +306,37 @@ export interface ImportRequest {
   confirm?: boolean;
   force?: boolean;
 }
+
+/** A one-minute Deepgram token for one live recording (the key itself stays on the server). */
+export const transcriptionToken = (archive: string) =>
+  apiFetch<{ token: string; expiresIn: number }>(
+    'POST',
+    `/archives/${archive}/transcription-token`,
+  );
+
+/** One move for the interviewer to make next (server/api/src/interview-coach.ts). */
+export interface CoachSuggestion {
+  move: 'wait' | 'follow_up' | 'change_topic' | 'break' | 'close';
+  kind: 'detail' | 'meaning' | 'restate' | 'who_when' | 'reflect' | null;
+  question: string;
+  reason: string;
+  threads: string[];
+  topic: string | null;
+}
+
+export interface CoachRequest {
+  narrator: string;
+  interviewer: string | null;
+  topics: string[];
+  minutes: number;
+  transcript: Array<{ who: string; text: string }>;
+  threads: string[];
+  asked: string[];
+  want?: Exclude<CoachSuggestion['move'], 'wait'> | null;
+}
+
+export const coachSuggest = (archive: string, req: CoachRequest, signal?: AbortSignal) =>
+  apiFetch<CoachSuggestion>('POST', `/archives/${archive}/interview/suggest`, req, signal);
 
 /** Always a preview, always a job: the person reads every memory before anything is saved. */
 export const startImport = (archive: string, req: ImportRequest) =>

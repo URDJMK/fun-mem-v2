@@ -8,8 +8,8 @@
 export const SKIP_LOGIN =
   import.meta.env.DEV && (import.meta.env.VITE_SKIP_LOGIN as string | undefined) !== 'false';
 
-const KEY = 'varve-demo-signed-in';
-const EVENT = 'varve-demo-session';
+const KEY = 'firepit-demo-signed-in';
+const EVENT = 'firepit-demo-session';
 
 export const DEMO_NAME = 'Theo Marsh';
 

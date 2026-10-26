@@ -25,6 +25,8 @@ import { NotePage } from './pages/NotePage';
 import { People } from './pages/People';
 import { Timeline } from './pages/Timeline';
 import { Ask } from './pages/Ask';
+import { Members } from './pages/Members';
+import { ProjectSettings } from './pages/ProjectSettings';
 
 function useSignedIn(): { loading: boolean; signedIn: boolean } {
   const [state, setState] = useState({ loading: true, signedIn: false });
@@ -115,6 +117,10 @@ export function App() {
               <Route index element={<Home />} />
               <Route path="interviews" element={<Interviews />} />
               <Route path="interviews/new" element={<ImportInterview />} />
+              <Route
+                path="interviews/live"
+                element={<Navigate to=".." relative="path" replace />}
+              />
               <Route path="stories" element={<Stories />} />
               <Route path="stories/new" element={<NewNote />} />
               <Route path="stories/:noteId" element={<StoryRoute />} />
@@ -122,6 +128,8 @@ export function App() {
               <Route path="people/:noteId" element={<PeopleRoute />} />
               <Route path="timeline" element={<Timeline />} />
               <Route path="ask" element={<Ask />} />
+              <Route path="members" element={<Members />} />
+              <Route path="settings" element={<ProjectSettings />} />
             </Route>
           </Route>
           <Route path="*" element={<Navigate to="/" replace />} />

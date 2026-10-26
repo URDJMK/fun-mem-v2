@@ -32,7 +32,7 @@ export function Interviews() {
     const name = run.source ? `“${run.source}”` : 'this interview';
     if (
       !window.confirm(
-        `Take ${name} back out of the archive? Its memories are erased, except any someone has worked on since.`,
+        `Take ${name} back out of the project? Its memories are erased, except any someone has worked on since.`,
       )
     )
       return;
@@ -61,9 +61,7 @@ export function Interviews() {
       <div className="spread" style={{ alignItems: 'flex-end' }}>
         <div className="stack" style={{ gap: 3 }}>
           <h1 className="page-title">Interviews</h1>
-          <span className="muted">
-            Every conversation brought into {archive.subjectName}’s archive
-          </span>
+          <span className="muted">Every conversation brought into {archive.subjectName}</span>
         </div>
         {archive.writer && (
           <Link to={inArchive(archive.id, '/interviews/new')} className="btn btn-primary">
@@ -92,8 +90,9 @@ export function Interviews() {
             No interviews yet
           </span>
           <span>
-            Record a conversation with {archive.subjectName}, make a transcript of it, and bring it
-            in here. You’ll read every memory before it’s kept.
+            Record a conversation with{' '}
+            {archive.kind === 'family' ? 'someone in the family' : archive.subjectName}, make a
+            transcript of it, and bring it in here. You’ll read every memory before it’s kept.
           </span>
         </div>
       ) : (
@@ -125,7 +124,7 @@ export function Interviews() {
                   </span>
                 ) : (
                   <span className="row">
-                    <span className="pill pill-sage">In the archive</span>
+                    <span className="pill pill-sage">In the project</span>
                     {archive.writer && (r.mine || mayUndoAny) && (
                       <button
                         type="button"
