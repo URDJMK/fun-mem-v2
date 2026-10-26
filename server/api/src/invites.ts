@@ -14,6 +14,7 @@
  */
 import type { App, AppDeps } from './app';
 import { memberRole, UUID_RE } from './membership';
+import { onLostConnection } from './notes';
 
 export const INVITABLE = ['steward', 'contributor', 'viewer'] as const;
 export type InviteRole = (typeof INVITABLE)[number];
@@ -56,6 +57,19 @@ const likeEscape = (s: string) => s.replace(/[\\%_]/g, (m) => `\\${m}`);
 const nameSql = (u: string) =>
   `coalesce(nullif(${u}.raw_user_meta_data->>'full_name', ''), nullif(${u}.raw_user_meta_data->>'name', ''), ${u}.email)`;
 const NAME_SQL = nameSql('u');
+
+/**
+ * `user` holds an address `email` that Google has verified. The app signs in with Google only,
+ * and trusts an email address on nothing less: Supabase's own email sign-up (on unless it is
+ * turned off) lets anyone open an account under any address, and marks it confirmed when
+ * confirmations are off. Such an account is never handed an invitation sent to that address,
+ * and is never offered to an inviter as the person behind it.
+ */
+const verified = (user: string, email: string) =>
+  `exists (select 1 from auth.identities gi
+            where gi.user_id = ${user} and gi.provider = 'google'
+              and lower(gi.identity_data->>'email') = ${email}
+              and gi.identity_data->>'email_verified' = 'true')`;
 
 export function registerInviteRoutes(app: App, deps: AppDeps): void {
   const notFound = { error: 'not found' };
@@ -154,11 +168,14 @@ export function registerInviteRoutes(app: App, deps: AppDeps): void {
               exists (select 1 from public.memberships m
                        where m.archive_id = $2 and m.user_id = u.id) as member,
               exists (select 1 from public.invites i
-                       where i.archive_id = $2 and i.invitee_id = u.id
+                       where i.archive_id = $2
+                         and (i.invitee_id = u.id
+                              or (i.invitee_id is null and i.invitee_email = lower(u.email)))
                          and i.answered_at is null and i.revoked_at is null
                          and i.expires_at > now()) as invited
          from auth.users u
         where u.id <> $1
+          and ${verified('u.id', 'lower(u.email)')}
           and (lower(u.email) like $3 || '%'
                or lower(${NAME_SQL}) like $3 || '%'
                or lower(${NAME_SQL}) like '% ' || $3 || '%')
@@ -213,7 +230,10 @@ export function registerInviteRoutes(app: App, deps: AppDeps): void {
       inviteeId = u.rows[0].id as string;
     } else if (typeof body.email === 'string' && EMAIL_RE.test(body.email.trim())) {
       const email = body.email.trim().toLowerCase();
-      const u = await deps.pool.query(`select id from auth.users where lower(email) = $1`, [email]);
+      const u = await deps.pool.query(
+        `select u.id from auth.users u where lower(u.email) = $1 and ${verified('u.id', '$1')}`,
+        [email],
+      );
       if (u.rowCount) inviteeId = u.rows[0].id as string;
       else inviteeEmail = email;
     } else {
@@ -310,8 +330,7 @@ export function registerInviteRoutes(app: App, deps: AppDeps): void {
   /* ── invites, for the person invited ─────────────────── */
   /** this person's open invitations: to their account, or to its email from before it existed */
   const MINE = `(i.invitee_id = $1
-      or (i.invitee_id is null
-          and i.invitee_email = (select lower(email) from auth.users where id = $1)))
+      or (i.invitee_id is null and ${verified('$1', 'i.invitee_email')}))
     and i.answered_at is null and i.revoked_at is null and i.expires_at > now()`;
 
   app.get('/v1/invites', async (c) => {
@@ -335,6 +354,7 @@ export function registerInviteRoutes(app: App, deps: AppDeps): void {
       return c.json(notFound, 404);
     const userId = c.get('userId');
     const client = await deps.pool.connect();
+    const unguard = onLostConnection(client);
     try {
       await client.query('begin');
       const r = await client.query(
@@ -373,6 +393,13 @@ export function registerInviteRoutes(app: App, deps: AppDeps): void {
           [i.archiveId, userId, i.role],
         );
       }
+      // they are in: any other open invitation of theirs to this project (one to the account,
+      // one to the address) is withdrawn, so a second one cannot be accepted later instead
+      await client.query(
+        `update public.invites i set revoked_at = now()
+          where i.archive_id = $2 and i.id <> $3 and ${MINE}`,
+        [userId, i.archiveId, i.id],
+      );
       await client.query('commit');
       return c.json({
         archiveId: i.archiveId,
@@ -382,6 +409,7 @@ export function registerInviteRoutes(app: App, deps: AppDeps): void {
       await client.query('rollback').catch(() => undefined);
       throw e;
     } finally {
+      unguard();
       client.release();
     }
   });

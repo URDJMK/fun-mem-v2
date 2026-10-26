@@ -13,6 +13,7 @@
  */
 import type { App, AppDeps } from './app';
 import { memberRole } from './membership';
+import { onLostConnection } from './notes';
 
 const NAME_MAX = 120;
 
@@ -68,6 +69,8 @@ export function registerProjectSettingsRoutes(app: App, deps: AppDeps): void {
     const body = (await c.req.json().catch(() => ({}))) as { confirm?: unknown };
 
     const client = await deps.pool.connect();
+    // a connection that dies mid-delete must cost this request, not the server (notes.ts)
+    const unguard = onLostConnection(client);
     try {
       await client.query('begin');
       const a = await client.query(
@@ -89,6 +92,9 @@ export function registerProjectSettingsRoutes(app: App, deps: AppDeps): void {
       // the revision log is append-only except on erasure's own path (FR-143), which this is
       await client.query(`select set_config('funmem.erasure', 'on', true)`);
       await client.query(`delete from public.archives where id = $1`, [archiveId]);
+      // import jobs hold the words of previews nobody saved; they have no foreign key (see their
+      // migration), so they go here. A job still running then finds nothing to write to.
+      await client.query(`delete from public.ingest_jobs where archive_id = $1`, [archiveId]);
       // each project is provisioned with a tenant of its own; take it too once it holds nothing
       await client.query(
         `delete from public.tenants t where t.id = $1
@@ -101,6 +107,7 @@ export function registerProjectSettingsRoutes(app: App, deps: AppDeps): void {
       await client.query('rollback').catch(() => undefined);
       throw e;
     } finally {
+      unguard();
       client.release();
     }
   });

@@ -130,6 +130,17 @@ describe('deleting a project', () => {
       body: 'Summers at the lake.',
       occurred: null,
     });
+    // an import read but not saved: its preview (the family's words) waits in an import job
+    const preview = await ctx.api(owner.token, 'POST', `/v1/archives/${archive}/ingest`, {
+      transcript: {
+        interviewee: 'A',
+        segments: [
+          { start: 0, end: 9, speaker: 'Q', text: 'What do you remember about the lake?' },
+          { start: 10, end: 19, speaker: 'A', text: 'We rowed out to the island every morning.' },
+        ],
+      },
+    });
+    expect(preview.status).toBe(200);
 
     expect((await ctx.api(other.token, 'DELETE', `/v1/archives/${archive}`)).status).toBe(403);
     const wrong = await ctx.api(owner.token, 'DELETE', `/v1/archives/${archive}`, {
@@ -151,6 +162,7 @@ describe('deleting a project', () => {
       ['memberships', 'archive_id', archive],
       ['notes', 'archive_id', archive],
       ['invites', 'archive_id', archive],
+      ['ingest_jobs', 'archive_id', archive],
       ['tenants', 'id', tenant],
     ] as const) {
       const left = await ctx.pool.query(`select 1 from public.${table} where ${col} = $1`, [id]);
