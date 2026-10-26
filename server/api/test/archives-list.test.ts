@@ -24,9 +24,18 @@ describe('GET /v1/archives', () => {
     const mine = (await (await ctx.api(owner.token, 'GET', '/v1/archives')).json()) as Array<{
       id: string;
       subjectName: string;
+      kind: string;
       role: string;
     }>;
-    expect(mine).toEqual([{ id: archive, subjectName: `Mine ${RUN}`, role: 'owner' }]);
+    expect(mine).toEqual([
+      {
+        id: archive,
+        subjectName: `Mine ${RUN}`,
+        kind: 'personal',
+        jurisdiction: 'US',
+        role: 'owner',
+      },
+    ]);
   });
 
   it('rejects an unauthenticated caller', async () => {

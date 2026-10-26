@@ -1,3 +1,4 @@
+import { countryCode } from '@funmem/core';
 import type { Pool } from 'pg';
 
 export interface ProvisionInput {
@@ -6,6 +7,8 @@ export interface ProvisionInput {
   subjectName: string;
   /** FR-128: no default; the caller must supply it. */
   jurisdiction: string;
+  /** personal (one person; the default) or family (the subject name is the family's name) */
+  kind?: 'personal' | 'family';
   tenantName?: string;
 }
 
@@ -30,9 +33,20 @@ export class ProvisionError extends Error {
  */
 export async function provisionSignup(pool: Pool, input: ProvisionInput): Promise<Provisioned> {
   const subjectName = input.subjectName?.trim();
-  const jurisdiction = input.jurisdiction?.trim();
-  if (!subjectName || !jurisdiction) {
+  if (!subjectName || !input.jurisdiction?.trim()) {
     throw new ProvisionError('subjectName and jurisdiction are required', 400);
+  }
+  const kind = input.kind ?? 'personal';
+  if (kind !== 'personal' && kind !== 'family') {
+    throw new ProvisionError('kind must be personal or family', 400);
+  }
+  // only a real country, as its ISO code: free text ("USA", "my house") is refused, not stored
+  const jurisdiction = countryCode(input.jurisdiction);
+  if (!jurisdiction) {
+    throw new ProvisionError(
+      'jurisdiction must be a two-letter ISO country code, like US or GB',
+      400,
+    );
   }
   const client = await pool.connect();
   try {
@@ -43,9 +57,9 @@ export async function provisionSignup(pool: Pool, input: ProvisionInput): Promis
     );
     const tenantId: string = tenant.rows[0].id;
     const archive = await client.query(
-      `insert into public.archives (tenant_id, subject_name, jurisdiction)
-       values ($1, $2, $3) returning id`,
-      [tenantId, subjectName, jurisdiction],
+      `insert into public.archives (tenant_id, subject_name, jurisdiction, kind)
+       values ($1, $2, $3, $4) returning id`,
+      [tenantId, subjectName, jurisdiction, kind],
     );
     const archiveId: string = archive.rows[0].id;
     await client.query(
