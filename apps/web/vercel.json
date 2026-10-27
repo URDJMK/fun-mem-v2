@@ -7,7 +7,7 @@
   "rewrites": [
     {
       "source": "/v1/:path*",
-      "destination": "https://funmem-api-origin-not-set.invalid/v1/:path*"
+      "destination": "https://funmem-api.jongmin2684.workers.dev/v1/:path*"
     },
     { "source": "/(.*)", "destination": "/index.html" }
   ]

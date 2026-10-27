@@ -16,3 +16,5 @@ supabase/.branches/
 .vercel/
 .wrangler/
 .dev.vars
+.vercel
+.env*

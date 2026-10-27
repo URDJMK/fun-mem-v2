@@ -1,26 +1,25 @@
 import { useState } from 'react';
-import { useNavigate } from 'react-router';
 import type { ImportRequest } from '../lib/api';
-import { inArchive } from '../lib/archive';
 import { clock, speakerLabels, tellerVoice, turnsOf, type Draft } from '../lib/interview';
 import { Transcript } from './Transcript';
 
 /**
  * After the interview: confirm whose words are the memories (already known when the voices were
  * introduced), name it, and hand it to the import, where every memory is read before it is kept.
+ * The import itself runs right here on the home page (onSubmit), not on a separate "add a
+ * transcript" page — that one is for a transcript that wasn't made here.
  */
 export function InterviewReview({
-  archiveId,
   name,
   draft,
   onDiscard,
+  onSubmit,
 }: {
-  archiveId: string;
   name: string;
   draft: Draft;
   onDiscard: () => void;
+  onSubmit: (request: ImportRequest) => void;
 }) {
-  const navigate = useNavigate();
   const labels = speakerLabels(draft.segments, draft.mode, draft.setup, name);
   const speakers = [...new Set(draft.segments.map((s) => s.speaker))];
   const said = (sp: string) =>
@@ -63,9 +62,7 @@ export function InterviewReview({
       })),
     });
     const request: ImportRequest = { transcript, teller: name, source: source.trim() || undefined };
-    // The words are handed to the import, but the draft stays until they are saved there
-    // (pages/ImportInterview.tsx): an import that fails, or a page left mid-way, loses nothing.
-    void navigate(inArchive(archiveId, '/interviews/new'), { state: { request, fromLive: true } });
+    onSubmit(request);
   }
 
   function download() {

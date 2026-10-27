@@ -33,6 +33,8 @@ export interface Draft {
   startedAt: string;
   segments: Segment[];
   setup?: Setup;
+  /** set once "Turn into memories" has started this job; cleared only once it is saved */
+  submittedJobId?: string;
 }
 
 const draftKey = (archiveId: string) => `firepit-live-draft:${archiveId}`;
