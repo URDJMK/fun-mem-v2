@@ -36,7 +36,8 @@ copy where; no value in this file is real.
    which lists only asymmetric keys: a project still on the legacy shared secret answers every API
    call `401`. If it says "legacy JWT secret", create a new asymmetric signing key and rotate to it.
 6. **Authentication → Providers → Google**: turn it on with the OAuth client from Google Cloud
-   (below). The app signs in with Google only, so turn **Email** sign-ups off: an email account
+   (below). The app also offers email and password (pages/SignIn.tsx); if you enable
+   **Authentication → Providers → Email**, turn **Confirm email** on with it — an email account
    nobody confirmed should never exist.
 7. **Authentication → URL Configuration** (once section 3 has given you the Vercel domain): **Site URL**
    `https://<your-vercel-domain>`; **Redirect URLs** the same, plus `https://<your-vercel-domain>/**`.

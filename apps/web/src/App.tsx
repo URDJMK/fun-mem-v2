@@ -14,6 +14,7 @@ import { ArchiveRoute } from './lib/archive';
 import { ErrorBoundary } from './components/ErrorBoundary';
 import { Landing } from './pages/Landing';
 import { SignIn } from './pages/SignIn';
+import { ResetPassword } from './pages/ResetPassword';
 import { Archives } from './pages/Archives';
 import { NewArchive } from './pages/NewArchive';
 import { Home } from './pages/Home';
@@ -109,6 +110,9 @@ export function App() {
     <BrowserRouter>
       <ErrorBoundary>
         <Routes>
+          {/* outside Shell: the recovery link's token becomes a session before this renders
+              (detectSessionInUrl), so it must not be caught by the signed-in/out redirect above */}
+          <Route path="reset-password" element={<ResetPassword />} />
           <Route element={<Shell />}>
             <Route index element={<Archives />} />
             <Route path="sign-in" element={null} />
