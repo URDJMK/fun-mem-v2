@@ -242,7 +242,8 @@ export function TopBar({ left }: { left?: ReactNode }) {
 /** Loading, failure and nothing-there, said the same way everywhere. */
 export function Loading({ what }: { what: string }) {
   return (
-    <p className="muted" role="status">
+    <p className="muted loading" role="status">
+      <span className="spinner" aria-hidden="true" />
       {what}
     </p>
   );

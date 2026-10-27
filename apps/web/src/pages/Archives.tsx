@@ -3,7 +3,7 @@ import { Link, Navigate, useNavigate } from 'react-router';
 import { answerInvite, myInvites, type MyInvite } from '../lib/api';
 import { inArchive, useArchives } from '../lib/archive';
 import { storeArchiveId } from '../lib/supabase';
-import { Avatar, Failed, Icon, TopBar, useAccountName } from '../components/ui';
+import { Avatar, Failed, Icon, Loading, TopBar, useAccountName } from '../components/ui';
 
 function greeting(now = new Date()): string {
   const h = now.getHours();
@@ -64,7 +64,16 @@ export function Archives() {
     }
   }
 
-  if (archives === null || invites === null) return null;
+  if (archives === null || invites === null)
+    return (
+      <>
+        <title>Your projects · Firepit</title>
+        <TopBar />
+        <main className="page">
+          <Loading what="Opening your projects…" />
+        </main>
+      </>
+    );
   // someone who belongs to no project and has no invitation is asked whose memories to gather
   if (archives !== 'failed' && archives.length === 0 && invites.length === 0)
     return <Navigate to="/new-archive" replace />;

@@ -3,7 +3,7 @@ import { Link } from 'react-router';
 import { ask, listNotes, type AskAnswer, type NoteSummary } from '../lib/api';
 import { noteHref, useArchive } from '../lib/archive';
 import { ArchiveLayout } from '../components/ArchiveLayout';
-import { Failed, Icon } from '../components/ui';
+import { Failed, Icon, Loading } from '../components/ui';
 
 interface Turn {
   question: string;
@@ -129,9 +129,7 @@ export function Ask() {
         >
           <p className="small muted">{t.question}</p>
           {t.answer === 'pending' ? (
-            <p className="muted" role="status">
-              Reading the records…
-            </p>
+            <Loading what="Reading the records…" />
           ) : t.answer === 'failed' ? (
             <Failed>Could not ask just now. Wait a moment and try again.</Failed>
           ) : (
