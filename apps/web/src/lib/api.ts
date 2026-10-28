@@ -289,9 +289,18 @@ export interface ImportMemory {
   body: string;
   /** sentences for the reviewer, shown before saving */
   notes: string[];
-  method: 'ai-grounded' | 'verbatim';
+  /** 'story': written from the interview, every sentence cited and checked (stories mode) */
+  method: 'ai-grounded' | 'verbatim' | 'story';
   speaker: string;
   speakerName?: string;
+  /** a story: when it ended, who told it, and where each sentence comes from */
+  until?: string | null;
+  tellers?: string[];
+  sources?: StorySource[];
+  /** a story: sentences more certain than the speaker was */
+  flags?: string[];
+  startSec?: number | null;
+  endSec?: number | null;
   conflicts?: Array<{
     claim: string;
     existing: string;
@@ -299,9 +308,22 @@ export interface ImportMemory {
   }>;
 }
 
+/** One sentence of a story, and the interview lines it comes from. */
+export interface StorySource {
+  sentence: string;
+  from: number;
+  to: number;
+  start: number | null;
+  end: number | null;
+  text: string;
+}
+
 export interface ImportOutcome {
   status: 'previewed' | 'saved' | 'needs_confirmation' | 'duplicate';
   memories: ImportMemory[];
+  /** the stories could not be written yet; the interview keeps its transcript */
+  pending?: { reason: string };
+  interviewId?: string;
   interviewees: string[];
   speakers: Array<{ id: string; turns: number; role: 'interviewee' | 'interviewer' }>;
   saved?: Array<{ id: string; title: string; index: number }>;
@@ -390,6 +412,28 @@ export interface ImportRun {
   notes: number;
   undone: boolean;
 }
+
+/** An interview kept with its transcript (stories mode). */
+export interface InterviewSummary {
+  id: string;
+  name: string;
+  recordedAt: string;
+  status: 'pending' | 'written';
+  mine: boolean;
+  stories: number;
+}
+
+export interface InterviewDetail extends InterviewSummary {
+  transcript: string;
+  options: { teller?: string; interviewee?: string; interviewees?: string[] };
+  turns: Array<{ speaker: string; start: number | null; text: string }>;
+}
+
+export const listInterviews = (archive: string) =>
+  apiFetch<InterviewSummary[]>('GET', `/archives/${archive}/interviews`);
+
+export const getInterview = (archive: string, id: string) =>
+  apiFetch<InterviewDetail>('GET', `/archives/${archive}/interviews/${id}`);
 
 export const listImports = (archive: string) =>
   apiFetch<ImportRun[]>('GET', `/archives/${archive}/ingest-runs`);

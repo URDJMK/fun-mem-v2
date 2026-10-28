@@ -37,7 +37,7 @@ type Phase =
       flip: Flip.FlipState | null;
     }
   | { kind: 'review'; narrator: string; draft: Draft }
-  /** "Turn into memories" is running right here: leaving and coming back resumes the same job. */
+  /** "Write the stories" is running right here: leaving and coming back resumes the same job. */
   | { kind: 'processing'; narrator: string; draft: Draft };
 
 const flipFrom = (el: Element | null) =>
@@ -351,6 +351,7 @@ export function Home() {
                   outcome={runStep.outcome}
                   name={name}
                   onSaved={importRun.saved}
+                  onRetry={importRun.req ? () => void importRun.run(importRun.req!) : undefined}
                 />
               );
             return (

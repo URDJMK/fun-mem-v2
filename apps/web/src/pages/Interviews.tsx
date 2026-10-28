@@ -1,6 +1,13 @@
 import { useCallback, useEffect, useState } from 'react';
-import { Link } from 'react-router';
-import { listImports, undoImport, type ImportRun } from '../lib/api';
+import { Link, useNavigate } from 'react-router';
+import {
+  getInterview,
+  listImports,
+  listInterviews,
+  undoImport,
+  type ImportRun,
+  type InterviewSummary,
+} from '../lib/api';
 import { inArchive, useArchive } from '../lib/archive';
 import { ArchiveLayout } from '../components/ArchiveLayout';
 import { count, Failed, Icon, Loading } from '../components/ui';
@@ -10,7 +17,11 @@ const MON = ['JAN', 'FEB', 'MAR', 'APR', 'MAY', 'JUN', 'JUL', 'AUG', 'SEP', 'OCT
 /** Every interview brought into this archive, newest first, and a way to take one back. */
 export function Interviews() {
   const archive = useArchive();
+  const navigate = useNavigate();
   const [runs, setRuns] = useState<ImportRun[] | null | 'failed'>(null);
+  // interviews whose stories are not written yet: their transcript is kept, waiting
+  const [waiting, setWaiting] = useState<InterviewSummary[]>([]);
+  const [opening, setOpening] = useState<string | null>(null);
   const [undoing, setUndoing] = useState<string | null>(null);
   const [said, setSaid] = useState<{ ok: boolean; text: string } | null>(null);
   // the server decides who may undo whose import; this only hides a button that would be refused
@@ -22,7 +33,33 @@ export function Interviews() {
     } catch {
       setRuns('failed');
     }
+    // the older memory import keeps no interviews: an empty list is normal
+    listInterviews(archive.id)
+      .then((all) => setWaiting(all.filter((i) => i.status === 'pending')))
+      .catch(() => setWaiting([]));
   }, [archive.id]);
+
+  /** write the stories of a waiting interview, from its kept transcript */
+  async function writeStories(i: InterviewSummary) {
+    setOpening(i.id);
+    setSaid(null);
+    try {
+      const it = await getInterview(archive.id, i.id);
+      void navigate(inArchive(archive.id, '/interviews/new'), {
+        state: {
+          request: {
+            transcript: it.transcript,
+            source: it.name,
+            ...(it.options.teller ? { teller: it.options.teller } : {}),
+            ...(it.options.interviewees ? { interviewees: it.options.interviewees } : {}),
+          },
+        },
+      });
+    } catch {
+      setSaid({ ok: false, text: 'Could not open that interview. Try again in a moment.' });
+      setOpening(null);
+    }
+  }
 
   useEffect(() => {
     void load();
@@ -80,6 +117,39 @@ export function Interviews() {
           <Failed>{said.text}</Failed>
         ))}
 
+      {waiting.length > 0 && (
+        <section className="stack" style={{ gap: 6 }} aria-label="Waiting for their stories">
+          <h2 className="label-heading">Waiting for their stories</h2>
+          <ul className="list" data-testid="waiting-interviews">
+            {waiting.map((i) => (
+              <li key={i.id} className="list-row">
+                <span className="stack" style={{ flex: '1 1 260px' }}>
+                  <span className="row-title">{i.name}</span>
+                  <span className="small muted">
+                    {new Date(i.recordedAt).toLocaleDateString(undefined, {
+                      year: 'numeric',
+                      month: 'long',
+                      day: 'numeric',
+                    })}
+                    {' · '}Stories not written yet; the transcript is kept
+                  </span>
+                </span>
+                {archive.writer && (
+                  <button
+                    type="button"
+                    className="btn btn-primary btn-sm"
+                    disabled={opening !== null}
+                    onClick={() => void writeStories(i)}
+                  >
+                    {opening === i.id ? 'Opening…' : 'Write the stories'}
+                  </button>
+                )}
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
+
       {runs === null ? (
         <Loading what="Opening the interviews…" />
       ) : runs === 'failed' ? (
@@ -114,7 +184,7 @@ export function Interviews() {
                       month: 'long',
                       day: 'numeric',
                     })}
-                    {!gone && ` · ${count(r.notes, 'memory', 'memories')}`}
+                    {!gone && ` · ${count(r.notes, 'note', 'notes')}`}
                     {r.mine && ' · brought in by you'}
                   </span>
                 </span>
