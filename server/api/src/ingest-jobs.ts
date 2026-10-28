@@ -25,6 +25,7 @@ import {
   type ImportRecord,
   type MarkerLine,
   type SavedNote,
+  persistGraphRun,
 } from './ingest-save';
 import { displayNameOf } from './conflicts';
 import { onLostConnection } from './notes';
@@ -41,6 +42,7 @@ import { writeStories } from './stories/workflow';
 import { profilesFor } from './stories/profile-store';
 import { ensureGraph, entityLookup, knownFor } from './graph/store';
 import { applyGraphPatch } from './graph/save';
+import { buildGraph } from './graph/build';
 import type { GraphPatch } from './graph/types';
 
 /**
@@ -82,6 +84,8 @@ export interface IngestRequest extends IngestOptions {
   confirm?: boolean;
   /** import it again even though this interview was already imported */
   force?: boolean;
+  /** no transcript: find the graph in the project's saved stories (graph design 4.4) */
+  graph?: boolean;
 }
 
 export type OutcomeStatus = 'previewed' | 'saved' | 'needs_confirmation' | 'duplicate';
@@ -936,6 +940,18 @@ export class IngestJobs {
     };
     const signal = ac.signal;
     try {
+      // the button: the graph from the project's saved stories, for the same review
+      if (req.graph) {
+        await stage('organizing');
+        const result = (await buildGraph(this.deps, job.archiveId, job.userId, {
+          signal,
+          onProgress: (p) => (job.progress = { done: p.done, total: p.total }),
+        })) as IngestOutcome;
+        if (signal.aborted) throw new IngestCancelled();
+        result.status = 'previewed';
+        job.outcome = result;
+        return await this.finish(job, 'succeeded', { timedOut }, true);
+      }
       // 1. read it, and see whether this interview is already in
       let parsed: ParsedTranscript;
       try {
@@ -1090,6 +1106,23 @@ export class IngestJobs {
     }
     let saved: IngestOutcome | null = null;
     try {
+      // the button's run: only the graph, on stories already saved
+      if (held.outcome.memories.length === 0 && held.outcome.graph) {
+        const all = held.outcome.graph;
+        const graph = applyGraphPatch(
+          all,
+          graphPatch,
+          new Set([
+            ...all.entities.flatMap((e) => e.mentions.map((m) => m.story)),
+            ...all.relationships.map((r) => r.story),
+          ]),
+        );
+        if (graph.entities.length === 0)
+          throw new SaveError('nothing is selected to save', 400, { reason: 'nothing_selected' });
+        const { runId } = await persistGraphRun(this.deps, job.archiveId, job.userId, graph);
+        saved = { ...held.outcome, graph, status: 'saved', runId, saved: [] };
+        return saved;
+      }
       const { outcome: edited, wanted, skipped } = applyPatches(held.outcome, patches);
       if (edited.memories.length === 0)
         throw new SaveError('nothing is selected to save', 400, { reason: 'nothing_selected' });

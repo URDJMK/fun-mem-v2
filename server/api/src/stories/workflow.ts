@@ -83,14 +83,16 @@ class BudgetSpent extends Error {}
 const str = (v: unknown): string | null =>
   typeof v === 'string' && v.trim() !== '' ? v.trim() : null;
 
-export async function writeStories(
+/**
+ * An interview's numbered lines, its tellers decided as the memory import decides them. A
+ * narrator known only as a voice ("SPEAKER_00") is the person the project is about (`subject`).
+ * The button that finds the graph in saved stories reads an interview the same way.
+ */
+export function interviewLines(
   parsed: ParsedTranscript,
   opts: IngestOptions,
-  deps: StoriesDeps,
-): Promise<IngestResult> {
-  if (deps.signal?.aborted) throw new IngestCancelled();
-
-  // 1. prepare: who is telling, as the memory import decides it
+  subject?: string | null,
+) {
   const asked = (Array.isArray(opts.interviewees) ? opts.interviewees : []).filter(
     (x): x is string => typeof x === 'string' && x.trim() !== '',
   );
@@ -104,13 +106,24 @@ export async function writeStories(
   const { turns, roles, warnings } = applyRoles(parsed, named);
   const names = namesFor(opts, roles.interviewees);
   const lines = linesOf(turns, roles.interviewees, names);
-  // a narrator known only as a voice ("SPEAKER_00") is the person the project is about
-  const subjectName = str(deps.subject);
+  const subjectName = str(subject);
   if (subjectName) {
     for (const l of lines) {
       if (l.teller && l.name === l.speaker && !isPersonLabel(l.speaker)) l.name = subjectName;
     }
   }
+  return { turns, roles, warnings, names, lines };
+}
+
+export async function writeStories(
+  parsed: ParsedTranscript,
+  opts: IngestOptions,
+  deps: StoriesDeps,
+): Promise<IngestResult> {
+  if (deps.signal?.aborted) throw new IngestCancelled();
+
+  // 1. prepare: who is telling, as the memory import decides it
+  const { turns, roles, warnings, names, lines } = interviewLines(parsed, opts, deps.subject);
   const anchors = new Map(anchorsFor(parsed.turns, turns));
   const tellerLines = lines.filter((l) => l.teller && /[\p{L}\p{N}]/u.test(l.text));
   const subject =

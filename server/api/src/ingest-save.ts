@@ -1,4 +1,5 @@
 import { saveGraph, undoGraph } from './graph/save';
+import type { GraphProposal } from './graph/types';
 import { randomUUID } from 'node:crypto';
 import type { Pool, PoolClient } from 'pg';
 import { canonicalTitle, extractWikilinks, normalizeTitle } from '@funmem/core';
@@ -20,6 +21,7 @@ import {
 import { STRINGS } from './ingest-lang';
 import { IngestCancelled, type IngestResult, type ProposedMemory } from './ingest-pipeline';
 import { UUID_RE } from './membership';
+import { visibleSql } from './views';
 import {
   ApiError,
   WRITE_ROLES,
@@ -1035,6 +1037,51 @@ export async function persistImport(
   throw new ApiError('could not save the interview; nothing was changed', 409);
 }
 
+/**
+ * The button's run (graph design 4.4): the graph found in saved stories, written as a run of its
+ * own (`kind = 'graph'`, no notes), so it can be undone as one. A story deleted or made private
+ * since the preview takes what it said with it.
+ */
+export async function persistGraphRun(
+  deps: AppDeps,
+  archiveId: string,
+  userId: string,
+  proposal: GraphProposal,
+): Promise<{ runId: string }> {
+  await requireImporter(deps.pool, archiveId, userId);
+  return inTransaction(deps, archiveId, async (client, changeId) => {
+    await requireImporter(client, archiveId, userId, true);
+    const run = await client.query(
+      `insert into public.ingest_runs
+         (archive_id, created_by, source_hash, source_label, change_id, note_count, active, kind)
+       values ($1, $2, null, 'People, places and things', $3, 0, false, 'graph')
+       returning id`,
+      [archiveId, userId, changeId],
+    );
+    const runId = (run.rows[0] as { id: string }).id;
+    const stories = [
+      ...new Set([
+        ...proposal.entities.flatMap((e) => e.mentions.map((m) => m.story)),
+        ...proposal.relationships.map((r) => r.story),
+      ]),
+    ].filter((id) => UUID_RE.test(id));
+    const live = await client.query(
+      `select n.id from public.notes n
+        where n.archive_id = $1 and n.id = any($2::uuid[]) and ${visibleSql('n', '$3')}`,
+      [archiveId, stories, userId],
+    );
+    await saveGraph(client, {
+      archiveId,
+      userId,
+      runId,
+      proposal,
+      storyNote: new Map(live.rows.map((r: { id: string }) => [r.id, r.id])),
+      interviewId: null,
+    });
+    return { runId };
+  });
+}
+
 /* ── undo ────────────────────────────────────────────────────────────── */
 
 /** Why a note of the import was kept rather than erased. */
@@ -1073,7 +1120,7 @@ export async function undoImport(
 ): Promise<(UndoOutcome & { erasedIds: string[] }) | null> {
   return inTransaction(deps, archiveId, async (client, changeId) => {
     const found = await client.query(
-      `select r.change_id, r.created_by, r.created_at, r.undone_at, r.source_hash
+      `select r.change_id, r.created_by, r.created_at, r.undone_at, r.source_hash, r.kind
          from public.ingest_runs r where r.id = $1 and r.archive_id = $2 for update`,
       [runId, archiveId],
     );
@@ -1084,6 +1131,7 @@ export async function undoImport(
           created_at: Date;
           undone_at: Date | null;
           source_hash: string | null;
+          kind: string;
         }
       | undefined;
     if (!run) return null;
@@ -1172,7 +1220,7 @@ export async function undoImport(
     // the interview whose stories these were goes too: the import keeps no words after an undo
     await forgetInterviewOf(client, runId);
     // and the people, places and things only it brought (graph design 5.3)
-    await undoGraph(client, archiveId, runId);
+    await undoGraph(client, archiveId, runId, { everything: run.kind === 'graph' });
     // what is left of the record is content-free: no file name, no hash of the words
     await client.query(
       `update public.ingest_runs

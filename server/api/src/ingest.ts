@@ -281,6 +281,52 @@ export function registerIngestRoutes(app: App, deps: AppDeps): IngestJobs {
     },
   );
 
+  /**
+   * "Find people, places and things" (graph design 4.4): a job with no transcript that finds the
+   * graph in the project's saved stories, for the same review and save as an import.
+   */
+  app.post('/v1/archives/:archiveId/graph/build', async (c) => {
+    const archiveId = idOf(c, 'archiveId');
+    const userId = c.get('userId');
+    const role = await roleIn(archiveId, userId);
+    if (role === null) return c.json(NOT_FOUND, 404);
+    if (!IMPORT_ROLES.includes(role)) {
+      return roleRefused(c, 'only an owner, steward or contributor can find people and places');
+    }
+    const raw = (await c.req.json().catch(() => ({}))) as { async?: unknown } | null;
+    let job;
+    try {
+      job = await jobs.start(
+        archiveId,
+        userId,
+        { transcript: '', graph: true },
+        {
+          wait: raw?.async !== true,
+        },
+      );
+    } catch (e) {
+      if (e instanceof BusyError) {
+        return c.json(
+          { error: e.message, code: 'busy', reason: e.why, jobId: e.jobId, retryAfter: 5 },
+          429,
+          { 'retry-after': '5' },
+        );
+      }
+      throw e;
+    }
+    if (raw?.async === true) return c.json(jobs.view(job), 202);
+    const v = jobs.view(await job.done);
+    if (v.status === 'failed' || v.status === 'cancelled') {
+      const f = v.error!;
+      if (f.code === 'forbidden' && f.reason === 'membership') return c.json(NOT_FOUND, 404);
+      return c.json(
+        { error: f.message, code: f.code, ...(f.reason ? { reason: f.reason } : {}) },
+        statusFor(f),
+      );
+    }
+    return c.json({ ...v.outcome, jobId: v.id });
+  });
+
   /** Following a job also keeps it alive: an open review page polls this. */
   app.get('/v1/archives/:archiveId/ingest/:jobId', async (c) => {
     const archiveId = idOf(c, 'archiveId');
