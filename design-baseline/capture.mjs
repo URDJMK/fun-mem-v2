@@ -82,6 +82,19 @@ for (const [label, width] of Object.entries(widths)) {
       await shoot(page, '09-story', label);
     }
   }
+
+  // the live interview, with no microphone: `?simulate` (lib/live-sim.ts, dev only) speaks a
+  // scripted interview through the recorder's own surface. The coach's model is cut off, so
+  // the question bank stands in and the shot is the same every run with no API call.
+  await ctx.route('**/demo/interview/**', (r) => r.abort());
+  await page.goto(`${base}${archive}?simulate`);
+  await settle(page);
+  await page.getByRole('button', { name: 'Start interview' }).click();
+  await page.waitForTimeout(2000);
+  await shoot(page, '16-interview-setup', label);
+  await page.getByRole('button', { name: 'Skip setup' }).click();
+  await page.waitForTimeout(8000);
+  await shoot(page, '17-interview-live', label);
   await ctx.close();
 }
 await browser.close();

@@ -22,10 +22,17 @@ Files are `<order>-<page>--<desktop|mobile>.png`:
 | 13 | Ask | `/a/:id/ask` |
 | 14 | Members | `/a/:id/members` |
 | 15 | Settings | `/a/:id/settings` |
+| 16 | Live interview, setup ("who's here") | `/a/:id?simulate`, then Start interview |
+| 17 | Live interview, recording | `/a/:id?simulate`, then Skip setup |
 
 Signed-in pages use demo mode's sample archive (Grandma Nell). Demo mode signs in on `/sign-in`,
-so 01 and 02 come from a second dev server with demo mode off. The live interview screen is
-not here: it needs a microphone.
+so 01 and 02 come from a second dev server with demo mode off.
+
+16 and 17 need no microphone: `?simulate` on any page under `vite dev` (`apps/web/src/lib/live-sim.ts`)
+swaps the microphone and Deepgram for a scripted interview, spoken word by word. A production
+build can't turn it on. The capture blocks the coach's model, so 17 shows the question bank's
+suggestions ("AI suggestions unavailable"), the same on every run and with no API call. 16 and
+17 were added 2026-10-28 from `8211089`, with no app changes between them and the rest.
 
 ## Retake them
 
