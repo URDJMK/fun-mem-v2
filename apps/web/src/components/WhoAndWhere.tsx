@@ -377,8 +377,9 @@ export function GraphCanvas({
 const typeLabel = (t: EntityType) =>
   t === 'person' ? 'A person' : t === 'place' ? 'A place' : 'A thing';
 
+/** "Sarah Lee" → "SL"; a name made from a relationship by the relation: "Noah Kim's uncle Jae-won" → "UJ" */
 const initials = (name: string) =>
-  name
+  (/['’]s\s+(.+)$/u.exec(name)?.[1] ?? name)
     .split(/\s+/)
     .filter(Boolean)
     .slice(0, 2)
