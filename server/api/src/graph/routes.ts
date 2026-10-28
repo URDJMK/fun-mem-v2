@@ -1,6 +1,8 @@
 import type { Context } from 'hono';
 import type { App, AppDeps } from '../app';
-import { memberRole, UUID_RE } from '../membership';
+import { memberRole, UUID_RE, WRITE_ROLES } from '../membership';
+import { inTransaction } from '../notes';
+import { changeEntity, EditRefused, mergeEntities, removeEntity, removeRelationship } from './edit';
 import { readProfile } from '../stories/profile';
 import { visibleSql } from '../views';
 import { ensureGraph, entityVisibleSql } from './store';
@@ -38,7 +40,95 @@ async function entityIdOf(
   return (r.rows[0] as { id: string } | undefined)?.id ?? null;
 }
 
+/**
+ * A change by hand (graph design 5.4): for those who can add memories, to an entity they can see.
+ * Refusals are answered with their status and a stable code.
+ */
+async function edit(
+  c: Ctx,
+  deps: AppDeps,
+  run: (
+    client: import('pg').PoolClient,
+    archiveId: string,
+    userId: string,
+    entityId: string | null,
+  ) => Promise<void>,
+  param: 'entityId' | null = 'entityId',
+) {
+  const m = await member(c, deps);
+  if (!m) return c.json(NOT_FOUND, 404);
+  if (!WRITE_ROLES.includes(m.role)) {
+    return c.json(
+      { error: 'only people who can add memories can change this', code: 'forbidden' },
+      403,
+    );
+  }
+  const userId = c.get('userId');
+  const entityId = param
+    ? await entityIdOf(deps, m.archiveId, userId, c.req.param(param) ?? '')
+    : null;
+  if (param && !entityId) return c.json(NOT_FOUND, 404);
+  try {
+    await inTransaction(deps, m.archiveId, (client) => run(client, m.archiveId, userId, entityId));
+  } catch (e) {
+    if (e instanceof EditRefused) {
+      return c.json(
+        { error: e.message, code: e.code, ...(e.entityId ? { entityId: e.entityId } : {}) },
+        e.status,
+      );
+    }
+    throw e;
+  }
+  return c.json({ ok: true });
+}
+
 export function registerGraphRoutes(app: App, deps: AppDeps): void {
+  app.patch('/v1/archives/:archiveId/entities/:entityId', async (c) => {
+    const body = (await c.req.json().catch(() => null)) as {
+      name?: unknown;
+      type?: unknown;
+    } | null;
+    if (!body || typeof body !== 'object')
+      return c.json({ error: 'give { name } or { type }', code: 'bad_request' }, 400);
+    return edit(c, deps, (client, archiveId, userId, id) =>
+      changeEntity(client, archiveId, userId, id!, body),
+    );
+  });
+
+  app.delete('/v1/archives/:archiveId/entities/:entityId', (c) =>
+    edit(c, deps, (client, archiveId, userId, id) => removeEntity(client, archiveId, userId, id!)),
+  );
+
+  app.post('/v1/archives/:archiveId/entities/:entityId/merge', async (c) => {
+    const body = (await c.req.json().catch(() => null)) as { from?: unknown } | null;
+    const fromRaw = typeof body?.from === 'string' ? body.from : '';
+    return edit(c, deps, async (client, archiveId, userId, keep) => {
+      const from = await entityIdOf(deps, archiveId, userId, fromRaw);
+      if (!from) throw new EditRefused('pick an entity to merge', 400, 'bad_request');
+      await mergeEntities(client, archiveId, userId, keep!, from);
+    });
+  });
+
+  app.delete('/v1/archives/:archiveId/relationships/:relationshipId', async (c) => {
+    const relId = (c.req.param('relationshipId') ?? '').toLowerCase();
+    return edit(
+      c,
+      deps,
+      async (client, archiveId, userId) => {
+        if (!UUID_RE.test(relId)) throw new EditRefused('not found', 404, 'not_found');
+        // only one the member can see: its story is visible to them
+        const seen = await client.query(
+          `select 1 from public.graph_relationships r join public.notes s on s.id = r.note_id
+            where r.id = $1 and r.archive_id = $2 and ${visibleSql('s', '$3')}`,
+          [relId, archiveId, userId],
+        );
+        if (!seen.rowCount) throw new EditRefused('not found', 404, 'not_found');
+        await removeRelationship(client, archiveId, userId, relId);
+      },
+      null,
+    );
+  });
+
   app.get('/v1/archives/:archiveId/graph', async (c) => {
     const m = await member(c, deps);
     if (!m) return c.json(NOT_FOUND, 404);
