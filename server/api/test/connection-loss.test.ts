@@ -5,7 +5,7 @@ import { fileURLToPath } from 'node:url';
 import { Pool } from 'pg';
 import { afterAll, describe, expect, it } from 'vitest';
 import { createApp } from '../src/app';
-import { DB_URL, testContext } from './helpers';
+import { DB_URL, NOT_PROTAGONIST, testContext } from './helpers';
 
 /**
  * A database connection that dies (a restart, a failover, `supabase stop/start`) must cost only
@@ -129,9 +129,10 @@ describe('D5 a lost database connection does not take the API down', () => {
         await holder.query('commit');
         holder.release();
         expect(status).toBe(500); // that one request failed...
-        const left = await ctx.pool.query(`select 1 from public.notes where archive_id = $1`, [
-          archive,
-        ]);
+        const left = await ctx.pool.query(
+          `select 1 from public.notes where archive_id = $1 and ${NOT_PROTAGONIST}`,
+          [archive],
+        );
         expect(left.rowCount).toBe(0); // ...and wrote nothing
         expect((await req('GET', '/notes')).status).toBe(200); // the process, and the pool, go on
       } finally {

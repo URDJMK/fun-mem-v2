@@ -118,12 +118,17 @@ async function setup(label: string) {
   const archive = await ctx.provisionArchive(owner, `IP ${label} ${RUN}`);
   const post = (body: object, s: RealSession = owner) =>
     ctx.api(s.token, 'POST', `/v1/archives/${archive}/ingest`, body);
+  // the protagonist's own note is there from the start (graph design 3.5): these count what
+  // imports make
   const noteCount = async () =>
     (
       (
-        await ctx.pool.query(`select count(*)::int as n from public.notes where archive_id = $1`, [
-          archive,
-        ])
+        await ctx.pool.query(
+          `select count(*)::int as n from public.notes
+            where archive_id = $1
+              and id is distinct from (select subject_note_id from public.archives where id = $1)`,
+          [archive],
+        )
       ).rows[0] as { n: number }
     ).n;
   const addMember = async (role: string) => {

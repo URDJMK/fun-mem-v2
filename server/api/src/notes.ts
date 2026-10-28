@@ -14,6 +14,7 @@ import type { PoolClient } from 'pg';
 import type { Context } from 'hono';
 import type { App, AppDeps } from './app';
 import { crossNoteMarker } from './conflicts';
+import { entityForNote } from './graph/note-entity';
 import { isMember, UUID_RE, WRITE_ROLES } from './membership';
 import { visibleSql, visibleNoteSql } from './views';
 import { reindexChunks } from './chunks';
@@ -815,6 +816,7 @@ export async function createNoteCore(
     await reindexLinks(client, archiveId, note.id, body);
     await reindexChunks(client, archiveId, note.id, createRev, body);
     await promoteUnresolved(client, archiveId, note.id, title);
+    await entityForNote(client, { id: note.id, archiveId, title, type, createdBy: userId });
     return note;
   });
   return row;
@@ -922,6 +924,13 @@ export async function createNotesBatch(
       await reindexLinks(client, archiveId, note.id, n.body);
       await reindexChunks(client, archiveId, note.id, createRev, n.body);
       await promoteUnresolved(client, archiveId, note.id, n.title);
+      await entityForNote(client, {
+        id: note.id,
+        archiveId,
+        title: n.title,
+        type: n.type,
+        createdBy: userId,
+      });
       notes.push(note);
     }
     if (hooks.after) await hooks.after(client, { changeId, notes });

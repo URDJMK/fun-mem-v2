@@ -3,7 +3,7 @@ import { createServer, type Server } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { createNimAgentModel, runAgent, type AgentModelConfig } from '../src/agent';
-import { testContext } from './helpers';
+import { NOT_PROTAGONIST, testContext } from './helpers';
 
 const ctx = testContext();
 const RUN = randomUUID().slice(0, 8);
@@ -214,9 +214,10 @@ describe('archive agent (Mastra)', () => {
     expect(r.stop).toBe('done');
     expect(r.actions.filter((a) => a.ok)).toHaveLength(1);
     expect(r.refused).toEqual([]);
-    const n = await ctx.pool.query(`select body from public.notes where archive_id = $1`, [
-      who.archiveId,
-    ]);
+    const n = await ctx.pool.query(
+      `select body from public.notes where archive_id = $1 and ${NOT_PROTAGONIST}`,
+      [who.archiveId],
+    );
     expect(n.rows).toEqual([{ body: 'My father repaired boats.' }]);
   });
 
@@ -242,7 +243,7 @@ describe('archive agent (Mastra)', () => {
     expect(r.actions.filter((a) => a.ok)).toHaveLength(0);
     expect(r.refused).toEqual(['create:castle']);
     const n = await ctx.pool.query(
-      `select count(*)::int as n from public.notes where archive_id = $1`,
+      `select count(*)::int as n from public.notes where archive_id = $1 and ${NOT_PROTAGONIST}`,
       [who.archiveId],
     );
     expect(n.rows[0].n).toBe(0);
@@ -1085,7 +1086,7 @@ describe('POST /ingest: a memory that disagrees with an existing note', () => {
     expect(m.body).toContain('an interview transcript added by a contributor');
     expect(m.notes.join(' ')).toMatch(/may disagree with the existing note "The farm"/);
     const n = await ctx.pool.query(
-      `select count(*)::int as n from public.notes where archive_id = $1`,
+      `select count(*)::int as n from public.notes where archive_id = $1 and ${NOT_PROTAGONIST}`,
       [archive],
     );
     expect(n.rows[0].n).toBe(1);
@@ -1169,9 +1170,12 @@ describe('POST /agent and POST /ingest?save', () => {
     });
     const b = (await other.json()) as { saved: Array<{ title: string }> };
     expect(b.saved[0]!.title).toMatch(/\(\d+:\d{2}\)$/);
-    const revs = await ctx.pool.query(`select reason from public.revisions where archive_id = $1`, [
-      archive,
-    ]);
+    const revs = await ctx.pool.query(
+      `select reason from public.revisions
+        where archive_id = $1
+          and note_id is distinct from (select subject_note_id from public.archives where id = $1)`,
+      [archive],
+    );
     expect(revs.rows).toHaveLength(2);
     expect(revs.rows.every((r) => r.reason === 'ai-suggestion')).toBe(true);
     const dry = await ctx.api(owner.token, 'POST', `/v1/archives/${archive}/ingest`, {
@@ -1202,9 +1206,10 @@ describe('a member whose role only reads (FR-100, round-2 persistence review #6)
   }
   const notesIn = async (archive: string) =>
     (
-      await ctx.pool.query(`select count(*)::int as n from public.notes where archive_id = $1`, [
-        archive,
-      ])
+      await ctx.pool.query(
+        `select count(*)::int as n from public.notes where archive_id = $1 and ${NOT_PROTAGONIST}`,
+        [archive],
+      )
     ).rows[0].n as number;
 
   it(

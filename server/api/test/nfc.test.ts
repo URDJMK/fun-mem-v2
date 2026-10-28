@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import { afterAll, describe, expect, it } from 'vitest';
-import { testContext, type RealSession } from './helpers';
+import { NOT_PROTAGONIST, type RealSession, testContext } from './helpers';
 
 /**
  * FM-050 — Unicode NFC normalization across identity and links.
@@ -51,7 +51,7 @@ describe('FM-050 unicode title normalization', () => {
 
     // and only one row exists, under the canonical form
     const rows = await ctx.pool.query<{ title: string }>(
-      `select title from public.notes where archive_id = $1`,
+      `select title from public.notes where archive_id = $1 and ${NOT_PROTAGONIST}`,
       [archive],
     );
     expect(rows.rows).toHaveLength(1);

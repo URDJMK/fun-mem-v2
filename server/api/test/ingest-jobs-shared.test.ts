@@ -3,7 +3,7 @@ import { afterAll, afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { createApp } from '../src/app';
 import { BusyError, IngestJobs, type IngestJobsOptions } from '../src/ingest-jobs';
 import { ModelError, type ChatModel } from '../src/ingest';
-import { testContext, type RealSession } from './helpers';
+import { NOT_PROTAGONIST, type RealSession, testContext } from './helpers';
 
 /**
  * An import job lives in the database, not in one process's memory. A Cloudflare Worker runs
@@ -110,9 +110,10 @@ describe('one instance starts a job, another carries it on', () => {
     expect(await b.cancel(there!)).toBe('stopping');
     const finished = await started.done;
     expect(a.view(finished).status).toBe('cancelled');
-    const notes = await ctx.pool.query(`select 1 from public.notes where archive_id = $1`, [
-      archive,
-    ]);
+    const notes = await ctx.pool.query(
+      `select 1 from public.notes where archive_id = $1 and ${NOT_PROTAGONIST}`,
+      [archive],
+    );
     expect(notes.rowCount).toBe(0);
     held.release();
   });

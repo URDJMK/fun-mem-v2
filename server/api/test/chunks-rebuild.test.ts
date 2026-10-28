@@ -106,7 +106,8 @@ describe('D4 a rebuild in batches leaves the index the notes would have', () => 
         [archive, owner.userId],
       );
       const first = await ctx.api(owner.token, 'POST', `/v1/archives/${archive}/chunks/rebuild`);
-      expect(await first.json()).toEqual({ rebuilt: 450 });
+      // and the protagonist's own note, there from the start
+      expect(await first.json()).toEqual({ rebuilt: 451 });
       const snapshot = async () =>
         (
           await ctx.pool.query(
@@ -119,7 +120,7 @@ describe('D4 a rebuild in batches leaves the index the notes would have', () => 
       expect(once.length).toBe(900);
       expect(once[0]).toMatchObject({ heading_path: ['A'], heading: 'A' });
       const again = await ctx.api(owner.token, 'POST', `/v1/archives/${archive}/chunks/rebuild`);
-      expect(await again.json()).toEqual({ rebuilt: 450 });
+      expect(await again.json()).toEqual({ rebuilt: 451 });
       expect(await snapshot()).toEqual(once);
     },
   );

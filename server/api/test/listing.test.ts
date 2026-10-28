@@ -27,7 +27,8 @@ describe('FM-019 notes list endpoint', () => {
     const list = await ctx.api(owner.token, 'GET', `/v1/archives/${archive}/notes`);
     expect(list.status).toBe(200);
     const rows = (await list.json()) as Array<{ id: string; title: string; type: string }>;
-    expect(rows.map((r) => r.title).sort()).toEqual(['Alpha', 'Beta']);
+    // and the protagonist's own note, there from the start
+    expect(rows.map((r) => r.title).sort()).toEqual(['Alpha', 'Beta', `List ${RUN}`]);
     // summaries only — bodies never ship in the list
     for (const r of rows) expect(r).not.toHaveProperty('body');
 

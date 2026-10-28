@@ -529,8 +529,10 @@ describe('POST /ingest', () => {
 
     const notes = (await (
       await ctx.api(owner.token, 'GET', `/v1/archives/${archive}/notes`)
-    ).json()) as unknown[];
-    expect(notes).toHaveLength(0);
+    ).json()) as Array<{ type: string }>;
+    // only the protagonist's own note, there from the start
+    expect(notes.filter((n) => n.type !== 'person')).toHaveLength(0);
+    expect(notes).toHaveLength(1);
 
     const foreign = await ctx.api(stranger.token, 'POST', `/v1/archives/${archive}/ingest`, {
       transcript: TRANSCRIPT,
