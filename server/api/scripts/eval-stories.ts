@@ -9,14 +9,28 @@
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { createNimChat } from '../src/nim';
+import type { Profile } from '../src/stories/profile';
 import { writeStories } from '../src/stories/workflow';
 import { parseTranscript } from '../src/transcript';
 
 const here = (p: string) => fileURLToPath(new URL(p, import.meta.url));
-const SAMPLES: Record<string, { file: string; opts: Record<string, unknown>; subject?: string }> = {
+const SAMPLES: Record<
+  string,
+  { file: string; opts: Record<string, unknown>; subject?: string; profiles?: Profile[] }
+> = {
   sunja: {
     file: here('../../../docs/ingest/samples/grandma-sunja-en.txt'),
     opts: { teller: 'Sunja' },
+    // "At eighteen" in "The tin of savings" should become ~1964 (PRD 7.5)
+    profiles: [
+      {
+        noteId: null,
+        name: 'Sunja Kim',
+        born: '~1946',
+        died: null,
+        aliases: ['Grandma Sunja', 'Sunja'],
+      },
+    ],
   },
   nell: { file: here('../test/fixtures/stories/nell.txt'), opts: { teller: 'Nell' } },
   whisperx: {
@@ -48,6 +62,7 @@ for (const [name, sample] of Object.entries(SAMPLES)) {
       lookup: empty,
       titles: [],
       subject: sample.subject ?? null,
+      profiles: sample.profiles ?? [],
     },
   );
   const secs = Math.round((Date.now() - t0) / 100) / 10;
@@ -57,7 +72,7 @@ for (const [name, sample] of Object.entries(SAMPLES)) {
   if (out.pending) console.log(`   PENDING: ${out.pending.reason}`);
   for (const m of out.memories) {
     console.log(
-      `\n── ${m.title}${m.occurred ? ` (${m.occurred}${m.until ? `–${m.until}` : ''})` : ''} · told by ${(m.tellers ?? []).join(', ')}`,
+      `\n── ${m.title}${m.occurred ? ` (${m.occurred}${m.until ? `–${m.until}` : ''}${m.dateBasis ? `: ${m.dateBasis}` : ''})` : ''} · told by ${(m.tellers ?? []).join(', ')}`,
     );
     console.log(m.body.replace(/^/gm, '   '));
     for (const n of m.notes) console.log(`   ! ${n}`);

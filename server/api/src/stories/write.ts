@@ -58,7 +58,8 @@ How it reads:
   year is said in this story's lines; never work one out, not even in a sentence ("at eighteen" is
   not a year). Otherwise null. "until" is when it ended, for a story spanning years, else null.
 - Age: when no year is said but the narrator's age is ("at eighteen", "when I was seven"), give
-  "age": {"years": 18, "cites": ["L14"]} and leave "occurred" null: the year is worked out for you.
+  "age": {"years": 18, "cites": ["L14"]} and leave "occurred" null: the year is worked out for you
+  from the birth date. Do not work it out yourself.
 - "Who this is about" is what the family entered about the narrator. A sentence may use a fact
   from it, citing "P".
 
@@ -115,6 +116,7 @@ export function showDraft(d: StoryDraft): string {
   return [
     `Title: ${d.title}`,
     `Occurred: ${d.occurred ?? 'none'}${d.until ? ` until ${d.until}` : ''}`,
+    ...(d.age ? [`Age: ${d.age.years} [${cite(d.age.cites)}]`] : []),
     ...d.sentences.map((s, i) => `${i}. ${s.text} [${cite(s.cites)}]`),
   ].join('\n');
 }

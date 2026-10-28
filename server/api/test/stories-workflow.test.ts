@@ -324,6 +324,96 @@ describe('writeStories', () => {
     expect(noBirth.memories[0]!.occurred).toBeNull();
   });
 
+  it('a year the writer worked out from an age said in the lines is kept, and says so', async () => {
+    const factory = parseTranscript(
+      [
+        'Interviewer: What happened after you left school?',
+        'Sunja: At eighteen I started at a textile factory, and I gave my whole pay to my mother.',
+        'Interviewer: And after that?',
+        'Sunja: She put a little aside for me in a tin, every month.',
+      ].join('\n'),
+    );
+    // the model does the sum itself and gives a year, not the age
+    const dated = (occurred: string) =>
+      model((step, user) =>
+        step === 'plan'
+          ? { stories: [{ title: 'The tin of savings', lines: ['L1-L4'], tellers: ['Sunja'] }] }
+          : step === 'judge'
+            ? allSupported(user)
+            : {
+                title: 'The tin of savings',
+                occurred,
+                sentences: [
+                  sentence('At eighteen Sunja started work at a textile factory.', ['L2'], true),
+                  sentence('Her mother put a little aside for her in a tin every month.', ['L4']),
+                ],
+              },
+      );
+    const deps = { lookup: noLookup, titles: [], profiles: [SUNJA_PROFILE] };
+    const worked = await writeStories(factory, OPTS, { ...deps, chat: dated('~1964') });
+    expect(worked.memories[0]).toMatchObject({
+      occurred: '~1964',
+      dateBasis: 'Sunja Kim was 18; born about 1946',
+    });
+    // a year that is not born + an age said is still dropped
+    const guessed = await writeStories(factory, OPTS, { ...deps, chat: dated('1970') });
+    expect(guessed.memories[0]!.occurred).toBeNull();
+    expect(guessed.memories[0]!.dateBasis).toBeUndefined();
+  });
+
+  it('an age found in one draft is kept when the story is written again', async () => {
+    const factory = parseTranscript(
+      [
+        'Interviewer: What happened after you left school?',
+        'Sunja: At eighteen I started at a textile factory, and I gave my whole pay to my mother.',
+        'Interviewer: And after that?',
+        'Sunja: She put a little aside for me in a tin, every month.',
+      ].join('\n'),
+    );
+    const told = [
+      sentence('At eighteen Sunja started work at a textile factory.', ['L2'], true),
+      sentence('Her mother put a little aside for her in a tin every month.', ['L4']),
+    ];
+    let writes = 0;
+    const chat = model((step, user) => {
+      if (step === 'plan')
+        return { stories: [{ title: 'The tin of savings', lines: ['L1-L4'], tellers: ['Sunja'] }] };
+      if (step === 'write') {
+        writes++;
+        // first: a year worked out, and a sentence the judge fails; then: neither
+        return writes === 1
+          ? {
+              title: 'The tin of savings',
+              occurred: '~1964',
+              sentences: [...told, sentence('She bought a radio with it.', ['L4'])],
+            }
+          : { title: 'The tin of savings', occurred: null, sentences: told };
+      }
+      return user.includes('radio')
+        ? {
+            rulings: [
+              { sentence: 0, verdict: 'supported' },
+              { sentence: 1, verdict: 'supported' },
+              { sentence: 2, verdict: 'made_up', reason: 'no radio is told' },
+            ],
+          }
+        : allSupported(user);
+    });
+    const out = await writeStories(factory, OPTS, {
+      chat,
+      lookup: noLookup,
+      titles: [],
+      profiles: [SUNJA_PROFILE],
+    });
+    expect(writes).toBe(2);
+    // the writer is shown the age it is asked to keep
+    expect(chat.calls.filter((c) => c.step === 'write')[1]!.user).toContain('Age: 18');
+    expect(out.memories[0]).toMatchObject({
+      occurred: '~1964',
+      dateBasis: 'Sunja Kim was 18; born about 1946',
+    });
+  });
+
   it('with no AI, the stories wait, and nothing is chopped into fragments', async () => {
     const out = await writeStories(parsed(), OPTS, { chat: null, lookup: noLookup, titles: [] });
     expect(out.pending).toEqual({ reason: 'no_model' });

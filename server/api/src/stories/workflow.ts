@@ -14,7 +14,7 @@ import {
 import { asModelError, ModelError, type ChatModel } from '../nim';
 import { mapPool } from '../pool';
 import { applyRoles, type ParsedTranscript } from '../transcript';
-import { checkDraft, saysNumber, type Problem } from './check';
+import { agesSaid, checkDraft, type Problem } from './check';
 import { FAILING, judgeStory, type Ruling } from './judge';
 import { clock, linesOf, partsOf, PROFILE_LINE, textOf, type Line } from './lines';
 import { planPart, type PlannedStory } from './plan';
@@ -296,6 +296,8 @@ export async function writeStories(
       let draft!: StoryDraft;
       let problems: Problem[] = [];
       let rulings: Ruling[] = [];
+      // an age found in one draft stays with the story when it is written again
+      let foundAge: StoryDraft['age'];
       for (let round = 0; round <= FIX_ROUNDS; round++) {
         rounds = Math.max(rounds, round + 1);
         if (round > 0) retried++;
@@ -312,14 +314,17 @@ export async function writeStories(
           })
         ).draft;
         problems = checkDraft(draft, withProfile, known, story.ranges);
-        // a date the lines do not give is simply dropped: not worth writing the story again
+        // a date the lines do not give is simply dropped: not worth writing the story again. A
+        // year the writer worked out from an age said in them is kept, as that age (below).
         if (problems.some((p) => p.kind === 'date')) {
+          draft.age ??= ageBehind(draft, story.tellers);
           for (const p of problems)
             if (p.kind === 'date') counts.problems.date = (counts.problems.date ?? 0) + 1;
           draft.occurred = null;
           draft.until = null;
           problems = problems.filter((p) => p.kind !== 'date');
         }
+        foundAge = draft.age ?? foundAge;
         rulings = [];
         if (problems.length === 0) {
           rulings = (await judgeStory(judge, draft, withProfile, signal, profile)).rulings;
@@ -372,12 +377,18 @@ export async function writeStories(
       for (const f of flags)
         notes.push(`${subject} may have been less sure than this says: “${f}”`);
       // an age said in the story's lines becomes a year, in code (PRD 7.5)
+      draft.age ??= foundAge;
       let dateBasis: string | undefined;
       if (!draft.occurred && draft.age) {
         const who = profileOf(story.tellers);
         const year = who ? ageYear(who.born, draft.age.years) : null;
         const cites = draft.age.cites.filter((r) => r.from >= 1);
-        if (who && year && cites.length && saysNumber(textOf(lines, cites), draft.age.years)) {
+        if (
+          who &&
+          year &&
+          cites.length &&
+          agesSaid(textOf(lines, cites)).includes(draft.age.years)
+        ) {
           draft.occurred = year;
           dateBasis = `${who.name} was ${draft.age.years}; born ${saidDate(who.born!)}`;
         }
@@ -387,6 +398,20 @@ export async function writeStories(
   } finally {
     clearTimeout(timer);
     deps.signal?.removeEventListener('abort', onCancel);
+  }
+
+  /**
+   * The age behind a year the writer worked out itself ("~1964" from "at eighteen", born ~1946):
+   * only when born + an age said in the story's lines gives that very year.
+   */
+  function ageBehind(d: StoryDraft, tellers: readonly string[]): StoryDraft['age'] {
+    const born = Number(/\d{4}/.exec(profileOf(tellers)?.born ?? '')?.[0]);
+    const year = Number(/\d{4}/.exec(d.occurred ?? '')?.[0]);
+    if (!born || !year) return undefined;
+    const cites = d.sentences.flatMap((s) => s.cites).filter((r) => r.from >= 1);
+    return agesSaid(textOf(lines, cites)).includes(year - born)
+      ? { years: year - born, cites }
+      : undefined;
   }
 
   /** the teller's profile: by name or by a name the family uses; the only one when there is one */

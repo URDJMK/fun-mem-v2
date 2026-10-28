@@ -11,7 +11,7 @@
 **Architecture:**
 - The profile is stored on the protagonist's person note, in `extra.profile` (`{ born, died, aliases }`), with fuzzy dates checked by `parseFuzzyDate`. Personal projects point at that note through `archives.subject_note_id`; it is created with the project, or lazily for older projects. In a family project each narrator's person note holds their own profile.
 - The story workflow gets `profiles` and treats them as a line of their own, `L0`, cited as `P`. Every check therefore reads it like a transcript line, and the transcript shown to the AI stays as it was.
-- Ages: the writer may return `age: { years, cites }`. Code turns it into `~(born + years)` only when the age is said in the cited lines, and records `dateBasis`.
+- Ages: the writer may return `age: { years, cites }`. Code turns it into `~(born + years)` only when the age is said in the cited lines (`agesSaid`: "at eighteen", "when I was seven", "aged 12"), and records `dateBasis`. The real model often does the sum itself and returns `occurred: "~1964"`: a year that is exactly born + an age said in the story's lines is kept as that age, and an age found in one draft stays with the story through a rewrite.
 
 ## Tasks
 

@@ -70,6 +70,22 @@ const numbersOf = (text: string): string[] =>
 /** Does the text say this number, however it was said ("eighteen", "18")? */
 export const saysNumber = (text: string, n: number): boolean => numbersOf(text).includes(String(n));
 
+const AGE_BEFORE =
+  /\b(?:at the age of|at age|aged|at|when (?:i|you|she|he|we|they) (?:was|were)|(?:i|she|he) was)\s+(?:about\s+|around\s+|only\s+|just\s+)?(\d{1,3})\b(?!\s*(?:o['’]clock|[ap]\.?m\b|:\d|%|percent))/gi;
+const AGE_AFTER = /\b(\d{1,3})(?:\s+|-)years?(?:\s+|-)old\b/gi;
+
+/**
+ * The ages said as ages ("at eighteen", "when I was seven", "aged 12", "ten years old"). A year
+ * is worked out from an age only when it was said like this (PRD 7.5).
+ */
+export function agesSaid(text: string): number[] {
+  const t = digits(text);
+  const ages = [...t.matchAll(AGE_BEFORE), ...t.matchAll(AGE_AFTER)]
+    .map((m) => Number(m[1]))
+    .filter((n) => n >= 1 && n <= 120);
+  return [...new Set(ages)];
+}
+
 /** capitalized words that are not names: they may open a clause or stand for a relative */
 const NOT_NAMES = new Set(
   `i a an the and but or so then when where while after before during later later in on at of to

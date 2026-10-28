@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { checkDraft } from '../src/stories/check';
+import { agesSaid, checkDraft } from '../src/stories/check';
 import { linesOf } from '../src/stories/lines';
 import type { StoryDraft } from '../src/stories/write';
 
@@ -181,5 +181,22 @@ describe('checkDraft', () => {
         }),
       ),
     ).toEqual(['-1:title']);
+  });
+});
+
+describe('agesSaid', () => {
+  it('reads the ages said as ages, however they are said', () => {
+    expect(agesSaid('At eighteen I started at a textile factory.')).toEqual([18]);
+    expect(agesSaid('Um, when I was seven, we moved to Daegu.')).toEqual([7]);
+    expect(agesSaid('I was 18 when I left, and she was only twelve.')).toEqual([18, 12]);
+    expect(agesSaid('He left school at the age of nine.')).toEqual([9]);
+    expect(agesSaid('a ten-year-old boy; she was ten years old')).toEqual([10]);
+    expect(agesSaid('Aged 12, she went to work.')).toEqual([12]);
+  });
+
+  it('does not read other numbers as ages', () => {
+    expect(agesSaid('We had two rooms and six of us slept by the stove.')).toEqual([]);
+    expect(agesSaid('It was nineteen forty-six, in the spring.')).toEqual([]);
+    expect(agesSaid('We met at 7 o’clock, at 6 pm the next day.')).toEqual([]);
   });
 });
