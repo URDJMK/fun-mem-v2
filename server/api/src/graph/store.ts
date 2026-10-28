@@ -285,3 +285,32 @@ export function entityLookup(db: Db, archiveId: string, userId: string): EntityL
     },
   };
 }
+
+/**
+ * The entities an interview's Graph step starts from (graph design 4.1): the protagonist, and
+ * each teller found by name or alias. The AI is told their ids, so it does not make them twice.
+ */
+export async function knownFor(
+  db: Db,
+  archiveId: string,
+  userId: string,
+  tellers: readonly string[],
+): Promise<Array<{ id: string; name: string; type: EntityType; aliases: string[] }>> {
+  const keys = [...new Set(tellers.map(matchKey).filter(Boolean))];
+  const r = await db.query(
+    `select e.id, e.name, e.type::text as type,
+            coalesce((select array_agg(g.alias order by g.alias) from public.graph_aliases g
+                       where g.entity_id = e.id), '{}') as aliases
+       from public.graph_entities e join public.archives a on a.id = e.archive_id
+      where e.archive_id = $1 and ${entityVisibleSql('e', '$2')}
+        and (e.note_id = a.subject_note_id
+             or (e.type = 'person'
+                 and (e.match_key = any($3::text[])
+                      or exists (select 1 from public.graph_aliases g
+                                  where g.entity_id = e.id and g.match_key = any($3::text[])))))
+      order by (e.note_id = a.subject_note_id) desc nulls last, e.name
+      limit 12`,
+    [archiveId, userId, keys],
+  );
+  return r.rows as Array<{ id: string; name: string; type: EntityType; aliases: string[] }>;
+}

@@ -11,6 +11,9 @@ import {
   type StoriesPendingReason,
   type StorySource,
 } from '../ingest-pipeline';
+import { graphStep, type KnownEntity, type StoryForGraph } from '../graph/step';
+import { plainWords, type EntityLookup } from '../graph/store';
+import type { GraphProposal } from '../graph/types';
 import { asModelError, ModelError, type ChatModel } from '../nim';
 import { mapPool } from '../pool';
 import { applyRoles, type ParsedTranscript } from '../transcript';
@@ -60,6 +63,8 @@ export interface StoriesDeps {
   subject?: string | null;
   /** the protagonist's profile, and each narrator's (PRD D14): in every step's prompt */
   profiles?: Profile[];
+  /** the project's graph: with it, the Graph step runs after the stories (graph design 4.1) */
+  graph?: { lookup: EntityLookup; known: KnownEntity[] };
 }
 
 export const DEFAULT_STORY_DEADLINE_MS = 12 * 60_000;
@@ -288,7 +293,80 @@ export async function writeStories(
     if (memories.length === 0 && stories.length > 0 && failures.length > 0) {
       return result([], failures.includes('auth') ? 'auth' : failures[0]!, interviewName);
     }
-    return result(memories, undefined, interviewName);
+    memories.forEach((m, i) => (m.id = `m${i + 1}`));
+    const out = result(memories, undefined, interviewName);
+    if (deps.graph && memories.length > 0) {
+      const planned = made.flatMap((m, i) => (m ? [{ memory: m, story: stories[i]! }] : []));
+      out.graph = await findGraph(planned, deps.graph);
+    }
+    return out;
+
+    /**
+     * 6. the people, places and things in the stories, and the relationships told: one Graph
+     * step per part of the interview. If it cannot run, the stories stand and the graph waits.
+     */
+    async function findGraph(
+      planned: Array<{ memory: ProposedMemory; story: PlannedStory }>,
+      graph: NonNullable<StoriesDeps['graph']>,
+    ): Promise<GraphProposal> {
+      const groups = new Map<number, StoryForGraph[]>();
+      for (const { memory, story } of planned) {
+        const first = Math.min(...story.ranges.map((r) => r.from));
+        const part = Math.max(
+          0,
+          parts.findIndex((p) => p.some((l) => l.n === first)),
+        );
+        const list = groups.get(part) ?? [];
+        list.push({
+          ref: memory.id!,
+          title: memory.title,
+          text: plainWords(
+            memory.body
+              .split('\n\n')
+              .filter((p) => !p.startsWith('>'))
+              .join(' '),
+          ),
+          sentences: (memory.sources ?? []).map((s) => ({
+            text: s.sentence,
+            cites: [{ from: s.from, to: s.to }],
+          })),
+          ranges: story.ranges,
+          tellers: story.tellers,
+        });
+        groups.set(part, list);
+      }
+      const all: GraphProposal = { entities: [], relationships: [] };
+      try {
+        for (const list of groups.values()) {
+          const p = await graphStep({
+            chat: writer,
+            judge,
+            stories: list,
+            lines: withProfile,
+            profile,
+            known: graph.known,
+            names: known,
+            lookup: graph.lookup,
+            signal,
+          });
+          // refs stay unique across parts
+          const shift = all.entities.length;
+          const ref = (r: string) => `e${Number(r.slice(1)) + shift}`;
+          all.entities.push(...p.entities.map((e) => ({ ...e, ref: ref(e.ref) })));
+          all.relationships.push(
+            ...p.relationships.map((r, i) => ({
+              ...r,
+              ref: `r${all.relationships.length + i + 1}`,
+              a: ref(r.a),
+              b: ref(r.b),
+            })),
+          );
+        }
+        return all;
+      } catch (e) {
+        return { entities: [], relationships: [], pending: { reason: reasonOf(e) } };
+      }
+    }
 
     /** one story through write → check → judge → fix */
     async function makeStory(story: PlannedStory): Promise<ProposedMemory | null> {

@@ -39,6 +39,7 @@ import {
 } from './stories/interviews';
 import { writeStories } from './stories/workflow';
 import { profilesFor } from './stories/profile-store';
+import { ensureGraph, entityLookup, knownFor } from './graph/store';
 
 /**
  * Interviews are LONG: an hour of speech is tens of model calls, so a request that
@@ -879,8 +880,12 @@ export class IngestJobs {
       ),
     ].filter((t): t is string => typeof t === 'string');
     const profiles = await profilesFor(pool, job.archiveId, job.userId, tellers);
+    // the project's graph, for the Graph step after the stories (graph design 4.1)
+    await ensureGraph(this.deps, job.archiveId);
+    const known = await knownFor(pool, job.archiveId, job.userId, tellers);
     const result = await writeStories(parsed, req, {
       profiles,
+      graph: { lookup: entityLookup(pool, job.archiveId, job.userId), known },
       chat: this.deps.chat ?? null,
       judge: this.deps.chat ?? null,
       lookup: archiveLookup(this.deps, job.archiveId, job.userId),

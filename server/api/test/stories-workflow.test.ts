@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { IngestCancelled } from '../src/ingest-pipeline';
 import { ModelError, type ChatModel } from '../src/nim';
+import { GRAPH_SYSTEM } from '../src/graph/step';
 import { PLAN_SYSTEM } from '../src/stories/plan';
 import { writeStories } from '../src/stories/workflow';
 import { WRITE_SYSTEM } from '../src/stories/write';
@@ -65,9 +66,15 @@ const allSupported = (user: string) => {
   return { rulings: Array.from({ length: n }, (_, i) => ({ sentence: i, verdict: 'supported' })) };
 };
 
-type Step = 'plan' | 'write' | 'judge';
+type Step = 'plan' | 'write' | 'judge' | 'graph';
 const stepOf = (system: string): Step =>
-  system.startsWith(PLAN_SYSTEM) ? 'plan' : system.startsWith(WRITE_SYSTEM) ? 'write' : 'judge';
+  system.startsWith(PLAN_SYSTEM)
+    ? 'plan'
+    : system.startsWith(WRITE_SYSTEM)
+      ? 'write'
+      : system.startsWith(GRAPH_SYSTEM)
+        ? 'graph'
+        : 'judge';
 
 /** a model answering each step by a function; it records every call */
 function model(
@@ -493,3 +500,109 @@ describe('writeStories', () => {
 
 /** the first six lines only: two parts at a 40-token budget */
 const parse6 = () => parseTranscript(TRANSCRIPT.split('\n').slice(0, 6).join('\n'));
+
+describe('the Graph step after the stories (graph design 4.1)', () => {
+  const SUNJA_ENTITY = {
+    id: 'k-sunja',
+    name: 'Sunja Kim',
+    type: 'person' as const,
+    aliases: ['Sunja'],
+  };
+  const graphDeps = {
+    lookup: { find: async () => [], read: async () => null },
+    known: [SUNJA_ENTITY],
+  };
+  const GRAPH = {
+    entities: [
+      {
+        ref: 'e1',
+        name: 'Sunja Kim',
+        type: 'person',
+        match: 'k-sunja',
+        mentions: [
+          { story: 'S2', words: ['Sunja'], line: 'Sunja met Minho in 1966.', cites: ['L8'] },
+        ],
+      },
+      {
+        ref: 'e2',
+        name: 'Minho',
+        type: 'person',
+        match: 'new',
+        mentions: [
+          {
+            story: 'S2',
+            words: ['Minho'],
+            line: 'Minho spilled gravy on his shirt.',
+            cites: ['L8'],
+          },
+        ],
+      },
+      {
+        ref: 'e3',
+        name: 'Busan',
+        type: 'place',
+        match: 'new',
+        mentions: [{ story: 'S1', words: ['Busan'], line: 'Where Sunja was born.', cites: ['L4'] }],
+      },
+    ],
+    relationships: [
+      {
+        a: 'e2',
+        b: 'e1',
+        description: 'Minho — met Sunja at a church supper',
+        story: 'S2',
+        cites: ['L8'],
+      },
+    ],
+  };
+
+  it('proposes the people, places and relationships, naming the stories by memory id', async () => {
+    const chat = model((step, user) => (step === 'graph' ? GRAPH : happy(step, user)));
+    const out = await writeStories(parsed(), OPTS, {
+      chat,
+      lookup: noLookup,
+      titles: [],
+      graph: graphDeps,
+    });
+    expect(out.memories.map((m) => m.id)).toEqual(['m1', 'm2']);
+    const g = out.graph!;
+    expect(g.pending).toBeUndefined();
+    expect(g.entities.map((e) => [e.name, e.match.kind])).toEqual([
+      ['Sunja Kim', 'existing'],
+      ['Minho', 'new'],
+      ['Busan', 'new'],
+    ]);
+    // S1 is the harbour story (m1), S2 the church supper (m2)
+    expect(g.entities.find((e) => e.name === 'Busan')!.mentions[0]!.story).toBe('m1');
+    expect(g.relationships).toEqual([expect.objectContaining({ a: 'e2', b: 'e1', story: 'm2' })]);
+    expect(chat.calls.filter((c) => c.step === 'graph')).toHaveLength(1);
+  });
+
+  it('when it fails, the stories stand and only the graph waits', async () => {
+    const chat = model((step, user) =>
+      step === 'graph'
+        ? new ModelError('the AI service is unavailable', 'unavailable', true)
+        : happy(step, user),
+    );
+    const out = await writeStories(parsed(), OPTS, {
+      chat,
+      lookup: noLookup,
+      titles: [],
+      graph: graphDeps,
+    });
+    expect(out.pending).toBeUndefined();
+    expect(out.memories).toHaveLength(2);
+    expect(out.graph).toEqual({
+      entities: [],
+      relationships: [],
+      pending: { reason: 'unavailable' },
+    });
+  });
+
+  it('does not run without the project’s graph to look things up in', async () => {
+    const chat = model(happy);
+    const out = await writeStories(parsed(), OPTS, { chat, lookup: noLookup, titles: [] });
+    expect(out.graph).toBeUndefined();
+    expect(chat.calls.some((c) => c.step === 'graph')).toBe(false);
+  });
+});
