@@ -34,6 +34,8 @@ copy where; no value in this file is real.
    `supabase/migrations/20261028130000_profiles.sql`, then, for the people, places and things graph,
    `supabase/migrations/20261028140000_graph.sql`. A project made before the graph gets its
    protagonist's person note, and its people, places and things, the first time its graph is read.
+   **Apply new migrations before deploying a new Worker:** the code expects its tables, and without
+   the graph's, making a project or a person, place or object note fails.
 4. **Project Settings → API**: copy the **Project URL** (`https://<project-ref>.supabase.co`) and the
    **anon / publishable key**. Both are public; the web app ships them.
 5. **Project Settings → JWT Keys**: the project must sign with an **asymmetric** key (ECC P-256 or
