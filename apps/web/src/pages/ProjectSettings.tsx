@@ -1,15 +1,31 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Link, useNavigate } from 'react-router';
-import { ApiError, deleteProject, listMembers, removeMember, updateProject } from '../lib/api';
+import {
+  ApiError,
+  deleteProject,
+  getProfile,
+  listMembers,
+  putProfile,
+  removeMember,
+  updateProject,
+} from '../lib/api';
 import { canManage, inArchive, useArchive } from '../lib/archive';
 import { ArchiveLayout } from '../components/ArchiveLayout';
 import { countryName } from '../components/CountryPicker';
 import { writeDraft } from '../lib/interview';
 import { Failed } from '../components/ui';
+import {
+  draftOf,
+  EMPTY_PROFILE,
+  ProfileInputs,
+  readProfileDraft,
+  sameDraft,
+} from '../components/ProfileInputs';
 
 /**
- * The project itself: its name, its kind, the country whose law it follows, and leaving or
- * deleting it. What each person sees depends on their role; the server checks every change.
+ * The project itself: its name, its kind, the country whose law it follows, who it is about
+ * (a personal project), and leaving or deleting it. What each person sees depends on their
+ * role; the server checks every change.
  */
 export function ProjectSettings() {
   const archive = useArchive();
@@ -53,6 +69,8 @@ export function ProjectSettings() {
           </div>
         </div>
       </section>
+
+      {!family && <AboutThem />}
 
       {owner ? <DeleteProject /> : <LeaveProject />}
     </ArchiveLayout>
@@ -121,6 +139,86 @@ function ProjectName() {
       </div>
       {failed && <Failed>{failed}</Failed>}
     </form>
+  );
+}
+
+/**
+ * When they were born and died, and what the family calls them (PRD D13). Every story is written
+ * knowing this, and ages said in an interview become years from the birth date.
+ */
+function AboutThem() {
+  const archive = useArchive();
+  const [saved, setSaved] = useState<typeof EMPTY_PROFILE | null>(null);
+  const [draft, setDraft] = useState(EMPTY_PROFILE);
+  const [saving, setSaving] = useState(false);
+  const [done, setDone] = useState(false);
+  const [failed, setFailed] = useState<string | null>(null);
+
+  useEffect(() => {
+    let live = true;
+    getProfile(archive.id)
+      .then((p) => {
+        if (!live) return;
+        setSaved(draftOf(p));
+        setDraft(draftOf(p));
+      })
+      .catch(() => live && setFailed('Could not load this just now.'));
+    return () => {
+      live = false;
+    };
+  }, [archive.id]);
+
+  const changed = saved !== null && !sameDraft(draft, saved);
+  return (
+    <section className="card stack settings-card">
+      <form
+        className="stack"
+        style={{ gap: 12, padding: '14px 16px' }}
+        onSubmit={async (e) => {
+          e.preventDefault();
+          const fields = readProfileDraft(draft);
+          if (typeof fields === 'string') return setFailed(fields);
+          setSaving(true);
+          setFailed(null);
+          try {
+            const p = await putProfile(archive.id, fields);
+            setSaved(draftOf(p));
+            setDraft(draftOf(p));
+            setDone(true);
+          } catch {
+            setFailed('Could not save it. Try again in a moment.');
+          } finally {
+            setSaving(false);
+          }
+        }}
+      >
+        <div className="stack settings-what">
+          <span className="row-title">About {archive.subjectName}</span>
+          <span className="small muted">
+            Every story is written knowing this. Nobody outside the project sees it.
+          </span>
+        </div>
+        <ProfileInputs
+          value={draft}
+          onChange={(d) => {
+            setDraft(d);
+            setDone(false);
+            setFailed(null);
+          }}
+          name={archive.subjectName}
+          idPrefix="settings-profile"
+          disabled={!archive.writer || saved === null}
+        />
+        {archive.writer && (
+          <div className="row">
+            <button type="submit" className="btn btn-outline" disabled={!changed || saving}>
+              {saving ? 'Saving…' : done && !changed ? 'Saved' : 'Save'}
+            </button>
+          </div>
+        )}
+        {failed && <Failed>{failed}</Failed>}
+      </form>
+    </section>
   );
 }
 

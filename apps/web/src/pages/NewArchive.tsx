@@ -5,6 +5,7 @@ import { inArchive } from '../lib/archive';
 import { storeArchiveId } from '../lib/supabase';
 import { Account, Failed, Icon } from '../components/ui';
 import { browserCountry, CountryPicker, countryName } from '../components/CountryPicker';
+import { EMPTY_PROFILE, ProfileInputs, readProfileDraft } from '../components/ProfileInputs';
 
 const KINDS: Array<{ kind: ProjectKind; title: string; text: string }> = [
   {
@@ -20,15 +21,17 @@ const KINDS: Array<{ kind: ProjectKind; title: string; text: string }> = [
 ];
 
 /**
- * A new project. Three things are asked, and nothing more: what kind it is (one person, or a
- * family), its name, and which country's law it follows. The country is guessed from the
- * browser and shown for the person to confirm or change; it can only be one of the listed
- * countries (the server refuses anything else).
+ * A new project. Three things are asked: what kind it is (one person, or a family), its name,
+ * and which country's law it follows. The country is guessed from the browser and shown for the
+ * person to confirm or change; it can only be one of the listed countries (the server refuses
+ * anything else). A personal project may also say when its person was born and died, and what
+ * the family calls them (PRD D13): all optional, all changeable in Settings.
  */
 export function NewArchive() {
   const navigate = useNavigate();
   const [kind, setKind] = useState<ProjectKind>('personal');
   const [subjectName, setSubjectName] = useState('');
+  const [profile, setProfile] = useState(EMPTY_PROFILE);
   const [jurisdiction, setJurisdiction] = useState<string | null>(browserCountry);
   const [picking, setPicking] = useState(false);
   const [pending, setPending] = useState(false);
@@ -36,10 +39,14 @@ export function NewArchive() {
 
   async function submit() {
     if (!jurisdiction) return setPicking(true);
+    const fields = kind === 'personal' ? readProfileDraft(profile) : null;
+    if (typeof fields === 'string') return setError(fields);
+    const entered =
+      fields && (fields.born || fields.died || fields.aliases.length) ? fields : undefined;
     setPending(true);
     setError(null);
     try {
-      const { archiveId } = await provisionArchive(subjectName.trim(), jurisdiction, kind);
+      const { archiveId } = await provisionArchive(subjectName.trim(), jurisdiction, kind, entered);
       storeArchiveId(archiveId);
       void navigate(inArchive(archiveId), { replace: true });
     } catch {
@@ -117,6 +124,18 @@ export function NewArchive() {
                 : 'This is how their name shows up around the project. You can change it later.'}
             </span>
           </label>
+
+          {!family && (
+            <ProfileInputs
+              value={profile}
+              onChange={(d) => {
+                setProfile(d);
+                setError(null);
+              }}
+              name={name}
+              idPrefix="new-profile"
+            />
+          )}
 
           <div className="field" role="group" aria-labelledby="country-label">
             <span id="country-label">Country</span>

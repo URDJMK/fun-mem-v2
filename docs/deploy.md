@@ -30,7 +30,8 @@ copy where; no value in this file is real.
    ```
    (or `supabase link` and `supabase db push`). Never edit a migration that has run. A project that is
    already deployed applies each new migration as it arrives, the same way: for the stories import,
-   `supabase/migrations/20261028120000_interviews.sql`.
+   `supabase/migrations/20261028120000_interviews.sql`, then, for the protagonist's profile,
+   `supabase/migrations/20261028130000_profiles.sql`.
 4. **Project Settings → API**: copy the **Project URL** (`https://<project-ref>.supabase.co`) and the
    **anon / publishable key**. Both are public; the web app ships them.
 5. **Project Settings → JWT Keys**: the project must sign with an **asymmetric** key (ECC P-256 or
@@ -118,10 +119,12 @@ Sign in with Google at the Vercel URL, create an archive, write a note, search f
 it, import a short transcript and save it, then undo the import. A minute after writing, the
 note's chunks have Workers AI vectors (`select count(*) from public.chunk_embeddings`).
 
-Bring in `docs/ingest/samples/grandma-sunja-en.txt` (Who is telling: Sunja). In about a minute and a
-half the review shows about 5 stories ("Mrs. Han's pencil box", "Gravy at the church supper", …), each
-with "Where this comes from". Without `NVIDIA_API_KEY` it says "Stories not written yet", and the
-interview waits under Interviews.
+Create a personal project for Sunja with **Born** `about 1946` and **Also called** `Grandma Sunja,
+Sunja`, then bring in `docs/ingest/samples/grandma-sunja-en.txt` (Who is telling: Sunja). In about a
+minute and a half the review shows about 5 stories ("Mrs. Han's pencil box", "Gravy at the church
+supper", …), each with "Where this comes from"; "The tin of savings" (she was eighteen) reads "Around
+1964 (… was 18; born about 1946)". Without `NVIDIA_API_KEY` it says "Stories not written yet", and
+the interview waits under Interviews.
 
 With `DEEPGRAM_API_KEY` set, start an interview from the project's home page (Chrome or Edge;
 allow the microphone): words appear as they are said, the coach suggests a question in the

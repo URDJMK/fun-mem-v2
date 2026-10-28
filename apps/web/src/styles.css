@@ -1620,3 +1620,10 @@ a.when-card:hover {
     animation: none;
   }
 }
+
+/* born and died side by side, stacked on a phone */
+.profile-dates {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: 10px;
+}

@@ -47,10 +47,24 @@ Saved stories carry their metadata: `recorded` (when it was told), `contributors
 `extra.sources`, `extra.interviewId`, `extra.writtenBy`; their revision reason is `import`. Undoing
 the import also deletes its interview.
 
+**Who it is about** (PRD D13, D14, 7.5). A person's profile, `{ born, died, aliases }`, is kept on
+their person note (`extra.profile`); dates are fuzzy (`1946`, `~1946`, `1946-04-12`; "about 1946" is
+read as `~1946`), and `aliases` (what the family calls them) are at most 10 of up to 60 characters. A
+personal project points at its protagonist's note (`archives.subject_note_id`), made when a profile is
+first entered: with the project (`POST /v1/provision` takes `profile`; a date it cannot read refuses
+the project with `400`) or later in Settings. Every step that plans, writes or judges a story is told
+who the interview is about: the protagonist and the person notes named like its tellers. A story may
+cite that profile (`P`, line `0` in `sources`). When a story says an age and not a year ("at
+eighteen"), code works out the year from the birth date: `occurred` `~1964`, with `dateBasis`
+("Sunja Kim was 18; born about 1946"), saved as `extra.dateBasis`.
+
 | Route | |
 |---|---|
 | `GET /v1/archives/:id/interviews` | members: `[{ id, name, recordedAt, status: "pending" \| "written", mine, stories }]`, newest first |
 | `GET /v1/archives/:id/interviews/:interviewId` | members: the same, plus `transcript` (as it arrived), `options` and parsed `turns` |
+| `GET /v1/archives/:id/profile` | members of a personal project: `{ noteId, name, born, died, aliases }` (`noteId` null until one is saved); `404` for a family project |
+| `PUT /v1/archives/:id/profile` | owners, stewards, contributors: `{ born, died, aliases }` (aliases as a list or comma-separated); makes the person note if needed; `400` with `error` naming the field it cannot read |
+| `PUT /v1/archives/:id/people/:noteId/profile` | the same, on any visible person note (a family narrator) |
 
 `FUNMEM_IMPORT_MODE=memories` brings back the earlier import described below, where every spoken line
 becomes a memory.

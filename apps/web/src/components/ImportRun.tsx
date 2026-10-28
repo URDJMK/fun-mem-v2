@@ -518,7 +518,13 @@ function MemoryView({
   const [showSources, setShowSources] = useState(false);
   const told = memory.tellers?.length ? `told by ${memory.tellers.join(' and ')}` : null;
   const span = clockSpan(memory.startSec ?? null, memory.endSec ?? null);
-  const meta = [whenLabel(shown.occurred) || null, told, span].filter(Boolean).join(' · ');
+  // a date worked out from an age ("Around 1964 (Sunja was 18; born about 1946)"), while it stands
+  const when = whenLabel(shown.occurred);
+  const basis =
+    memory.dateBasis && shown.occurred === (memory.occurred ?? '') ? memory.dateBasis : null;
+  const meta = [when ? (basis ? `${when} (${basis})` : when) : null, told, span]
+    .filter(Boolean)
+    .join(' · ');
   return (
     <>
       {meta && <span className="small muted">{meta}</span>}

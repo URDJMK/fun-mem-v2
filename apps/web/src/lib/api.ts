@@ -1,3 +1,4 @@
+import type { ProfileFields } from '@funmem/core';
 import { SKIP_LOGIN } from './demo';
 import { supabase } from './supabase';
 
@@ -116,12 +117,39 @@ export interface NoteFields {
 
 export const listArchives = () => apiFetch<ArchiveSummary[]>('GET', '/archives');
 
-export const provisionArchive = (subjectName: string, jurisdiction: string, kind: ProjectKind) =>
+export const provisionArchive = (
+  subjectName: string,
+  jurisdiction: string,
+  kind: ProjectKind,
+  profile?: ProfileFields,
+) =>
   apiFetch<{ tenantId: string; archiveId: string }>('POST', '/provision', {
     subjectName,
     jurisdiction,
     kind,
+    ...(profile ? { profile } : {}),
   });
+
+/* ── who a project is about (server/api/src/stories/profile-store.ts) ── */
+
+export type { ProfileFields };
+
+/** A person's profile, kept on their person note (`noteId`; null until one is saved). */
+export interface Profile extends ProfileFields {
+  noteId: string | null;
+  name: string;
+}
+
+/** a personal project's protagonist; a family project has none (404) */
+export const getProfile = (archive: string) =>
+  apiFetch<Profile>('GET', `/archives/${archive}/profile`);
+
+export const putProfile = (archive: string, fields: ProfileFields) =>
+  apiFetch<Profile>('PUT', `/archives/${archive}/profile`, fields);
+
+/** a family narrator's profile, on their own person note */
+export const putPersonProfile = (archive: string, noteId: string, fields: ProfileFields) =>
+  apiFetch<Profile>('PUT', `/archives/${archive}/people/${noteId}/profile`, fields);
 
 /* ── who is in a project, and inviting people (server/api/src/invites.ts) ── */
 
@@ -299,6 +327,8 @@ export interface ImportMemory {
   sources?: StorySource[];
   /** a story: sentences more certain than the speaker was */
   flags?: string[];
+  /** a story dated from an age said in it: "Sunja Kim was 18; born about 1946" */
+  dateBasis?: string;
   startSec?: number | null;
   endSec?: number | null;
   conflicts?: Array<{

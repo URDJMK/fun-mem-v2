@@ -6,6 +6,7 @@ import {
   cancelImport,
   createNote,
   listPeople,
+  putPersonProfile,
   type ImportRequest,
   type PersonSummary,
 } from '../lib/api';
@@ -25,6 +26,7 @@ import { InterviewReview } from '../components/InterviewReview';
 import { Review, Running, Saved, useImportRun, WhoIsTelling } from '../components/ImportRun';
 import { Studio } from '../components/Studio';
 import { Avatar, Failed, Icon, useAccountName } from '../components/ui';
+import { readProfileDraft } from '../components/ProfileInputs';
 
 type Phase =
   | { kind: 'idle' }
@@ -389,6 +391,8 @@ function ChooseNarrator({
   const [people, setPeople] = useState<PersonSummary[] | null>(null);
   const [adding, setAdding] = useState(false);
   const [newName, setNewName] = useState('');
+  const [born, setBorn] = useState('');
+  const [bornWrong, setBornWrong] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
@@ -404,11 +408,14 @@ function ChooseNarrator({
   async function addAndStart(el: Element | null) {
     const name = newName.trim();
     if (!name) return;
+    // a birth year lets "when I was seven" in their stories become a year (PRD D13)
+    const profile = readProfileDraft({ born, died: '', aliases: '' });
+    if (typeof profile === 'string') return setBornWrong(profile);
     setSaving(true);
     try {
       // the new narrator becomes one of the family's people; if that fails (a note by that
       // name already exists), the interview still goes ahead
-      await createNote(archiveId, {
+      const note = await createNote(archiveId, {
         title: name,
         type: 'person',
         body: `Part of ${family}. First interviewed ${new Date().toLocaleDateString(undefined, {
@@ -418,6 +425,7 @@ function ChooseNarrator({
         })}.`,
         occurred: null,
       });
+      if (profile.born) await putPersonProfile(archiveId, note.id, profile);
     } catch {
       /* already a person here, or the save failed: either way, talk to them */
     }
@@ -475,11 +483,25 @@ function ChooseNarrator({
             value={newName}
             onChange={(e) => setNewName(e.target.value)}
           />
+          <input
+            id="narrator-new-born"
+            className="input"
+            style={{ flex: '0 1 150px' }}
+            aria-label="Born (optional)"
+            placeholder="Born, e.g. 1952"
+            autoComplete="off"
+            value={born}
+            onChange={(e) => {
+              setBorn(e.target.value);
+              setBornWrong(null);
+            }}
+          />
           <button type="submit" className="btn btn-primary" disabled={!newName.trim() || saving}>
             <Icon name="mic" size={16} /> Start interview
           </button>
         </form>
       )}
+      {bornWrong && <Failed>{bornWrong}</Failed>}
       {people?.length === 0 && !adding && (
         <p className="small muted">
           Nobody is in this project yet. Add the first person you are talking with.
