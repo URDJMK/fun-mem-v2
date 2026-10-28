@@ -29,7 +29,8 @@ type Phase =
       startedAt: string;
       flip: Flip.FlipState | null;
     }
-  | { kind: 'review'; narrator: string; draft: Draft };
+  /** `audio`: the whole recording, held in memory for the second transcription; gone on reload */
+  | { kind: 'review'; narrator: string; draft: Draft; audio?: Blob[] };
 
 const flipFrom = (el: Element | null) =>
   el ? Flip.getState(el, { props: 'borderRadius,backgroundColor' }) : null;
@@ -185,10 +186,10 @@ export function Home() {
           mode={phase.mode}
           startedAt={phase.startedAt}
           flipFrom={phase.flip}
-          onEnd={(draft, failed: StartFailure | null) => {
+          onEnd={(draft, failed: StartFailure | null, audio) => {
             setError(failed ? FAILURE[failed] : null);
             if (draft.segments.length > 0)
-              setPhase({ kind: 'review', narrator: phase.narrator, draft });
+              setPhase({ kind: 'review', narrator: phase.narrator, draft, audio });
             else setPhase({ kind: 'idle' });
           }}
         />
@@ -199,6 +200,7 @@ export function Home() {
           archiveId={archive.id}
           name={phase.narrator}
           draft={phase.draft}
+          audio={phase.audio}
           onDiscard={() => {
             writeDraft(archive.id, null);
             setLeft(null);

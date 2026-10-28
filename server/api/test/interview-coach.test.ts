@@ -1,12 +1,18 @@
 import { describe, expect, it } from 'vitest';
 import {
+  answerCoach,
   coachPrompt,
   midSentence,
   CoachError,
   readCoachRequest,
+  readCorrections,
+  readCorrectionsRequest,
   readSuggestion,
+  readTopics,
+  readTopicsRequest,
   suggest,
   type CoachRequest,
+  type CorrectionsRequest,
 } from '../src/interview-coach';
 import type { ChatModel } from '../src/nim';
 
@@ -173,5 +179,78 @@ describe('suggest', () => {
     const s = await suggest(answering('{"move":"follow_up","question":"Describe the coop."}'), req);
     expect(s.move).toBe('close');
     expect(coachPrompt(req)).toContain('the move must be "close"');
+  });
+});
+
+describe('the interviewer’s notes', () => {
+  it('go to the model, with their spellings trusted over the transcript', () => {
+    const req = readCoachRequest({ ...base, notes: ['NLCS, girls’ school', ' '] }) as CoachRequest;
+    expect(req.notes).toEqual(['NLCS, girls’ school']);
+    expect(coachPrompt(req)).toContain("The interviewer's notes: NLCS, girls’ school");
+    expect(coachPrompt(readCoachRequest(base) as CoachRequest)).not.toContain('notes:');
+  });
+});
+
+describe('today’s topics', () => {
+  it('reads free topics, dropping closed openers and repeats', () => {
+    expect(
+      readTopics(
+        '{"topics":[{"label":"NLCS","opener":"Tell me about your years at NLCS."},' +
+          '{"label":"nlcs","opener":"Describe NLCS."},' +
+          '{"label":"Seoul","opener":"Did you like Seoul?"}]}',
+      ),
+    ).toEqual([{ label: 'NLCS', opener: 'Tell me about your years at NLCS.' }]);
+    expect(readTopics('{"topics":[]}')).toEqual([]);
+    expect(readTopics('no json')).toBeNull();
+  });
+
+  it('needs something said to read topics from', () => {
+    expect(readTopicsRequest({ narrator: 'Nell', about: ' ' })).toEqual({
+      error: 'about is required',
+    });
+    expect(readTopicsRequest({ narrator: 'Nell', about: 'her life in general' })).toEqual({
+      narrator: 'Nell',
+      about: 'her life in general',
+    });
+  });
+});
+
+describe('corrections from the notes', () => {
+  const req = readCorrectionsRequest({
+    notes: ['NLCS — school in London'],
+    lines: [
+      { id: 4, text: 'I went to THCL when I was eleven.' },
+      { id: 5, text: 'It was a long way from home.' },
+    ],
+  }) as CorrectionsRequest;
+
+  it('keeps a fix only when the words are in the line and the spelling is in the notes', () => {
+    const fixes = readCorrections(
+      JSON.stringify({
+        fixes: [
+          { id: 4, from: 'THCL', to: 'NLCS' },
+          // not in the line
+          { id: 5, from: 'THCL', to: 'NLCS' },
+          // not in the notes
+          { id: 5, from: 'home', to: 'Seoul' },
+          // no such line
+          { id: 9, from: 'THCL', to: 'NLCS' },
+          { id: 4, from: 'THCL', to: 'NLCS' },
+        ],
+      }),
+      req,
+    );
+    expect(fixes).toEqual([{ id: 4, from: 'THCL', to: 'NLCS' }]);
+  });
+
+  it('answers through the shared handler, as the route and the demo server do', async () => {
+    const out = await answerCoach(
+      'corrections',
+      answering('{"fixes":[{"id":4,"from":"THCL","to":"NLCS"}]}'),
+      { notes: ['NLCS'], lines: [{ id: 4, text: 'I went to THCL.' }] },
+    );
+    expect(out).toEqual({ status: 200, body: { fixes: [{ id: 4, from: 'THCL', to: 'NLCS' }] } });
+    expect((await answerCoach('corrections', null, { notes: [], lines: [] })).status).toBe(400);
+    expect((await answerCoach('topics', null, { narrator: 'Nell', about: 'x' })).status).toBe(503);
   });
 });

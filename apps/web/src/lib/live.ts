@@ -10,8 +10,9 @@
  *                 channels: nobody has to guess who is speaking.
  *
  * The audio goes from the browser straight to Deepgram with a one-minute token the API hands
- * out (lib/api.ts `transcriptionToken`); it is not recorded or kept anywhere. Only the words
- * are, by the page.
+ * out (lib/api.ts `transcriptionToken`). Each source is also recorded whole, in memory, for a
+ * second transcription of the full file when the interview ends (`recordings`); it is never
+ * written to disk or storage, and goes when the page lets it go.
  *
  * A dropped connection is reconnected with a fresh token; the words already written stay, and
  * the times carry on from where they were (each stream counts time from its own start, so a
@@ -79,6 +80,8 @@ export class LiveTranscriber {
   status: LiveStatus = 'connecting';
 
   private readonly channels: Channel[];
+  /** the whole of each source, for the second transcription at the end */
+  private readonly keepers: Keeper[];
   private nextId = 1;
   /** the person pressed pause (kept apart from `status`, which a reconnect also changes) */
   private held = false;
@@ -95,6 +98,12 @@ export class LiveTranscriber {
   ) {
     this.partials = sources.map(() => null);
     this.channels = sources.map((s, i) => new Channel(this, i, s));
+    this.keepers = sources.map((s) => new Keeper(s.stream));
+  }
+
+  /** each source's recording, in the order given; whole once `stop` has finished */
+  recordings(): Blob[] {
+    return this.keepers.map((k) => k.blob());
   }
 
   /**
@@ -119,6 +128,8 @@ export class LiveTranscriber {
     await Promise.all(this.channels.map((c) => c.connect(token)));
     if (this.stopping()) return;
     this.runFrom = performance.now();
+    // recorded from when the clock starts, so its times are the transcript's
+    for (const k of this.keepers) k.start();
     // a source that could not open is already reconnecting, and says so itself
     if (this.channels.every((c) => c.open())) this.setStatus('live');
   }
@@ -129,6 +140,7 @@ export class LiveTranscriber {
     this.banked = this.elapsed();
     this.runFrom = null;
     for (const c of this.channels) c.pause();
+    for (const k of this.keepers) k.pause();
     if (this.status === 'live') this.setStatus('paused');
   }
 
@@ -137,6 +149,7 @@ export class LiveTranscriber {
     this.held = false;
     this.runFrom = performance.now();
     for (const c of this.channels) c.resume();
+    for (const k of this.keepers) k.resume();
     if (this.status === 'paused') this.setStatus('live');
   }
 
@@ -146,7 +159,10 @@ export class LiveTranscriber {
     this.banked = this.elapsed();
     this.runFrom = null;
     this.setStatus('stopping');
-    await Promise.all(this.channels.map((c) => c.close()));
+    await Promise.all([
+      ...this.channels.map((c) => c.close()),
+      ...this.keepers.map((k) => k.stop()),
+    ]);
     this.partials.fill(null);
     this.setStatus('stopped');
     this.cb.onChange();
@@ -183,6 +199,8 @@ export class LiveTranscriber {
   fail(f: LiveFailure): void {
     if (this.status === 'stopped') return;
     for (const c of this.channels) void c.close();
+    // what was recorded is kept, like the words
+    for (const k of this.keepers) void k.stop();
     this.banked = this.elapsed();
     this.runFrom = null;
     this.status = 'stopped';
@@ -203,6 +221,56 @@ export class LiveTranscriber {
     if (!this.stopping() && this.channels.every((c) => c.open())) {
       this.setStatus(this.held ? 'paused' : 'live');
     }
+  }
+}
+
+/** about 14 MB an hour a voice: plenty for speech, and small enough to send in one go */
+const KEEP_BITS = 32_000;
+
+/** One source, recorded whole from start to stop, pauses left out. */
+class Keeper {
+  private rec: MediaRecorder | null = null;
+  private readonly chunks: Blob[] = [];
+  private type = '';
+  private stopped: Promise<void> | null = null;
+
+  constructor(private readonly stream: MediaStream) {}
+
+  start(): void {
+    if (this.rec) return;
+    const mimeType = MIME.find((m) => MediaRecorder.isTypeSupported(m))!;
+    this.type = mimeType.split(';')[0]!;
+    try {
+      this.rec = new MediaRecorder(this.stream, { mimeType, audioBitsPerSecond: KEEP_BITS });
+    } catch {
+      return;
+    }
+    this.rec.ondataavailable = (e) => {
+      if (e.data.size > 0) this.chunks.push(e.data);
+    };
+    this.rec.start(10_000);
+  }
+
+  pause(): void {
+    if (this.rec?.state === 'recording') this.rec.pause();
+  }
+
+  resume(): void {
+    if (this.rec?.state === 'paused') this.rec.resume();
+  }
+
+  stop(): Promise<void> {
+    this.stopped ??= new Promise<void>((resolve) => {
+      const rec = this.rec;
+      if (!rec || rec.state === 'inactive') return resolve();
+      rec.addEventListener('stop', () => resolve(), { once: true });
+      rec.stop();
+    });
+    return this.stopped;
+  }
+
+  blob(): Blob {
+    return new Blob(this.chunks, { type: this.type || 'audio/webm' });
   }
 }
 

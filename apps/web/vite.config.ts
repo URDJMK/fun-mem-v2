@@ -1,4 +1,5 @@
 import { defineConfig, loadEnv, type Plugin } from 'vite';
+import type { IncomingMessage, ServerResponse } from 'node:http';
 import { fileURLToPath } from 'node:url';
 import react from '@vitejs/plugin-react';
 
@@ -39,8 +40,10 @@ function demoTranscriptionToken(): Plugin {
 
 /**
  * The interview coach in demo mode: the API's own code (server/api/src/interview-coach.ts),
- * loaded by this dev server, with the NVIDIA key from the repo's .env. Same prompt, same checks,
- * same answers as the real route; only the sign-in check is missing, as everywhere in demo mode.
+ * loaded by this dev server, with the NVIDIA key from the repo's .env. Same prompts, same checks,
+ * same answers as the real routes (suggest, topics, corrections); only the sign-in check is
+ * missing, as everywhere in demo mode. The full-recording transcription goes the same way, with
+ * the Deepgram key.
  */
 function demoInterviewCoach(): Plugin {
   return {
@@ -48,48 +51,76 @@ function demoInterviewCoach(): Plugin {
     apply: 'serve',
     configureServer(server) {
       const env = loadEnv('development', '../..', '');
-      const coachFile = fileURLToPath(
-        new URL('../../server/api/src/interview-coach.ts', import.meta.url),
-      );
-      const nimFile = fileURLToPath(new URL('../../server/api/src/nim.ts', import.meta.url));
+      const file = (name: string) =>
+        fileURLToPath(new URL(`../../server/api/src/${name}.ts`, import.meta.url));
       let model: unknown;
-      server.middlewares.use('/demo/interview-suggest', (req, res) => {
-        const send = (status: number, body: unknown) => {
-          res.statusCode = status;
-          res.setHeader('content-type', 'application/json');
-          res.end(JSON.stringify(body));
-        };
-        if (req.method !== 'POST') return send(405, { code: 'method' });
-        let raw = '';
-        req.on('data', (chunk: Buffer) => {
-          raw += chunk;
-          if (raw.length > 64 * 1024) req.destroy();
+      const send = (res: ServerResponse, status: number, body: unknown) => {
+        res.statusCode = status;
+        res.setHeader('content-type', 'application/json');
+        res.end(JSON.stringify(body));
+      };
+      const read = (req: IncomingMessage, max: number) =>
+        new Promise<Buffer>((resolve, reject) => {
+          const chunks: Buffer[] = [];
+          let size = 0;
+          req.on('data', (chunk: Buffer) => {
+            size += chunk.length;
+            if (size > max) req.destroy(new Error('too large'));
+            else chunks.push(chunk);
+          });
+          req.on('end', () => resolve(Buffer.concat(chunks)));
+          req.on('error', reject);
         });
-        req.on('end', () => {
-          void (async () => {
-            const coach = (await server.ssrLoadModule(
-              coachFile,
-            )) as typeof import('../../server/api/src/interview-coach');
-            const nim = (await server.ssrLoadModule(
-              nimFile,
-            )) as typeof import('../../server/api/src/nim');
-            model ??= nim.createNimChat({
-              apiKey: env.NVIDIA_API_KEY || undefined,
-              model: env.INTERVIEW_MODEL || coach.INTERVIEW_MODEL_DEFAULT,
-              timeoutMs: 9000,
-              attempts: 1,
-              hedgeMs: 0,
+
+      server.middlewares.use('/demo/interview-transcribe', (req, res) => {
+        if (req.method !== 'POST') return send(res, 405, { code: 'method' });
+        void (async () => {
+          const t = (await server.ssrLoadModule(
+            file('transcription'),
+          )) as typeof import('../../server/api/src/transcription');
+          const audio = new Uint8Array(await read(req, t.MAX_RECORDING_BYTES));
+          const query = t.readRecordingQuery(new URL(req.url ?? '', 'http://x').searchParams);
+          try {
+            const segments = await t.transcribeRecording(env.DEEPGRAM_API_KEY, audio, {
+              contentType: req.headers['content-type'] ?? 'audio/webm',
+              ...query,
             });
-            const body = coach.readCoachRequest(JSON.parse(raw || 'null'));
-            if ('error' in body) return send(400, { code: 'bad_request' });
-            try {
-              send(200, await coach.suggest(model as Parameters<typeof coach.suggest>[0], body));
-            } catch (e) {
-              const code = e instanceof coach.CoachError ? e.code : 'unavailable';
-              send(code === 'not_configured' ? 503 : 502, { code });
-            }
-          })().catch(() => send(500, { code: 'internal' }));
-        });
+            send(res, 200, { segments });
+          } catch (e) {
+            const code = e instanceof t.TranscriptionError ? e.code : 'upstream';
+            send(res, code === 'not_configured' ? 503 : 502, { code });
+          }
+        })().catch(() => send(res, 500, { code: 'internal' }));
+      });
+
+      // /demo/interview/suggest, /demo/interview/topics, /demo/interview/corrections
+      server.middlewares.use('/demo/interview', (req, res) => {
+        const action = (req.url ?? '').replace(/^\//, '').split('?')[0];
+        if (req.method !== 'POST') return send(res, 405, { code: 'method' });
+        if (action !== 'suggest' && action !== 'topics' && action !== 'corrections')
+          return send(res, 404, { code: 'not_found' });
+        void (async () => {
+          const raw = (await read(req, 320 * 1024)).toString('utf8');
+          const coach = (await server.ssrLoadModule(
+            file('interview-coach'),
+          )) as typeof import('../../server/api/src/interview-coach');
+          const nim = (await server.ssrLoadModule(
+            file('nim'),
+          )) as typeof import('../../server/api/src/nim');
+          model ??= nim.createNimChat({
+            apiKey: env.NVIDIA_API_KEY || undefined,
+            model: env.INTERVIEW_MODEL || coach.INTERVIEW_MODEL_DEFAULT,
+            timeoutMs: 45_000,
+            attempts: 1,
+            hedgeMs: 0,
+          });
+          const out = await coach.answerCoach(
+            action,
+            model as Parameters<typeof coach.answerCoach>[1],
+            JSON.parse(raw || 'null'),
+          );
+          send(res, out.status, out.body);
+        })().catch(() => send(res, 500, { code: 'internal' }));
       });
     },
   };

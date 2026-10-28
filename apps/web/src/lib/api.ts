@@ -333,10 +333,84 @@ export interface CoachRequest {
   threads: string[];
   asked: string[];
   want?: Exclude<CoachSuggestion['move'], 'wait'> | null;
+  /** what the interviewer has written down; its spellings are the right ones */
+  notes?: string[];
 }
 
 export const coachSuggest = (archive: string, req: CoachRequest, signal?: AbortSignal) =>
   apiFetch<CoachSuggestion>('POST', `/archives/${archive}/interview/suggest`, req, signal);
+
+/** A topic in the interviewer's own words, with one open question to begin it. */
+export interface FreeTopic {
+  label: string;
+  opener: string;
+}
+
+/** Today's topics, read out of what the interviewer said; none means the whole life. */
+export const interviewTopics = (
+  archive: string,
+  req: { narrator: string; about: string },
+  signal?: AbortSignal,
+) =>
+  apiFetch<{ topics: FreeTopic[] }>('POST', `/archives/${archive}/interview/topics`, req, signal);
+
+/** A word the transcript misheard, in one line, as the interviewer's notes spell it. */
+export interface Correction {
+  id: number;
+  from: string;
+  to: string;
+}
+
+export const interviewCorrections = (
+  archive: string,
+  req: { notes: string[]; lines: Array<{ id: number; text: string }> },
+  signal?: AbortSignal,
+) =>
+  apiFetch<{ fixes: Correction[] }>(
+    'POST',
+    `/archives/${archive}/interview/corrections`,
+    req,
+    signal,
+  );
+
+/** one stretch of speech in the full-recording transcription (server/api/src/transcription.ts) */
+export interface RecordedSegment {
+  speaker: number | null;
+  start: number;
+  end: number;
+  text: string;
+}
+
+/**
+ * The whole recording, transcribed again at once, for voices told apart from start to finish.
+ * The audio goes through the API to Deepgram and is not kept (in demo mode, the dev server).
+ */
+export async function transcribeRecording(
+  archive: string,
+  audio: Blob,
+  opts: { diarize: boolean; keyterms: string[] },
+  signal?: AbortSignal,
+): Promise<RecordedSegment[]> {
+  const q = new URLSearchParams({ diarize: String(opts.diarize) });
+  for (const t of opts.keyterms) q.append('keyterm', t);
+  let url = `/v1/archives/${archive}/interview/transcribe?${q}`;
+  const headers: Record<string, string> = { 'content-type': audio.type || 'audio/webm' };
+  if (SKIP_LOGIN) url = `/demo/interview-transcribe?${q}`;
+  else {
+    const { data } = await supabase.auth.getSession();
+    const token = data.session?.access_token;
+    if (token) headers.authorization = `Bearer ${token}`;
+  }
+  const res = await fetch(url, { method: 'POST', headers, body: audio, signal });
+  const payload = (await res.json().catch(() => null)) as {
+    segments?: RecordedSegment[];
+    code?: unknown;
+  } | null;
+  if (!res.ok || !Array.isArray(payload?.segments)) {
+    throw new ApiError(res.status, typeof payload?.code === 'string' ? payload.code : null);
+  }
+  return payload.segments;
+}
 
 /** Always a preview, always a job: the person reads every memory before anything is saved. */
 export const startImport = (archive: string, req: ImportRequest) =>

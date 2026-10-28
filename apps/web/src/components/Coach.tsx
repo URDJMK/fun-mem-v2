@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
 import { gsap } from 'gsap';
 import { coachSuggest, type CoachSuggestion } from '../lib/api';
 import type { Setup } from '../lib/interview';
@@ -37,12 +37,21 @@ interface Offer {
 
 /** the narrator has answered once they have said this much */
 const ANSWERED_WORDS = 8;
-/** seconds of quiet before asking for a suggestion (it is ready by the time it is shown) */
-const FETCH_AFTER = 1.5;
-/** seconds of quiet before showing it: the silent question comes first */
-const SHOW_AFTER = 4;
+/**
+ * with no question heard from the interviewer (their voice taken for the narrator's), the
+ * narrator has answered once this much has been said: the coach must not wait for a question
+ * it cannot hear
+ */
+const UNHEARD_QUESTION_WORDS = 25;
+/**
+ * seconds of real quiet (Studio measures it from when the words were said) before asking for a
+ * suggestion; it takes about a second, so it is ready by the time it is shown
+ */
+const FETCH_AFTER = 0.8;
+/** seconds of quiet before showing it: a short silent question comes first */
+const SHOW_AFTER = 2.5;
 /** never more often than this, whatever happens */
-const MIN_GAP_MS = 8000;
+const MIN_GAP_MS = 5000;
 
 const MOVE_LABEL: Record<Move, string> = {
   wait: 'Wait',
@@ -74,6 +83,8 @@ export function Coach({
   quiet,
   elapsed,
   onEnding,
+  notes,
+  notesPanel,
 }: {
   archiveId: string;
   /** the narrator, as they called themselves */
@@ -87,8 +98,12 @@ export function Coach({
   elapsed: () => number;
   /** the interview has reached its thanks: the End button should stand out */
   onEnding: (on: boolean) => void;
+  /** what the interviewer has written down, for the coach to read */
+  notes: string[];
+  /** where they write it, at the top of the side column */
+  notesPanel: ReactNode;
 }) {
-  const order = topicOrder(setup.topics);
+  const order = topicOrder(setup.topics, setup.free);
   const [opened, setOpened] = useState<string[]>(() => (order[0] ? [order[0].id] : []));
   const [current, setCurrent] = useState<Ask>(() => ({
     question: order[0]?.opener ?? 'Tell me about your life.',
@@ -129,7 +144,12 @@ export function Coach({
       : -1;
   const answer = askedIdx < 0 ? [] : after.slice(askedIdx + 1).filter((s) => isNarrator(s.speaker));
   const answerWords = answer.reduce((n, s) => n + wordCount(s.text), 0);
-  const answered = answerWords >= ANSWERED_WORDS;
+  const unheard =
+    known &&
+    askedIdx < 0 &&
+    after.filter((s) => isNarrator(s.speaker)).reduce((n, s) => n + wordCount(s.text), 0) >=
+      UNHEARD_QUESTION_WORDS;
+  const answered = answerWords >= ANSWERED_WORDS || unheard;
   const narratorTalking = partials.some((p) => isNarrator(p.speaker));
   // the narrator went on after the suggestion was made: it no longer fits
   const stale =
@@ -164,7 +184,13 @@ export function Coach({
     setOffer(null);
     setPicking(false);
     if (move === 'follow_up' || move === 'own') setFollowUps((n) => n + 1);
-    if (move === 'change_topic') setFollowUps(0);
+    if (move === 'change_topic') {
+      setFollowUps(0);
+      // the AI's topic, when it is one of today's, is now opened
+      const t = used?.topic?.toLowerCase();
+      const hit = t ? order.find((x) => x.label.toLowerCase() === t) : undefined;
+      if (hit) setOpened((o) => (o.includes(hit.id) ? o : [...o, hit.id]));
+    }
     if (move === 'close') setClosing('asked');
   }, [segments.length]);
 
@@ -241,6 +267,7 @@ export function Coach({
         threads,
         asked,
         want,
+        notes,
       },
       ctrl.signal,
     )
@@ -318,7 +345,9 @@ export function Coach({
     listening: `Listening to ${call}`,
     moment: 'Give it a moment…',
     wait: 'Wait',
-    offer: `Suggested next · ${MOVE_LABEL[offer?.s.move ?? 'follow_up']}`,
+    offer: `Suggested next · ${MOVE_LABEL[offer?.s.move ?? 'follow_up']}${
+      offer?.s.move === 'change_topic' && offer.s.topic ? `: ${offer.s.topic}` : ''
+    }`,
   }[state];
   const suggested = showing ? offer!.s.move : null;
 
@@ -377,7 +406,11 @@ export function Coach({
               label="Change topic"
               icon="next"
               on={suggested === 'change_topic'}
-              onClick={() => setPicking((p) => !p)}
+              onClick={() => {
+                // the AI picks where to go from what was said; the topics are there to overrule it
+                if (!picking && suggested !== 'change_topic') request('change_topic');
+                setPicking((p) => !p);
+              }}
             />
             <MoveButton
               label={closing === 'no' ? 'Close' : 'Closing'}
@@ -445,6 +478,7 @@ export function Coach({
       </section>
 
       <aside className="assist-aside">
+        {notesPanel}
         <section className="assist-next">
           <h3 className="label-heading">To come back to</h3>
           {threads.length ? (

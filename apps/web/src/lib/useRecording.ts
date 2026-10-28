@@ -90,14 +90,23 @@ export function useRecording(opts: {
     status,
     mic,
     callEnded,
-    /** the people in the room, added to the archive's names Deepgram listens for */
-    addNames(names: string[]) {
+    /**
+     * The people in the room, and the words in the interviewer's notes (`terms`, kept whole),
+     * added to the archive's names Deepgram listens for. The notes come first: they are what
+     * this interview is about, and the list has a limit.
+     */
+    addNames(names: string[], terms: string[] = []) {
       const extra = names.flatMap((n) => [n, ...n.split(/\s+/)]).filter((n) => n.length > 1);
-      rec.current?.setKeyterms([...new Set([...baseTerms.current, ...extra])].slice(0, 50));
+      const all = [...new Set([...terms, ...extra, ...baseTerms.current])];
+      // Deepgram refuses more than 500 tokens: about four characters a token, well under
+      let chars = 0;
+      rec.current?.setKeyterms(all.filter((t, i) => i < 50 && (chars += t.length) <= 1400));
     },
-    async finish() {
+    /** Stops, and hands back each source's whole recording (none in a simulation). */
+    async finish(): Promise<Blob[]> {
       await rec.current?.stop();
       streams.current.forEach((s) => s.getTracks().forEach((t) => t.stop()));
+      return rec.current?.recordings?.() ?? [];
     },
   };
 }

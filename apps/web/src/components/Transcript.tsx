@@ -15,12 +15,15 @@ export function Transcript({
   partials,
   scroller,
   empty,
+  onReassign,
 }: {
   segments: Segment[];
   names: Map<string, string>;
   partials: Array<{ speaker: string; text: string }>;
   scroller?: React.RefObject<HTMLElement | null>;
   empty: string;
+  /** when given, each turn's speaker can be changed: its segments go to the chosen voice */
+  onReassign?: (ids: number[], speaker: string) => void;
 }) {
   const turns = turnsOf(segments);
   const order = [...names.keys()];
@@ -58,7 +61,22 @@ export function Transcript({
         return (
           <div key={i} className="live-turn">
             <span className={`live-who live-who-${tone(turn.speaker)}`}>
-              {label(turn.speaker)}
+              {onReassign ? (
+                <select
+                  className="live-who-select"
+                  aria-label={`Who said this, at ${clock(turn.start)}`}
+                  value={turn.speaker}
+                  onChange={(e) => onReassign(turn.ids, e.target.value)}
+                >
+                  {order.map((sp) => (
+                    <option key={sp} value={sp}>
+                      {label(sp)}
+                    </option>
+                  ))}
+                </select>
+              ) : (
+                label(turn.speaker)
+              )}
               <span className="live-time">{clock(turn.start)}</span>
             </span>
             <p>

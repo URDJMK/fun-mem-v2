@@ -14,6 +14,10 @@ export interface Recorder {
   resume(): void;
   stop(): Promise<void>;
   setKeyterms(terms: readonly string[]): void;
+  /** the names being listened for */
+  readonly keyterms?: readonly string[];
+  /** each source's whole recording, once stopped; a simulation has none */
+  recordings?(): Blob[];
 }
 
 const today = new Date().toLocaleDateString('en-US', {
