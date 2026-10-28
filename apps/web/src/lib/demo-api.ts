@@ -308,6 +308,69 @@ export function resetDemo() {
   persistInbox();
 }
 
+const ENTITY_TYPE: Record<string, 'person' | 'place' | 'thing' | undefined> = {
+  person: 'person',
+  place: 'place',
+  object: 'thing',
+};
+
+/** "[[Walter|Dad]]" → "Dad" */
+const plainLabel = (raw: string) => {
+  const l = extractWikilinks(raw)[0];
+  return (l?.alias ?? l?.target ?? raw).trim();
+};
+const plainLinkText = (text: string) =>
+  text.replace(/!?\[\[([^\]|]*)(?:\|([^\]]*))?\]\]/g, (_m, t: string, s?: string) =>
+    (s ?? t).trim(),
+  );
+
+/** the server's GET /graph, from the demo's notes: the same shape, same-story lines only */
+function demoGraph(a: DemoArchive, around?: string) {
+  const ents = a.notes.filter((n) => ENTITY_TYPE[n.type]);
+  const subject = ents.find(
+    (n) => n.type === 'person' && normalizeTitle(n.title) === normalizeTitle(a.subjectName),
+  );
+  const storiesOf = new Map<string, Set<string>>();
+  const inStory = new Map<string, Set<string>>();
+  for (const l of links(a)) {
+    if (!ENTITY_TYPE[l.to.type] || ENTITY_TYPE[l.from.type]) continue;
+    storiesOf.set(l.to.id, (storiesOf.get(l.to.id) ?? new Set()).add(l.from.id));
+    inStory.set(l.from.id, (inStory.get(l.from.id) ?? new Set()).add(l.to.id));
+  }
+  const together = new Map<string, { a: string; b: string; stories: number }>();
+  for (const ids of inStory.values()) {
+    const list = [...ids].filter((x) => x !== subject?.id).sort();
+    for (let i = 0; i < list.length; i++)
+      for (let j = i + 1; j < list.length; j++) {
+        const k = `${list[i]}:${list[j]}`;
+        const t = together.get(k) ?? { a: list[i]!, b: list[j]!, stories: 0 };
+        t.stories++;
+        together.set(k, t);
+      }
+  }
+  let nodes = ents.map((n) => ({
+    id: n.id,
+    name: n.title,
+    type: ENTITY_TYPE[n.type]!,
+    stories: storiesOf.get(n.id)?.size ?? 0,
+    subject: n.id === subject?.id,
+    noteId: n.id,
+  }));
+  let lines = [...together.values()];
+  if (around) {
+    lines = lines.filter((l) => l.a === around || l.b === around);
+    const near = new Set([around, ...lines.flatMap((l) => [l.a, l.b])]);
+    nodes = nodes.filter((n) => near.has(n.id));
+  }
+  nodes.sort(
+    (x, y) =>
+      Number(y.subject) - Number(x.subject) ||
+      y.stories - x.stories ||
+      x.name.localeCompare(y.name),
+  );
+  return { nodes, told: [], together: lines, more: 0 };
+}
+
 const summary = (n: DemoNote) => ({
   id: n.id,
   title: n.title,
@@ -598,7 +661,21 @@ export async function demoFetch(method: string, path: string, body?: unknown): P
       jurisdiction: countryCode(String(b.jurisdiction)) ?? 'US',
       role: 'owner',
       ...(kind === 'personal' ? { profile } : {}),
-      notes: [],
+      // the protagonist's own person note, as the server makes it (graph design 3.5)
+      notes:
+        kind === 'personal'
+          ? [
+              {
+                id: uid(),
+                title: subjectName,
+                type: 'person',
+                body: '',
+                occurred: null,
+                createdAt: now(),
+                revised: now(),
+              },
+            ]
+          : [],
       runs: [],
     };
     all.push(a);
@@ -850,6 +927,47 @@ export async function demoFetch(method: string, path: string, body?: unknown): P
     n.profile = fields;
     persist();
     return { noteId: n.id, name: n.title, ...fields };
+  }
+  /* ── the graph (server/api/src/graph/): the demo's person, place and object notes, and the
+     [[links]] its stories make to them; the demo tells no relationships ── */
+  if (what === 'graph' && method === 'GET') return demoGraph(a);
+  if (what === 'entities' && !id && method === 'GET') {
+    const g = demoGraph(a);
+    return g.nodes.map((n) => ({
+      id: n.id,
+      name: n.name,
+      type: n.type,
+      noteId: n.noteId,
+      subject: n.subject,
+      aliases: [],
+      stories: n.stories,
+    }));
+  }
+  if (what === 'entities' && id && !sub && method === 'GET') {
+    const n = noteOf(a, id);
+    const type = ENTITY_TYPE[n.type];
+    if (!type) throw new DemoError(404, null);
+    const into = links(a).filter((l) => l.to.id === n.id && !ENTITY_TYPE[l.from.type]);
+    const subject = normalizeTitle(n.title) === normalizeTitle(a.subjectName) && type === 'person';
+    return {
+      id: n.id,
+      name: n.title,
+      type,
+      noteId: n.id,
+      subject,
+      aliases: [],
+      description: '',
+      profile: subject ? (a.profile ?? readProfile({})) : null,
+      mentions: [...new Map(into.map((l) => [l.from.id, l])).values()].map((l) => ({
+        storyId: l.from.id,
+        storyTitle: l.from.title,
+        occurred: l.from.occurred,
+        words: [plainLabel(l.raw)],
+        line: plainLinkText(snippet(l.from.body, l.raw)),
+      })),
+      relationships: [],
+      graph: demoGraph(a, n.id),
+    };
   }
   if (what === 'people' && method === 'GET') {
     const all2 = links(a);

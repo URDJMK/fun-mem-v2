@@ -287,7 +287,7 @@ function Story({ archive, data, onEdit }: { archive: Archive; data: Loaded; onEd
             ) : (
               parts.paragraphs.map((p, i) => (
                 <p key={i}>
-                  <Linked text={p} notes={notes} archiveId={archive.id} />
+                  <Linked text={p} notes={notes} archiveId={archive.id} mentions={note.mentions} />
                 </p>
               ))
             )}

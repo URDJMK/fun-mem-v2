@@ -1,116 +1,118 @@
 import { useEffect, useState, type CSSProperties } from 'react';
 import { Link, useNavigate } from 'react-router';
 import {
+  ApiError,
+  getEntity,
   getNeighborhood,
-  listNotes,
-  listPeople,
+  listEntities,
+  type EntityDetail,
+  type EntitySummary,
+  type EntityType,
   type Neighborhood,
-  type NoteSummary,
 } from '../lib/api';
 import { inArchive, noteHref, useArchive, type Archive } from '../lib/archive';
 import { ArchiveLayout } from '../components/ArchiveLayout';
+import { GraphCanvas } from '../components/WhoAndWhere';
 import { Linked, plainLinks, splitNote } from '../components/NoteText';
 import { Avatar, count, Failed, Icon, Loading } from '../components/ui';
 import { EditNote, NotFound, useNoteActions, useNoteData, type Loaded } from './NotePage';
 
-type Kind = 'person' | 'place';
+type Kind = EntityType;
 
-interface Index {
-  people: Array<NoteSummary & { backlinks: number }>;
-  places: NoteSummary[];
-}
+const KINDS: Array<{ kind: Kind; tab: string; none: string; add: string; noteType: string }> = [
+  {
+    kind: 'person',
+    tab: 'People',
+    none: 'No people yet.',
+    add: 'Add a person',
+    noteType: 'person',
+  },
+  { kind: 'place', tab: 'Places', none: 'No places yet.', add: 'Add a place', noteType: 'place' },
+  { kind: 'thing', tab: 'Things', none: 'No things yet.', add: 'Add a thing', noteType: 'object' },
+];
 
-/** Everyone and everywhere that comes up, and one of them opened beside the list. */
-export function People({ noteId }: { noteId?: string }) {
+/**
+ * Everyone, everywhere and everything the stories name (graph design 6.2), and one of them
+ * opened beside the list. `id` is an entity's id, or the id of a note about one; a person or
+ * place note that has no entity of its own is shown as the note.
+ */
+export function People({ noteId: id }: { noteId?: string }) {
   const archive = useArchive();
   const navigate = useNavigate();
-  const [index, setIndex] = useState<Index | null | 'failed'>(null);
+  const [index, setIndex] = useState<EntitySummary[] | null | 'failed'>(null);
   const [kind, setKind] = useState<Kind>('person');
 
   useEffect(() => {
     let live = true;
-    Promise.all([listPeople(archive.id), listNotes(archive.id)])
-      .then(([people, notes]) => {
-        if (!live) return;
-        const byId = new Map(notes.map((n) => [n.id, n]));
-        setIndex({
-          people: people.flatMap((p) => {
-            const n = byId.get(p.id);
-            return n ? [{ ...n, backlinks: p.backlinks }] : [];
-          }),
-          places: notes
-            .filter((n) => n.type === 'place')
-            .sort((a, b) => a.title.localeCompare(b.title)),
-        });
-      })
+    listEntities(archive.id)
+      .then((list) => live && setIndex(list))
       .catch(() => live && setIndex('failed'));
     return () => {
       live = false;
     };
-  }, [archive.id, noteId]);
+  }, [archive.id, id]);
 
-  // open the tab the chosen note belongs to
+  // open the tab the chosen one belongs to
   useEffect(() => {
-    if (!noteId || !index || index === 'failed') return;
-    if (index.places.some((p) => p.id === noteId)) setKind('place');
-    else if (index.people.some((p) => p.id === noteId)) setKind('person');
-  }, [noteId, index]);
+    if (!id || !index || index === 'failed') return;
+    const e = index.find((x) => x.id === id || x.noteId === id);
+    if (e) setKind(e.type);
+  }, [id, index]);
 
   // with nobody chosen, open the first one there is
   useEffect(() => {
-    if (noteId || !index || index === 'failed') return;
-    const first = index.people[0] ?? index.places[0];
-    if (first) void navigate(noteHref(archive.id, first), { replace: true });
-  }, [noteId, index, archive.id, navigate]);
+    if (id || !index || index === 'failed') return;
+    const first = index[0];
+    if (first) void navigate(inArchive(archive.id, `/people/${first.id}`), { replace: true });
+  }, [id, index, archive.id, navigate]);
 
-  const list = index && index !== 'failed' ? (kind === 'person' ? index.people : index.places) : [];
+  const list = index && index !== 'failed' ? index.filter((e) => e.type === kind) : [];
+  const k = KINDS.find((x) => x.kind === kind)!;
 
   return (
-    <ArchiveLayout title="People & places" wide>
+    <ArchiveLayout title="People, places & things" wide>
       <div className="entity-layout">
-        <nav aria-label="People and places" className="entity-index">
+        <nav aria-label="People, places and things" className="entity-index">
           <div role="tablist" aria-label="Show" className="segmented">
-            {(['person', 'place'] as const).map((k) => (
+            {KINDS.map((x) => (
               <button
-                key={k}
+                key={x.kind}
                 type="button"
                 role="tab"
-                aria-selected={kind === k}
-                onClick={() => setKind(k)}
+                aria-selected={kind === x.kind}
+                onClick={() => setKind(x.kind)}
               >
-                {k === 'person' ? 'People' : 'Places'}
+                {x.tab}
               </button>
             ))}
           </div>
           {index === null ? (
             <Loading what="Opening…" />
           ) : index === 'failed' ? (
-            <Failed>Could not load the people and places. Reload the page.</Failed>
+            <Failed>Could not load the people, places and things. Reload the page.</Failed>
           ) : list.length === 0 ? (
             <p className="muted small" style={{ padding: '0 4px' }}>
-              {kind === 'person' ? 'No people yet.' : 'No places yet.'} A memory that puts a name in
-              [[double brackets]] links to their page.
+              {k.none} They are found in the stories as interviews come in.
             </p>
           ) : (
             <ul className="stack" style={{ margin: 0, padding: 2, listStyle: 'none', gap: 2 }}>
-              {list.map((n) => (
-                <li key={n.id}>
+              {list.map((e) => (
+                <li key={e.id}>
                   <Link
-                    to={noteHref(archive.id, n)}
+                    to={inArchive(archive.id, `/people/${e.id}`)}
                     className="entity-link"
-                    aria-current={n.id === noteId ? 'page' : undefined}
+                    aria-current={e.id === id || e.noteId === id ? 'page' : undefined}
                   >
-                    <Avatar name={n.title} size={28} />
+                    <Avatar name={e.name} size={28} />
                     <span className="stack" style={{ lineHeight: 1.3, minWidth: 0 }}>
-                      <span style={{ fontWeight: 600 }}>{n.title}</span>
-                      {'backlinks' in n && (
-                        <span style={{ fontSize: 13 }} className="muted">
-                          {n.backlinks === 0
-                            ? 'Not mentioned elsewhere yet'
-                            : // the API counts mentions (one memory may name them twice), not memories
-                              `Mentioned ${count(n.backlinks as number, 'time', 'times')}`}
-                        </span>
-                      )}
+                      <span style={{ fontWeight: 600 }}>{e.name}</span>
+                      <span style={{ fontSize: 13 }} className="muted">
+                        {e.subject
+                          ? 'Whose stories these are'
+                          : e.stories === 0
+                            ? 'In no story yet'
+                            : `In ${count(e.stories, 'story', 'stories')}`}
+                      </span>
                     </span>
                   </Link>
                 </li>
@@ -119,28 +121,214 @@ export function People({ noteId }: { noteId?: string }) {
           )}
           {archive.writer && (
             <Link
-              to={inArchive(archive.id, `/stories/new?type=${kind}`)}
+              to={inArchive(archive.id, `/stories/new?type=${k.noteType}`)}
               className="btn btn-outline btn-sm"
               style={{ alignSelf: 'flex-start' }}
             >
               <Icon name="plus" size={14} />
-              {kind === 'person' ? 'Add a person' : 'Add a place'}
+              {k.add}
             </Link>
           )}
         </nav>
 
         <div className="entity-main">
-          {noteId ? (
-            <Entity key={noteId} archive={archive} noteId={noteId} />
-          ) : index && index !== 'failed' && index.people.length + index.places.length === 0 ? (
+          {id ? (
+            <EntityPage key={id} archive={archive} id={id} />
+          ) : index && index !== 'failed' && index.length === 0 ? (
             <p className="empty">
-              Nobody and nowhere has a page yet. When an interview or a memory names someone, they
-              can get one.
+              Nobody, nowhere and nothing yet. When an interview names someone, they appear here.
             </p>
           ) : null}
         </div>
       </div>
     </ArchiveLayout>
+  );
+}
+
+const TYPE_LABEL: Record<Kind, string> = { person: 'A person', place: 'A place', thing: 'A thing' };
+
+/** One entity: what the stories say about it, its relationships, and the graph around it. */
+function EntityPage({ archive, id }: { archive: Archive; id: string }) {
+  const [entity, setEntity] = useState<EntityDetail | null | 'missing' | 'failed'>(null);
+
+  useEffect(() => {
+    let live = true;
+    getEntity(archive.id, id)
+      .then((e) => live && setEntity(e))
+      .catch(
+        (e: unknown) =>
+          live && setEntity(e instanceof ApiError && e.status === 404 ? 'missing' : 'failed'),
+      );
+    return () => {
+      live = false;
+    };
+  }, [archive.id, id]);
+
+  if (entity === null) return <Loading what="Opening…" />;
+  // a person or place note with no entity of its own (a second note of the same name)
+  if (entity === 'missing') return <Entity archive={archive} noteId={id} />;
+  if (entity === 'failed') return <Failed>Could not open this just now. Reload the page.</Failed>;
+  const e = entity;
+  const stories = new Set([
+    ...e.mentions.map((m) => m.storyId),
+    ...e.relationships.map((r) => r.storyId),
+  ]).size;
+
+  return (
+    <article data-testid="entity" className="stack" style={{ gap: 10 }}>
+      <div className="row" style={{ gap: '6px 9px' }}>
+        <Avatar name={e.name} size={40} />
+        <div className="stack" style={{ gap: 2, flex: '1 1 240px' }}>
+          <h1 data-testid="entity-heading" style={{ fontSize: 16, lineHeight: 1.05 }}>
+            {e.name}
+          </h1>
+          <span className="muted">
+            {TYPE_LABEL[e.type]}
+            {stories > 0 ? ` · in ${count(stories, 'story', 'stories')}` : ''}
+            {e.aliases.length ? ` · also called ${e.aliases.join(', ')}` : ''}
+          </span>
+        </div>
+      </div>
+
+      {e.subject && e.profile && (
+        <p className="small muted">
+          {[
+            e.profile.born ? `Born ${said(e.profile.born)}` : 'Birth date not entered',
+            e.profile.died ? `died ${said(e.profile.died)}` : '',
+          ]
+            .filter(Boolean)
+            .join(', ')}
+          . <Link to={inArchive(archive.id, '/settings')}>Change it in Settings</Link>
+        </p>
+      )}
+
+      {e.graph.nodes.length > 1 && (
+        <section aria-labelledby="fits-h" className="card stack" style={{ gap: 6, padding: 12 }}>
+          <h2 id="fits-h" style={{ fontSize: 15 }}>
+            How {e.name} fits in
+          </h2>
+          <GraphCanvas archiveId={archive.id} view={e.graph} height={320} />
+        </section>
+      )}
+
+      <div className="grid-auto" style={{ '--min': '280px' } as CSSProperties}>
+        <section
+          aria-labelledby="say-h"
+          data-testid="entity-mentions"
+          className="card stack"
+          style={{ gap: 8, padding: 13 }}
+        >
+          <h2 id="say-h" style={{ fontSize: 15 }}>
+            What the stories say
+          </h2>
+          {e.mentions.length === 0 ? (
+            <p className="muted">No story names {e.name} yet.</p>
+          ) : (
+            e.mentions.map((m) => (
+              <Link
+                key={m.storyId}
+                to={inArchive(archive.id, `/stories/${m.storyId}`)}
+                className="stack"
+                style={{ textDecoration: 'none', gap: 1 }}
+              >
+                <span style={{ fontWeight: 600 }}>{m.storyTitle}</span>
+                {m.line && <span style={{ fontSize: 14 }}>{m.line}</span>}
+              </Link>
+            ))
+          )}
+        </section>
+        <section
+          aria-labelledby="rel-h"
+          data-testid="entity-relationships"
+          className="card stack"
+          style={{ gap: 8, padding: 13 }}
+        >
+          <h2 id="rel-h" style={{ fontSize: 15 }}>
+            Relationships
+          </h2>
+          {e.relationships.length === 0 ? (
+            <p className="muted">No relationship told yet.</p>
+          ) : (
+            e.relationships.map((r) => (
+              <div key={r.id} className="stack" style={{ gap: 1 }}>
+                <Link
+                  to={inArchive(archive.id, `/people/${r.other.id}`)}
+                  style={{ fontWeight: 600 }}
+                >
+                  {r.other.name}
+                </Link>
+                <span style={{ fontSize: 14 }}>{r.description}</span>
+                <Link to={inArchive(archive.id, `/stories/${r.storyId}`)} className="small muted">
+                  from “{r.storyTitle}”
+                </Link>
+              </div>
+            ))
+          )}
+        </section>
+      </div>
+
+      {e.noteId ? (
+        <EntityNote archive={archive} noteId={e.noteId} name={e.name} />
+      ) : (
+        archive.writer && (
+          <Link
+            to={inArchive(
+              archive.id,
+              `/stories/new?type=${KINDS.find((x) => x.kind === e.type)!.noteType}&title=${encodeURIComponent(e.name)}`,
+            )}
+            className="btn btn-outline btn-sm"
+            style={{ alignSelf: 'flex-start' }}
+          >
+            Write about {e.name}
+          </Link>
+        )
+      )}
+    </article>
+  );
+}
+
+const said = (d: string) => (d.startsWith('~') ? `about ${d.slice(1)}` : d);
+
+/** what someone wrote about an entity, in its own note, with the note's edit button */
+function EntityNote({ archive, noteId, name }: { archive: Archive; noteId: string; name: string }) {
+  const [data, load] = useNoteData(archive.id, noteId);
+  const [editing, setEditing] = useState(false);
+  if (data === 'loading' || data === 'missing' || data === 'failed') return null;
+  if (editing) {
+    return (
+      <EditNote
+        archive={archive}
+        note={data.note}
+        onDone={(saved) => {
+          setEditing(false);
+          if (saved) void load();
+        }}
+      />
+    );
+  }
+  const parts = splitNote(data.note.body);
+  return (
+    <section aria-labelledby="note-h" className="card stack" style={{ gap: 8, padding: 13 }}>
+      <div className="spread" style={{ gap: 6 }}>
+        <h2 id="note-h" style={{ fontSize: 15 }}>
+          Written about {name}
+        </h2>
+        {archive.writer && (
+          <button type="button" className="btn btn-sm" onClick={() => setEditing(true)}>
+            Edit
+          </button>
+        )}
+      </div>
+      {parts.paragraphs.length === 0 ? (
+        <p className="muted">Nothing written about {name} yet.</p>
+      ) : (
+        parts.paragraphs.map((p, i) => (
+          <p key={i} style={{ whiteSpace: 'pre-wrap' }}>
+            <Linked text={p} notes={data.notes} archiveId={archive.id} />
+          </p>
+        ))
+      )}
+    </section>
   );
 }
 
@@ -154,7 +342,7 @@ function Entity({ archive, noteId }: { archive: Archive; noteId: string }) {
       <NotFound
         data={data}
         back={inArchive(archive.id, '/people')}
-        backLabel="Back to people & places"
+        backLabel="Back to people, places & things"
       />
     );
   }

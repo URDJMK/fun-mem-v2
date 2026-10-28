@@ -92,7 +92,80 @@ export interface NoteSummary {
 export interface Note extends NoteSummary {
   body: string;
   createdAt: string;
+  /** the people, places and things a story names, for its page to underline */
+  mentions?: Mention[];
 }
+
+/* ── the people, places and things graph (server/api/src/graph/) ── */
+
+export type EntityType = 'person' | 'place' | 'thing';
+
+export interface Mention {
+  entityId: string;
+  words: string[];
+}
+
+export interface GraphNode {
+  id: string;
+  name: string;
+  type: EntityType;
+  stories: number;
+  subject: boolean;
+  noteId: string | null;
+}
+
+export interface GraphView {
+  nodes: GraphNode[];
+  /** relationships told in the stories: solid lines */
+  told: Array<{
+    a: string;
+    b: string;
+    lines: Array<{ id: string; description: string; storyId: string; storyTitle: string }>;
+  }>;
+  /** named in the same stories: faint lines */
+  together: Array<{ a: string; b: string; stories: number }>;
+  more: number;
+}
+
+export interface EntitySummary {
+  id: string;
+  name: string;
+  type: EntityType;
+  noteId: string | null;
+  subject: boolean;
+  aliases: string[];
+  stories: number;
+}
+
+export interface EntityDetail extends Omit<EntitySummary, 'stories'> {
+  description: string;
+  profile: { born: string | null; died: string | null; aliases: string[] } | null;
+  mentions: Array<{
+    storyId: string;
+    storyTitle: string;
+    occurred: string | null;
+    words: string[];
+    line: string;
+  }>;
+  relationships: Array<{
+    id: string;
+    description: string;
+    storyId: string;
+    storyTitle: string;
+    other: { id: string; name: string; type: EntityType };
+  }>;
+  graph: GraphView;
+}
+
+export const getGraph = (archive: string) =>
+  apiFetch<GraphView>('GET', `/archives/${archive}/graph`);
+
+export const listEntities = (archive: string) =>
+  apiFetch<EntitySummary[]>('GET', `/archives/${archive}/entities`);
+
+/** by the entity's id, or the id of its note */
+export const getEntity = (archive: string, id: string) =>
+  apiFetch<EntityDetail>('GET', `/archives/${archive}/entities/${id}`);
 
 export interface Occurrence {
   sourceId: string;

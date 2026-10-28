@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { missingTargets, piecesOf } from '../src/lib/links';
+import { missingTargets, piecesOf, withMentions } from '../src/lib/links';
 
 const NOTES = [
   { id: 'n-mom', title: 'Mother' },
@@ -31,5 +31,55 @@ describe('a note read as words and links', () => {
   it('lists the notes a body points to that are not written yet, once each', () => {
     const body = '[[Father]], [[father]], [[Mother]], [[ Uncle Joe ]], ![[abc123]], [[#Heading]]';
     expect(missingTargets(body, NOTES)).toEqual(['Father', 'Uncle Joe']);
+  });
+});
+
+describe('withMentions: the names a story mentions open their entity (graph design 6.3)', () => {
+  const sarah = { entityId: 'e-sarah', words: ['Sarah'] };
+  const tom = { entityId: 'e-tom', words: ['her brother Tom'] };
+
+  it('marks the first time each is named, keeping the words as written', () => {
+    expect(
+      withMentions(
+        [{ kind: 'text', text: 'Noah met Sarah, who brought her brother Tom. Sarah laughed.' }],
+        [sarah, tom],
+      ),
+    ).toEqual([
+      { kind: 'text', text: 'Noah met ' },
+      { kind: 'entity', label: 'Sarah', entityId: 'e-sarah' },
+      { kind: 'text', text: ', who brought ' },
+      { kind: 'entity', label: 'her brother Tom', entityId: 'e-tom' },
+      { kind: 'text', text: '. Sarah laughed.' },
+    ]);
+  });
+
+  it('ignores case, but only whole words, and leaves links alone', () => {
+    const mother = { entityId: 'e-mother', words: ['his mother'] };
+    expect(
+      withMentions(
+        [
+          { kind: 'link', label: 'Sarah', noteId: 'n1' },
+          { kind: 'text', text: ' and Tomorrow. His mother came.' },
+        ],
+        [sarah, mother, { entityId: 'e-tom', words: ['Tom'] }],
+      ),
+    ).toEqual([
+      { kind: 'link', label: 'Sarah', noteId: 'n1' },
+      { kind: 'text', text: ' and Tomorrow. ' },
+      { kind: 'entity', label: 'His mother', entityId: 'e-mother' },
+      { kind: 'text', text: ' came.' },
+    ]);
+  });
+
+  it('prefers the longer name', () => {
+    expect(
+      withMentions(
+        [{ kind: 'text', text: 'Sarah Lee came.' }],
+        [sarah, { entityId: 'e-lee', words: ['Sarah Lee'] }],
+      ),
+    ).toEqual([
+      { kind: 'entity', label: 'Sarah Lee', entityId: 'e-lee' },
+      { kind: 'text', text: ' came.' },
+    ]);
   });
 });

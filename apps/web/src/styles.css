@@ -1627,3 +1627,132 @@ a.when-card:hover {
   grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
   gap: 10px;
 }
+
+/* ── who and where: the people, places and things graph ─────── */
+.wa {
+  gap: 10px;
+  padding: 14px;
+}
+.wa-frame {
+  position: relative;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--paper);
+  overflow: hidden;
+}
+.wa-svg {
+  display: block;
+  width: 100%;
+  height: auto;
+  touch-action: none;
+  cursor: grab;
+  user-select: none;
+}
+.wa-svg:active {
+  cursor: grabbing;
+}
+.wa-zoom {
+  position: absolute;
+  right: 6px;
+  bottom: 6px;
+  display: flex;
+  gap: 2px;
+  background: var(--card);
+  border-radius: 6px;
+}
+.wa-told {
+  stroke: var(--ink-3);
+  stroke-width: 2;
+}
+.wa-told.wa-picked {
+  stroke: var(--sage);
+  stroke-width: 3.5;
+}
+.wa-together {
+  stroke: var(--dashed);
+  stroke-width: 1.2;
+  stroke-dasharray: 4 4;
+}
+.wa-hit {
+  stroke: transparent;
+  stroke-width: 14;
+  cursor: pointer;
+}
+.wa-node {
+  cursor: pointer;
+  outline: none;
+}
+.wa-node circle,
+.wa-node path,
+.wa-node rect {
+  stroke: var(--card);
+  stroke-width: 2;
+}
+.wa-person circle {
+  fill: var(--sage-avatar);
+}
+.wa-place path {
+  fill: var(--wonder);
+}
+.wa-thing rect {
+  fill: var(--sand-avatar);
+}
+.wa-subject circle {
+  stroke: var(--sage);
+  stroke-width: 3;
+}
+.wa-node.wa-picked circle,
+.wa-node.wa-picked path,
+.wa-node.wa-picked rect,
+.wa-node:focus-visible circle,
+.wa-node:focus-visible path,
+.wa-node:focus-visible rect {
+  stroke: var(--ink);
+  stroke-width: 3;
+}
+.wa-initials {
+  font-size: 11px;
+  font-weight: 600;
+  fill: var(--ink);
+  pointer-events: none;
+}
+.wa-name {
+  font-size: 12px;
+  fill: var(--ink-2);
+  pointer-events: none;
+  paint-order: stroke;
+  stroke: var(--paper);
+  stroke-width: 3px;
+}
+.wa-dim {
+  opacity: 0.25;
+}
+.wa-card {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--card);
+}
+.wa-list ul {
+  margin: 6px 0 0;
+  padding-left: 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  font-size: 14px;
+}
+.home-graph {
+  margin-top: 8px;
+}
+
+/* a name in a story that opens its person, place or thing */
+a.mention {
+  color: inherit;
+  text-decoration: underline;
+  text-decoration-color: var(--sage-line);
+  text-decoration-thickness: 2px;
+  text-underline-offset: 3px;
+}

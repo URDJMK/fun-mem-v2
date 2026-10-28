@@ -11,7 +11,9 @@ import { extractWikilinks, normalizeTitle } from '@funmem/core';
  * reader can see it points nowhere.
  */
 export type Piece =
-  { kind: 'text'; text: string } | { kind: 'link'; label: string; noteId: string };
+  | { kind: 'text'; text: string }
+  | { kind: 'link'; label: string; noteId: string }
+  | { kind: 'entity'; label: string; entityId: string };
 
 export function piecesOf(
   body: string,
@@ -50,6 +52,66 @@ export function missingTargets(
     if (l.embed || key === '' || known.has(key) || seen.has(key)) continue;
     seen.add(key);
     out.push(l.target);
+  }
+  return out;
+}
+
+const escape = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+const WORD = /[\p{L}\p{N}]/u;
+
+/**
+ * The people, places and things a story names, marked where it first names each (graph design
+ * 6.3): the words as written, ignoring case, as whole words only, the longer name first. Links
+ * are left as they are, and so is the story's text.
+ */
+export function withMentions(
+  pieces: readonly Piece[],
+  mentions: ReadonlyArray<{ entityId: string; words: string[] }>,
+): Piece[] {
+  const wanted = mentions
+    .flatMap((m) =>
+      m.words.filter((w) => w.trim()).map((w) => ({ id: m.entityId, words: w.trim() })),
+    )
+    .sort((a, b) => b.words.length - a.words.length);
+  let out: Piece[] = [...pieces];
+  const done = new Set<string>();
+  for (const w of wanted) {
+    if (done.has(w.id)) continue;
+    const re = new RegExp(escape(w.words), 'iu');
+    const next: Piece[] = [];
+    let found = false;
+    for (const p of out) {
+      if (found || p.kind !== 'text') {
+        next.push(p);
+        continue;
+      }
+      let from = 0;
+      let hit: RegExpExecArray | null = null;
+      for (;;) {
+        const m = re.exec(p.text.slice(from));
+        if (!m) break;
+        const at = from + m.index;
+        const before = p.text[at - 1] ?? '';
+        const after = p.text[at + m[0].length] ?? '';
+        if (!WORD.test(before) && !WORD.test(after)) {
+          hit = Object.assign(m, { index: at });
+          break;
+        }
+        from = at + 1;
+      }
+      if (!hit) {
+        next.push(p);
+        continue;
+      }
+      found = true;
+      const head = p.text.slice(0, hit.index);
+      const tail = p.text.slice(hit.index + hit[0].length);
+      if (head) next.push({ kind: 'text', text: head });
+      next.push({ kind: 'entity', label: hit[0], entityId: w.id });
+      if (tail) next.push({ kind: 'text', text: tail });
+    }
+    if (found) done.add(w.id);
+    out = next;
   }
   return out;
 }

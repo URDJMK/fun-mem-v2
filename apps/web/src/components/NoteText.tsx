@@ -1,7 +1,7 @@
 import { Link } from 'react-router';
-import type { NoteSummary } from '../lib/api';
-import { noteHref } from '../lib/archive';
-import { piecesOf } from '../lib/links';
+import type { Mention, NoteSummary } from '../lib/api';
+import { inArchive, noteHref } from '../lib/archive';
+import { piecesOf, withMentions } from '../lib/links';
 
 /**
  * A note's text, split the way a reader takes it in: the paragraphs, the machine-written
@@ -41,22 +41,38 @@ export function splitNote(body: string): NoteParts {
   return { paragraphs, differs, provenance };
 }
 
-/** Words and `[[links]]`: a link to a note the reader can see opens it; any other stays as written. */
+/**
+ * Words and `[[links]]`: a link to a note the reader can see opens it; any other stays as
+ * written. With `mentions`, the first time the text names each person, place or thing of the
+ * graph opens its page (graph design 6.3).
+ */
 export function Linked({
   text,
   notes,
   archiveId,
+  mentions,
 }: {
   text: string;
   notes: NoteSummary[];
   archiveId: string;
+  mentions?: Mention[];
 }) {
   const byId = new Map(notes.map((n) => [n.id, n]));
+  const pieces = piecesOf(text, notes);
   return (
     <>
-      {piecesOf(text, notes).map((p, i) =>
+      {(mentions?.length ? withMentions(pieces, mentions) : pieces).map((p, i) =>
         p.kind === 'text' ? (
           p.text
+        ) : p.kind === 'entity' ? (
+          <Link
+            key={i}
+            to={inArchive(archiveId, `/people/${p.entityId}`)}
+            className="mention"
+            data-testid="mention-link"
+          >
+            {p.label}
+          </Link>
         ) : (
           <Link
             key={i}

@@ -9,7 +9,7 @@ const NAV: Array<{ path: string; label: string; icon: IconName; end?: boolean }>
   { path: '', label: 'Home', icon: 'home', end: true },
   { path: '/interviews', label: 'Interviews', icon: 'mic', end: true },
   { path: '/stories', label: 'Stories', icon: 'book' },
-  { path: '/people', label: 'People & places', icon: 'person' },
+  { path: '/people', label: 'People, places & things', icon: 'person' },
   { path: '/timeline', label: 'Timeline', icon: 'timeline' },
   { path: '/ask', label: 'Ask', icon: 'search' },
   { path: '/members', label: 'Members', icon: 'people' },
