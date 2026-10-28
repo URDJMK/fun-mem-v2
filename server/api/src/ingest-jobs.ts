@@ -40,6 +40,8 @@ import {
 import { writeStories } from './stories/workflow';
 import { profilesFor } from './stories/profile-store';
 import { ensureGraph, entityLookup, knownFor } from './graph/store';
+import { applyGraphPatch } from './graph/save';
+import type { GraphPatch } from './graph/types';
 
 /**
  * Interviews are LONG: an hour of speech is tens of model calls, so a request that
@@ -1055,7 +1057,12 @@ export class IngestJobs {
    * Writes atomically; a second attempt (or a double-click, or the same click arriving at
    * two instances) is refused.
    */
-  async save(job: Job, patches: MemoryPatch[] = [], force = false): Promise<IngestOutcome> {
+  async save(
+    job: Job,
+    patches: MemoryPatch[] = [],
+    force = false,
+    graphPatch: GraphPatch = {},
+  ): Promise<IngestOutcome> {
     const pool = this.deps.pool;
     const claim = await pool.query(
       `update public.ingest_jobs set saving = true, heartbeat_at = $2
@@ -1086,6 +1093,14 @@ export class IngestJobs {
       const { outcome: edited, wanted, skipped } = applyPatches(held.outcome, patches);
       if (edited.memories.length === 0)
         throw new SaveError('nothing is selected to save', 400, { reason: 'nothing_selected' });
+      // the people, places and things as the reviewer left them, from the stories kept
+      if (edited.graph) {
+        edited.graph = applyGraphPatch(
+          edited.graph,
+          graphPatch,
+          new Set(edited.memories.map((m) => m.id)),
+        );
+      }
       // a memory left out takes the markers that named it with it
       const markers = held.markers ?? [];
       dropMarkers(edited.memories, markers, skipped);

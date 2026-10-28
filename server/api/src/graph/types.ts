@@ -46,6 +46,8 @@ export interface ProposedEntity {
   type: EntityType;
   match: EntityMatch;
   mentions: ProposedMention[];
+  /** other names it goes by: the name it had before the reviewer renamed it */
+  aliases?: string[];
 }
 
 export interface ProposedRelationship {

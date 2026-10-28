@@ -1,0 +1,212 @@
+import { matchKey } from '@funmem/core';
+import type { PoolClient } from 'pg';
+import { UUID_RE } from '../membership';
+import { addAliases } from './note-entity';
+import { entityVisibleSql } from './store';
+import type { GraphPatch, GraphProposal, GraphSource, ProposedEntity } from './types';
+
+/**
+ * Saving an import's graph as the reviewer chose, in the same transaction as its stories, and
+ * taking it back with them (graph design 5.1–5.3).
+ */
+
+const MAX_NAME = 200;
+
+/** The proposal as the reviewer left it: entities and relationships left out, renamed, or the same as one already here. */
+export function applyGraphPatch(
+  p: GraphProposal,
+  patch: GraphPatch,
+  keptStories: ReadonlySet<string>,
+): GraphProposal {
+  const leave = new Set(patch.leave ?? []);
+  const entities: ProposedEntity[] = [];
+  for (const e of p.entities) {
+    if (leave.has(e.ref)) continue;
+    const mentions = e.mentions.filter((m) => keptStories.has(m.story));
+    if (mentions.length === 0) continue;
+    const next: ProposedEntity = { ...e, mentions };
+    const name = patch.rename?.[e.ref]?.replace(/\s+/g, ' ').trim().slice(0, MAX_NAME);
+    if (name && matchKey(name) && name !== e.name) {
+      next.aliases = [...(e.aliases ?? []), e.name];
+      next.name = name;
+    }
+    const same = patch.same?.[e.ref];
+    if (same && UUID_RE.test(same)) next.match = { kind: 'existing', entityId: same, name: '' };
+    entities.push(next);
+  }
+  const live = new Set(entities.map((e) => e.ref));
+  const relationships = p.relationships.filter(
+    (r) => !leave.has(r.ref) && live.has(r.a) && live.has(r.b) && keptStories.has(r.story),
+  );
+  return { ...p, entities, relationships };
+}
+
+/** what each line came from, with the interview it was in once that is known */
+const withInterview = (sources: GraphSource[], interviewId: string | null): GraphSource[] =>
+  sources.map((s) => ('interviewId' in s && s.interviewId === null ? { ...s, interviewId } : s));
+
+/**
+ * Write a proposal: each entity resolved to one already here (chosen, matched, or of the same
+ * name or alias by now) or made new with this run's id; then its mentions on the saved stories,
+ * the relationships between them, and the descriptions of every entity touched.
+ */
+export async function saveGraph(
+  client: PoolClient,
+  o: {
+    archiveId: string;
+    userId: string;
+    runId: string;
+    proposal: GraphProposal | undefined;
+    /** a memory id ("m1") or note id → the saved story's note id */
+    storyNote: ReadonlyMap<string, string>;
+    interviewId: string | null;
+  },
+): Promise<{ entities: number; relationships: number }> {
+  const p = o.proposal;
+  if (!p || p.pending || p.entities.length === 0) return { entities: 0, relationships: 0 };
+  const idOf = new Map<string, string>();
+  const touched = new Set<string>();
+  for (const e of p.entities) {
+    const key = matchKey(e.name);
+    if (!key) continue;
+    let id: string | null = null;
+    if (e.match.kind === 'existing') {
+      const r = await client.query(
+        `select e.id from public.graph_entities e
+          where e.id = $1 and e.archive_id = $2 and ${entityVisibleSql('e', '$3')}`,
+        [e.match.entityId, o.archiveId, o.userId],
+      );
+      id = (r.rows[0] as { id: string } | undefined)?.id ?? null;
+    }
+    // one name, one entity: a name or alias of the same key, made since the preview, is it
+    id ??=
+      (
+        (
+          await client.query(
+            `select id from public.graph_entities
+              where archive_id = $1 and type = $2 and match_key = $3
+             union all
+             select g.entity_id from public.graph_aliases g
+              where g.archive_id = $1 and g.match_key = $3
+             limit 1`,
+            [o.archiveId, e.type, key],
+          )
+        ).rows[0] as { id: string } | undefined
+      )?.id ?? null;
+    if (!id) {
+      const made = await client.query(
+        `insert into public.graph_entities (archive_id, type, name, match_key, created_by, run_id)
+         values ($1, $2, $3, $4, $5, $6)
+         on conflict (archive_id, type, match_key) do update set updated_at = now()
+         returning id`,
+        [o.archiveId, e.type, e.name, key, o.userId, o.runId],
+      );
+      id = (made.rows[0] as { id: string }).id;
+    }
+    idOf.set(e.ref, id);
+    touched.add(id);
+    // the name it was proposed by, and a name it had before the reviewer renamed it
+    await addAliases(client, o.archiveId, id, [e.name, ...(e.aliases ?? [])]);
+    for (const m of e.mentions) {
+      const note = o.storyNote.get(m.story);
+      if (!note) continue;
+      await client.query(
+        `insert into public.graph_mentions (archive_id, entity_id, note_id, words, line, sources, run_id)
+         values ($1, $2, $3, $4, $5, $6::jsonb, $7)
+         on conflict (entity_id, note_id) do nothing`,
+        [
+          o.archiveId,
+          id,
+          note,
+          m.words,
+          m.line,
+          JSON.stringify(withInterview(m.sources, o.interviewId)),
+          o.runId,
+        ],
+      );
+    }
+  }
+  let relationships = 0;
+  for (const r of p.relationships) {
+    const a = idOf.get(r.a);
+    const b = idOf.get(r.b);
+    const note = o.storyNote.get(r.story);
+    if (!a || !b || a === b || !note) continue;
+    const made = await client.query(
+      `insert into public.graph_relationships
+         (archive_id, a_id, b_id, description, note_id, sources, run_id, created_by)
+       values ($1, $2, $3, $4, $5, $6::jsonb, $7, $8)
+       on conflict do nothing`,
+      [
+        o.archiveId,
+        a,
+        b,
+        r.description,
+        note,
+        JSON.stringify(withInterview(r.sources, o.interviewId)),
+        o.runId,
+        o.userId,
+      ],
+    );
+    relationships += made.rowCount ?? 0;
+  }
+  await rebuildDescriptions(client, o.archiveId, [...touched]);
+  return { entities: touched.size, relationships };
+}
+
+/**
+ * An entity's description: its lines, from the stories every member can see, oldest first
+ * (graph design 3.1). A private story's lines are never in it.
+ */
+export async function rebuildDescriptions(
+  client: PoolClient,
+  archiveId: string,
+  ids: readonly string[] | null,
+): Promise<void> {
+  await client.query(
+    `update public.graph_entities e
+        set description = coalesce((
+              select left(string_agg(m.line, ' ' order by s.occurred nulls last, s.created_at), 1000)
+                from public.graph_mentions m join public.notes s on s.id = m.note_id
+               where m.entity_id = e.id and m.line <> ''
+                 and coalesce((select a.kind from public.audiences a where a.note_id = s.id),
+                              'archive-members') <> 'private-to-author'), ''),
+            updated_at = now()
+      where e.archive_id = $1 and ($2::uuid[] is null or e.id = any($2::uuid[]))`,
+    [archiveId, ids],
+  );
+}
+
+/**
+ * Take a run's graph back (graph design 5.3). An import's own stories are erased by its undo,
+ * and their mentions and relationships with them; a graph-only run (`everything`) has its rows
+ * deleted here. Then the entities the run made go, unless someone has worked on them since:
+ * changed them by hand, written a note about them, or another import names them.
+ */
+export async function undoGraph(
+  client: PoolClient,
+  archiveId: string,
+  runId: string,
+  opts: { everything?: boolean } = {},
+): Promise<void> {
+  if (opts.everything) {
+    await client.query(`delete from public.graph_mentions where run_id = $1 and archive_id = $2`, [
+      runId,
+      archiveId,
+    ]);
+    await client.query(
+      `delete from public.graph_relationships where run_id = $1 and archive_id = $2`,
+      [runId, archiveId],
+    );
+  }
+  await client.query(
+    `delete from public.graph_entities e
+      where e.run_id = $1 and e.archive_id = $2 and e.note_id is null
+        and not exists (select 1 from public.graph_changes c where c.entity_id = e.id)
+        and not exists (select 1 from public.graph_mentions m where m.entity_id = e.id)
+        and not exists (select 1 from public.graph_relationships r
+                         where r.a_id = e.id or r.b_id = e.id)`,
+    [runId, archiveId],
+  );
+  await rebuildDescriptions(client, archiveId, null);
+}

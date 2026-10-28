@@ -1,3 +1,4 @@
+import { saveGraph, undoGraph } from './graph/save';
 import { randomUUID } from 'node:crypto';
 import type { Pool, PoolClient } from 'pg';
 import { canonicalTitle, extractWikilinks, normalizeTitle } from '@funmem/core';
@@ -991,6 +992,15 @@ export async function persistImport(
             );
             runId = (run.rows[0] as { id: string }).id;
             if (result.interviewId) await markWritten(client, result.interviewId, runId);
+            // the people, places and things in these stories (graph design 5.2)
+            await saveGraph(client, {
+              archiveId,
+              userId,
+              runId,
+              proposal: result.graph,
+              storyNote: new Map(memories.map((m, i) => [m.id, ctx.notes[i]!.id])),
+              interviewId: result.interviewId ?? null,
+            });
           },
         },
       );
@@ -1161,6 +1171,8 @@ export async function undoImport(
     const erase = [...erasedIds];
     // the interview whose stories these were goes too: the import keeps no words after an undo
     await forgetInterviewOf(client, runId);
+    // and the people, places and things only it brought (graph design 5.3)
+    await undoGraph(client, archiveId, runId);
     // what is left of the record is content-free: no file name, no hash of the words
     await client.query(
       `update public.ingest_runs

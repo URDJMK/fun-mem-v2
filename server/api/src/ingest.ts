@@ -1,3 +1,4 @@
+import type { GraphPatch } from './graph/types';
 import type { Context } from 'hono';
 import { bodyLimit } from 'hono/body-limit';
 import type { App, AppDeps } from './app';
@@ -112,6 +113,27 @@ function readRequest(body: Record<string, unknown>): IngestRequest | { error: st
  * a "leave this one out" that was silently ignored would save the memory the person meant
  * to leave out.
  */
+/** The reviewer's choices about the people, places and things (graph design 5.1). */
+function readGraphPatch(raw: unknown): GraphPatch | string {
+  if (raw === undefined || raw === null) return {};
+  if (typeof raw !== 'object' || Array.isArray(raw)) return '"graph" must be an object';
+  const g = raw as Record<string, unknown>;
+  const strings = (v: unknown) => Array.isArray(v) && v.every((x) => typeof x === 'string');
+  const map = (v: unknown) =>
+    typeof v === 'object' &&
+    v !== null &&
+    !Array.isArray(v) &&
+    Object.values(v).every((x) => typeof x === 'string');
+  if (g.leave !== undefined && !strings(g.leave)) return '"graph.leave" must be a list of refs';
+  if (g.rename !== undefined && !map(g.rename)) return '"graph.rename" must map refs to names';
+  if (g.same !== undefined && !map(g.same)) return '"graph.same" must map refs to entity ids';
+  return {
+    ...(g.leave ? { leave: (g.leave as string[]).slice(0, 1000) } : {}),
+    ...(g.rename ? { rename: g.rename as Record<string, string> } : {}),
+    ...(g.same ? { same: g.same as Record<string, string> } : {}),
+  };
+}
+
 function readPatches(raw: unknown): MemoryPatch[] | { error: string } {
   if (raw === undefined || raw === null) return [];
   if (!Array.isArray(raw)) return { error: '"memories" must be a list of changes' };
@@ -311,11 +333,13 @@ export function registerIngestRoutes(app: App, deps: AppDeps): IngestJobs {
       if (typeof raw !== 'object' || raw === null || Array.isArray(raw)) {
         return c.json({ error: 'the request must be a JSON object', code: 'bad_request' }, 400);
       }
-      const body = raw as { memories?: unknown; force?: unknown };
+      const body = raw as { memories?: unknown; force?: unknown; graph?: unknown };
       const patches = readPatches(body.memories);
       if ('error' in patches) return c.json({ error: patches.error, code: 'bad_request' }, 400);
+      const graph = readGraphPatch(body.graph);
+      if (typeof graph === 'string') return c.json({ error: graph, code: 'bad_request' }, 400);
       try {
-        const outcome = await jobs.save(job, patches, body.force === true);
+        const outcome = await jobs.save(job, patches, body.force === true, graph);
         return c.json({ ...outcome, jobId: job.id });
       } catch (e) {
         if (e instanceof DuplicateImport) {
