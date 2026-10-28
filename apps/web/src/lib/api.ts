@@ -526,6 +526,10 @@ export const coachSuggest = (archive: string, req: CoachRequest, signal?: AbortS
 export const startImport = (archive: string, req: ImportRequest) =>
   apiFetch<ImportJob>('POST', `/archives/${archive}/ingest`, { ...req, save: false, async: true });
 
+/** "Find people, places and things": a job with no transcript, over the saved stories */
+export const startGraphBuild = (archive: string) =>
+  apiFetch<ImportJob>('POST', `/archives/${archive}/graph/build`, { async: true });
+
 export const getImport = (archive: string, job: string) =>
   apiFetch<ImportJob>('GET', `/archives/${archive}/ingest/${job}`);
 

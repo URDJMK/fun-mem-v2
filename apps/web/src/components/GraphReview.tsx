@@ -48,8 +48,11 @@ export function GraphReview({
   storyKept,
   choices,
   onChange,
+  standalone = false,
 }: {
   archiveId: string;
+  /** the button's run, with no stories of its own to save */
+  standalone?: boolean;
   graph: GraphProposal;
   storyTitle: (story: string) => string;
   storyKept: (story: string) => boolean;
@@ -74,8 +77,9 @@ export function GraphReview({
       <section className="card stack" style={{ gap: 6, padding: 13 }} data-testid="graph-review">
         <h2 style={{ fontSize: 16 }}>People, places and things</h2>
         <p className="muted">
-          Not found yet. The stories are saved without them; you can find them later from People,
-          places &amp; things.
+          {standalone
+            ? 'Could not look through the stories just now. Try again in a few minutes.'
+            : 'Not found yet. The stories are saved without them; you can find them later from People, places & things.'}
         </p>
       </section>
     );

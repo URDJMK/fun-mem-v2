@@ -57,7 +57,7 @@ export function WhoAndWhere({ archiveId }: { archiveId: string }) {
             in the stories already saved.
           </p>
           <Link
-            to={inArchive(archiveId, '/people')}
+            to={inArchive(archiveId, '/people?find=1')}
             className="btn btn-outline btn-sm"
             style={{ alignSelf: 'flex-start' }}
           >

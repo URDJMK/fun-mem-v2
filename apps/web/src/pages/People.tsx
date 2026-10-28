@@ -1,18 +1,20 @@
-import { useEffect, useState, type CSSProperties } from 'react';
-import { Link, useNavigate } from 'react-router';
+import { useEffect, useRef, useState, type CSSProperties } from 'react';
+import { Link, useNavigate, useSearchParams } from 'react-router';
 import {
   ApiError,
-  getEntity,
-  getNeighborhood,
-  listEntities,
+  cancelImport,
   type EntityDetail,
   type EntitySummary,
   type EntityType,
+  getEntity,
+  getNeighborhood,
+  listEntities,
   type Neighborhood,
 } from '../lib/api';
 import { inArchive, noteHref, useArchive, type Archive } from '../lib/archive';
 import { ArchiveLayout } from '../components/ArchiveLayout';
 import { GraphCanvas } from '../components/WhoAndWhere';
+import { Review, Running, Saved, useImportRun } from '../components/ImportRun';
 import { Linked, plainLinks, splitNote } from '../components/NoteText';
 import { Avatar, count, Failed, Icon, Loading } from '../components/ui';
 import { EditNote, NotFound, useNoteActions, useNoteData, type Loaded } from './NotePage';
@@ -41,6 +43,10 @@ export function People({ noteId: id }: { noteId?: string }) {
   const navigate = useNavigate();
   const [index, setIndex] = useState<EntitySummary[] | null | 'failed'>(null);
   const [kind, setKind] = useState<Kind>('person');
+  // "Find people, places and things" (graph design 4.4); Home's empty graph links here with ?find=1
+  const [params, setParams] = useSearchParams();
+  const [finding, setFinding] = useState(archive.writer && params.get('find') === '1');
+  const [reloads, setReloads] = useState(0);
 
   useEffect(() => {
     let live = true;
@@ -50,7 +56,7 @@ export function People({ noteId: id }: { noteId?: string }) {
     return () => {
       live = false;
     };
-  }, [archive.id, id]);
+  }, [archive.id, id, reloads]);
 
   // open the tab the chosen one belongs to
   useEffect(() => {
@@ -61,7 +67,7 @@ export function People({ noteId: id }: { noteId?: string }) {
 
   // with nobody chosen, open the first one there is
   useEffect(() => {
-    if (id || !index || index === 'failed') return;
+    if (id || finding || !index || index === 'failed') return;
     const first = index[0];
     if (first) void navigate(inArchive(archive.id, `/people/${first.id}`), { replace: true });
   }, [id, index, archive.id, navigate]);
@@ -119,6 +125,18 @@ export function People({ noteId: id }: { noteId?: string }) {
               ))}
             </ul>
           )}
+          {archive.writer && !finding && (
+            <button
+              type="button"
+              className="btn btn-sm"
+              style={{ alignSelf: 'flex-start' }}
+              data-testid="find-graph"
+              onClick={() => setFinding(true)}
+            >
+              <Icon name="search" size={14} />
+              Find people, places and things
+            </button>
+          )}
           {archive.writer && (
             <Link
               to={inArchive(archive.id, `/stories/new?type=${k.noteType}`)}
@@ -132,7 +150,16 @@ export function People({ noteId: id }: { noteId?: string }) {
         </nav>
 
         <div className="entity-main">
-          {id ? (
+          {finding ? (
+            <FindGraph
+              archive={archive}
+              onDone={() => {
+                setFinding(false);
+                if (params.has('find')) setParams({}, { replace: true });
+                setReloads((n) => n + 1);
+              }}
+            />
+          ) : id ? (
             <EntityPage key={id} archive={archive} id={id} />
           ) : index && index !== 'failed' && index.length === 0 ? (
             <p className="empty">
@@ -146,6 +173,64 @@ export function People({ noteId: id }: { noteId?: string }) {
 }
 
 const TYPE_LABEL: Record<Kind, string> = { person: 'A person', place: 'A place', thing: 'A thing' };
+
+/** The button's run, followed here: reading the stories, then the review, then what was added. */
+function FindGraph({ archive, onDone }: { archive: Archive; onDone: () => void }) {
+  const run = useImportRun(archive.id);
+  const started = useRef(false);
+  useEffect(() => {
+    if (started.current) return;
+    started.current = true;
+    void run.build();
+  }, [run]);
+  const step = run.step;
+  if (!step) return <Loading what="Starting…" />;
+  if (step.kind === 'running')
+    return (
+      <Running
+        graph
+        job={step.job}
+        onCancel={async () => {
+          try {
+            await cancelImport(archive.id, step.job.id);
+          } catch {
+            /* too late to stop: it finishes, and can be undone */
+          }
+        }}
+      />
+    );
+  if (step.kind === 'failed')
+    return (
+      <div className="stack" style={{ gap: 8 }}>
+        <Failed>{step.text}</Failed>
+        <div className="row">
+          <button type="button" className="btn" onClick={onDone}>
+            Back
+          </button>
+        </div>
+      </div>
+    );
+  if (step.kind === 'review')
+    return (
+      <div className="stack" style={{ gap: 10 }}>
+        <Review
+          archiveId={archive.id}
+          jobId={step.jobId}
+          outcome={step.outcome}
+          name={archive.subjectName}
+          onSaved={run.saved}
+        />
+        <div className="row">
+          <button type="button" className="btn btn-quiet" onClick={onDone}>
+            Not now
+          </button>
+        </div>
+      </div>
+    );
+  if (step.kind === 'saved')
+    return <Saved archiveId={archive.id} outcome={step.outcome} onRestart={onDone} />;
+  return null;
+}
 
 /** One entity: what the stories say about it, its relationships, and the graph around it. */
 function EntityPage({ archive, id }: { archive: Archive; id: string }) {

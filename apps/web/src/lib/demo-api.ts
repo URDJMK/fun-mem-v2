@@ -132,6 +132,8 @@ interface DemoJob {
   >;
   saved?: Array<{ id: string; title: string; index: number }>;
   runId?: string;
+  /** "Find people, places and things": the demo has no AI, so it says so */
+  graph?: boolean;
 }
 
 const STORE = 'firepit-demo-data';
@@ -593,6 +595,9 @@ function jobView(job: DemoJob) {
             degraded: { windows: 0, reasons: [] },
             saved: job.saved,
             runId: job.runId ?? null,
+            ...(job.graph
+              ? { graph: { entities: [], relationships: [], pending: { reason: 'no_model' } } }
+              : {}),
           },
         }),
   };
@@ -1028,6 +1033,18 @@ export async function demoFetch(method: string, path: string, body?: unknown): P
     const out = (await r.json().catch(() => null)) as { code?: string } | null;
     if (!r.ok) throw new DemoError(r.status, out?.code ?? null);
     return out;
+  }
+  if (what === 'graph' && id === 'build' && method === 'POST') {
+    const job: DemoJob = {
+      id: uid(),
+      archiveId: a.id,
+      polls: 0,
+      source: null,
+      memories: [],
+      graph: true,
+    };
+    jobs.set(job.id, job);
+    return jobView(job);
   }
   if (what === 'ingest' && !id && method === 'POST') {
     const transcript = typeof b.transcript === 'string' ? b.transcript : '';
