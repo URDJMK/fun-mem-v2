@@ -33,6 +33,12 @@ typography:
     fontWeight: 600
     lineHeight: 1.3
     letterSpacing: "0em"
+  story:
+    fontFamily: "Atkinson Hyperlegible Next, system-ui, sans-serif"
+    fontSize: "1.3125rem"
+    fontWeight: 400
+    lineHeight: 1.6
+    letterSpacing: "0em"
   quote:
     fontFamily: "Atkinson Hyperlegible Next, system-ui, sans-serif"
     fontSize: "1.25rem"
@@ -41,7 +47,7 @@ typography:
     letterSpacing: "0em"
   body:
     fontFamily: "Atkinson Hyperlegible Next, system-ui, sans-serif"
-    fontSize: "1.0625rem"
+    fontSize: "1.125rem"
     fontWeight: 400
     lineHeight: 1.55
     letterSpacing: "0em"
@@ -53,7 +59,7 @@ typography:
     letterSpacing: "0em"
   caption:
     fontFamily: "Atkinson Hyperlegible Next, system-ui, sans-serif"
-    fontSize: "0.875rem"
+    fontSize: "1rem"
     fontWeight: 400
     lineHeight: 1.4
     letterSpacing: "0em"
@@ -78,15 +84,15 @@ components:
     textColor: "{colors.paper}"
     typography: "{typography.label}"
     rounded: "{rounded.md}"
-    padding: "12px 20px"
-    height: "48px"
+    padding: "12px 18px"
+    height: "44px"
   button-secondary:
     backgroundColor: "{colors.paper}"
     textColor: "{colors.ink}"
     typography: "{typography.label}"
     rounded: "{rounded.md}"
-    padding: "12px 20px"
-    height: "48px"
+    padding: "12px 18px"
+    height: "44px"
   button-record:
     backgroundColor: "{colors.voice}"
     textColor: "{colors.paper}"
@@ -106,30 +112,31 @@ components:
     textColor: "{colors.graphite}"
     typography: "{typography.label}"
     rounded: "{rounded.md}"
-    padding: "12px 12px"
-    height: "48px"
+    padding: "12px 14px"
+    height: "44px"
   nav-item-selected:
     backgroundColor: "{colors.paper}"
     textColor: "{colors.ink}"
     typography: "{typography.label}"
     rounded: "{rounded.md}"
-    padding: "12px 12px"
-    height: "48px"
+    padding: "12px 14px"
+    height: "44px"
   chip:
     backgroundColor: "{colors.canvas}"
     textColor: "{colors.ink}"
     typography: "{typography.caption}"
     rounded: "{rounded.sm}"
-    padding: "4px 10px"
-    height: "28px"
+    padding: "4px 14px"
+    height: "44px"
 ---
 
 # Design System: Firepit
 
-> **Status: proposed, not built.** Written on 2026-10-28 before any code changes, at the owner's
-> request. The current app (cream ground, serif display, terracotta accent, tracked capitals, a
-> glowing gradient; see `design-baseline/`) is the look this replaces. Update this file from the
-> built result once the redesign lands.
+> **Status: foundation built, pages not yet.** Written on 2026-10-28; the foundation (tokens, type,
+> the app shell, and the old look's effects removed) was built the same day, in `apps/web/src`.
+> Page layouts are still the old ones inside the new system; `design-baseline/` shows the look this
+> replaces and `design-after/` the foundation. Rules below that a page still breaks (dot-separated
+> meta lines, large years, the voice line) are waiting for that page's rebuild.
 
 ## Overview
 
@@ -190,7 +197,7 @@ thing.
 ### Neutral
 
 - **Paper `#FFFFFF`** is the working surface: content panels, inputs and dialogs.
-- **Canvas `#F1F3F2`** is the page ground: the sidebar, the space around panels, and the tab bar. It is
+- **Canvas `#F1F3F2`** is the page ground: the top bar, the space around panels, and the tab bar. It is
   a cool, barely green grey, never cream.
 - **Ink `#15181A`** is text, primary buttons and icons. 17.8:1 on Paper.
 - **Graphite `#585E64`** is secondary text: meta lines, captions and the interviewer's voice. 6.6:1 on
@@ -199,13 +206,15 @@ thing.
 Derived values, which are the only allowed variations:
 
 - **Line:** Ink at 12% opacity, for borders and dividers.
+- **Edge:** Ink at 45% opacity, for the border of anything you type into or press (inputs, outline
+  buttons): 3.2:1 on Paper, so a field can be found without its label.
 - **Hover:** Ink at 6% over the surface.
 - **Interviewer bars:** Graphite at 45%.
 
 ### State colours (outside the palette)
 
-- **Recording and error:** `#D3372C`, 4.8:1 on Paper. Use it for the recording dot, destructive actions
-  and error text, and nowhere else.
+- **Recording and error:** `#C22F26`, 5.6:1 on Paper and 5.05:1 on Canvas. Use it for the recording
+  dot, destructive actions and error text, and nowhere else.
 - **Success:** Voice green with a check icon.
 - **Warning:** Ink text with a warning icon, on Canvas with a Line border.
 
@@ -237,10 +246,14 @@ display size.
 | page-title | 35px | Familjen 600 | One per screen |
 | section-title | 29px | Familjen 600 | Sections; years on the timeline |
 | item-title | 24px | Familjen 600 | Story titles, person names |
-| quote | 20px | Atkinson 500 | The teller's words in stories and answers |
-| body | 17px | Atkinson 400 | Everything else; prose measure 60–70ch |
+| story | 21px | Atkinson 400 | A story's own text, at most 65 characters a line |
+| quote | 20px | Atkinson 500 | The teller's words quoted in answers |
+| body | 18px | Atkinson 400 | Everything else |
 | label | 16px | Atkinson 600 | Buttons, nav, speaker names, field labels |
-| caption | 14px | Atkinson 400 | Meta lines, timecodes. **The smallest text allowed.** |
+| caption | 16px | Atkinson 400 | Meta lines, timecodes, hints |
+
+**Nothing is set below 16px**, in any stylesheet or component: `apps/web/test/type-floor.test.ts`
+fails the build on a smaller size. On a phone the page title steps down to 29px.
 
 Labels are sentence case. Emphasis comes from weight and size, never from capitals or letter-spacing.
 
@@ -249,29 +262,28 @@ Labels are sentence case. Emphasis comes from weight and size, never from capita
 The page ground is Canvas, with the working surface on Paper. Spacing uses a 4px base: 4, 8, 12, 16,
 24, 32, 48, 64, 96. Leave more space above a heading than below it.
 
-### Desktop (1024px and up)
+### Desktop and tablet (640px and up)
 
-- A 248px sidebar on Canvas holds the project switcher, labelled nav rows (icon and word), recent
-  interviews, and the account at the bottom.
-- Content sits in a Paper panel inset 12px from the sidebar and the viewport edges, with an `lg`
-  radius, like the Quo reference.
-- Reading pages (a story, a person, Ask) keep a 720px column. List pages run up to 1120px.
+No sidebar. A family has one or two projects and five places they go; the screen goes to the page.
 
-### Tablet (640–1023px)
-
-- The sidebar becomes an 80px rail: icon with its label underneath, always visible.
+- **Slim top bar, 56px, on Canvas, sticky.** The Firepit wordmark on the left, then the five places
+  as text links: **Home, Stories, People, Timeline, Ask**. The current one is Paper on Canvas, in Ink.
+- **The project menu** is on the right: the project's avatar and name, opening a floating menu with
+  **Interviews**, **Add an interview** (for anyone who can add), **Members**, **Settings**, then
+  **Switch project**, then the account and **Sign out**. Escape, a click outside, or choosing an
+  item closes it.
+- Content is centred on Canvas, up to 960px (1200px for wide pages). Reading pages (a story, a
+  person, Ask) keep a 720px column.
 
 ### Mobile (under 640px, designed at 390px)
 
 The nav never stacks above content.
 
-- **Slim top bar, 56px, on Canvas.** The project switcher (avatar and name) is on the left and the
-  page title in the middle. The project menu is on the right and holds Interviews, Members, Settings,
-  switching project and signing out.
-- **Bottom tab bar, 64px plus the safe area, on Canvas.** Five tabs, each an icon with a visible label:
-  **Home, Stories, People, Timeline, Ask.** Interviews are reached from Home, which lists recent ones,
-  and from the project menu.
-- Content scrolls between the two bars on Paper, full width with 16px side gutters and no panel inset.
+- **Slim top bar, 56px, on Canvas.** The project menu (avatar and name) is on the left, the Firepit
+  mark on the right. The page's own title follows directly below, so the bar doesn't repeat it.
+- **Bottom tab bar, 64px plus the safe area, on Canvas.** The same five places, each an icon with a
+  visible 16px label. Interviews, Members and Settings are in the project menu.
+- Content scrolls between the two bars, full width with 16px side gutters.
 - **During a live interview,** both bars give way to the recording bar (the voice line, time, Pause,
   End). Nothing else competes with the conversation.
 - **Floating layers** (the live caption bar, menus, toasts) sit at least 16px from both screen edges.
@@ -305,9 +317,10 @@ The app is flat. Depth comes from Canvas against Paper, not from shadows.
 - **Primary:** Ink with Paper text. One per view.
 - **Secondary:** Paper with a 1px Line border.
 - **Destructive:** recording-red text on Paper. Confirm by typing the name, as Settings already does.
-- **Sizing:** every button is at least 48px tall. States: hover darkens 6%, focus shows a 2px Voice ring
-  offset 2px, disabled is Graphite at 40%, and loading shows a spinner in place of the label at the
-  same width.
+- **Sizing:** every button and every other tap target is at least 44×44px. States: hover darkens 6%,
+  focus shows a 2px Voice ring
+  offset 2px, disabled is Graphite at 60% on Canvas, and loading shows a spinner in place of the label
+  at the same width.
 
 ### Record button
 
@@ -324,13 +337,14 @@ The app is flat. Depth comes from Canvas against Paper, not from shadows.
 
 ### Inputs / Fields
 
-- Paper, a 1px Line border, `md` radius, 48px tall, label above in Label weight.
+- Paper, a 1px Edge border, `md` radius, 48px tall, label above in Label weight.
 - Errors show red text below, and the field border turns red.
 
 ### Navigation
 
-- Sidebar rows on desktop, a rail on tablet, the top bar and bottom tabs on mobile (see Layout).
-- The selected row is Paper on Canvas, in Ink at weight 600, with no coloured edge bar.
+- The top bar's five links on a computer, the bottom tabs on a phone, and the project menu on both
+  (see Layout).
+- The current place is Paper on Canvas, in Ink at weight 600, with no coloured edge bar.
 
 ### Voice line (signature)
 
@@ -384,5 +398,5 @@ Each rule can be checked against the code or a screenshot.
 9. **At 390px, don't stack navigation above content.** The page title sits within 72px of the top,
    the bottom tab bar is visible, nothing scrolls sideways, and floating layers are inset at least
    16px.
-10. **Don't go below 14px text or 48×48px tap targets, and don't let colour carry meaning alone.**
+10. **Don't go below 16px text or 44×44px tap targets, and don't let colour carry meaning alone.**
     Speakers are also named, and the recording state also says "Recording".

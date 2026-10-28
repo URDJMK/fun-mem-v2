@@ -342,8 +342,8 @@ export function Coach({
     if (!card.current || reduceMotion()) return;
     gsap.fromTo(
       card.current,
-      { opacity: 0, y: 10, filter: 'blur(3px)' },
-      { opacity: 1, y: 0, filter: 'blur(0px)', duration: 0.5, ease: 'power3.out' },
+      { opacity: 0, y: 6 },
+      { opacity: 1, y: 0, duration: 0.25, ease: 'power2.out' },
     );
   }, [offerKey]);
 

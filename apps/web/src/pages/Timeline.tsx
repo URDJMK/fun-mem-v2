@@ -78,7 +78,7 @@ function Years({ archiveId, notes }: { archiveId: string; notes: NoteSummary[] }
         >
           <h2 id={`h${d.start}`} style={{ fontSize: 16 }}>
             The {d.start}s{' '}
-            <span className="muted" style={{ fontSize: 15 }}>
+            <span className="muted" style={{ fontSize: 16 }}>
               · {d.items.length === 0 ? 'nothing yet' : count(d.items.length, 'memory', 'memories')}
             </span>
           </h2>
@@ -89,9 +89,9 @@ function Years({ archiveId, notes }: { archiveId: string; notes: NoteSummary[] }
               </span>
               <div
                 className="when-card"
-                style={{ border: '1.5px dashed var(--wonder-line)', background: 'none' }}
+                style={{ border: '1.5px dashed var(--line)', background: 'none' }}
               >
-                <span style={{ color: 'var(--muted)' }}>
+                <span style={{ color: 'var(--graphite)' }}>
                   Nothing here yet. These years might be a lovely next conversation.
                 </span>
               </div>
@@ -102,12 +102,12 @@ function Years({ archiveId, notes }: { archiveId: string; notes: NoteSummary[] }
                 <li key={n.id} className="when-row">
                   <span
                     className="when"
-                    style={n.occurred?.startsWith('~') ? { color: 'var(--wonder-ink)' } : undefined}
+                    style={n.occurred?.startsWith('~') ? { color: 'var(--ink)' } : undefined}
                   >
                     {whenLabel(n.occurred).replace(/^Around /, '~')}
                   </span>
                   <Link to={noteHref(archiveId, n)} className="when-card">
-                    <span className="title" style={{ fontSize: 15 }}>
+                    <span className="title" style={{ fontSize: 16 }}>
                       {n.title}
                     </span>
                     <span className="small muted">{typeLabel(n.type)}</span>

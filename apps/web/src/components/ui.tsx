@@ -107,7 +107,8 @@ export function Icon({
 /**
  * The mark: a hand-cut glow held in a hand-cut bowl. Two drawings of it: the full one, and a
  * rounder, heavier cut for 24 px and below so it still reads at favicon size (public/favicon.svg).
- * Its two colours are the brand's own, not the page accent (--logo-ember, --logo-ink in looks.css).
+ * In the app it is drawn in Ink alone (DESIGN.md: colour is kept for the teller's voice); the
+ * favicon keeps the logo's own colours.
  */
 const MARK = {
   full: {
@@ -124,8 +125,8 @@ export function FirepitMark({ size = 28 }: { size?: number }) {
   const cut = size <= 24 ? MARK.small : MARK.full;
   return (
     <svg aria-hidden="true" width={size} height={size} viewBox="0 0 256 256" className="mark">
-      <path d={cut.glow} fill="var(--logo-ember)" />
-      <path d={cut.bowl} fill="var(--logo-ink)" />
+      <path d={cut.glow} fill="var(--ink)" />
+      <path d={cut.bowl} fill="var(--ink)" />
     </svg>
   );
 }
@@ -134,32 +135,26 @@ export function Brand({ to = '/', small = false }: { to?: string; small?: boolea
   return (
     <Link to={to} className="brand" aria-label="Firepit, home">
       <FirepitMark size={small ? 26 : 32} />
-      <span className="brand-name" style={small ? { fontSize: 19 } : undefined}>
-        Firepit
-      </span>
+      <span className="brand-name">Firepit</span>
     </Link>
   );
 }
 
-/** The handoff's avatar tints; a name always gets the same one. */
-const TINTS = [
-  ['var(--sage-avatar)', 'var(--sage-ink)'],
-  ['var(--sand-avatar)', 'var(--sand-ink)'],
-  ['var(--family)', 'var(--family-ink)'],
-  ['var(--wonder)', 'var(--wonder-ink)'],
-  ['var(--keep)', 'var(--keep-ink)'],
-] as const;
-
+/** A person's initial, in Ink on Canvas: colour is kept for the teller's voice (DESIGN.md). */
 export function Avatar({ name, size = 36 }: { name: string; size?: number }) {
-  let h = 0;
-  for (const ch of name) h = (h * 31 + ch.codePointAt(0)!) >>> 0;
-  const [bg, fg] = TINTS[h % TINTS.length]!;
   const initial = [...name.trim()][0]?.toUpperCase() ?? '?';
   return (
     <span
       aria-hidden="true"
       className="avatar"
-      style={{ width: size, height: size, background: bg, color: fg, fontSize: size * 0.46 }}
+      style={{
+        width: size,
+        height: size,
+        background: 'var(--canvas)',
+        color: 'var(--ink)',
+        border: '1px solid var(--line)',
+        fontSize: Math.max(16, size * 0.46),
+      }}
     >
       {initial}
     </span>
@@ -185,12 +180,10 @@ export function useAccountName(): string {
   return name;
 }
 
-/** The person's own name and a way to sign out. */
-export function Account({ withName = false }: { withName?: boolean }) {
-  const name = useAccountName();
+/** Signing out, from wherever it is offered. */
+export function useSignOut(): () => Promise<void> {
   const navigate = useNavigate();
-
-  async function signOut() {
+  return async function signOut() {
     // to the front page FIRST: a page that loses its session on its own address says
     // "you were signed out" and offers to come back, which is not what a sign-out means
     void navigate('/', { replace: true });
@@ -198,7 +191,13 @@ export function Account({ withName = false }: { withName?: boolean }) {
     clearDrafts();
     if (SKIP_LOGIN) return setDemoSignedIn(false);
     await supabase.auth.signOut();
-  }
+  };
+}
+
+/** The person's own name and a way to sign out. */
+export function Account({ withName = false }: { withName?: boolean }) {
+  const name = useAccountName();
+  const signOut = useSignOut();
 
   return (
     <div className="row" style={{ gap: 6 }}>

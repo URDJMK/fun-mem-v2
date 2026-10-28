@@ -188,7 +188,7 @@ export function Running({ job, onCancel }: { job: ImportJob; onCancel: () => Pro
   return (
     <div className="stack" style={{ gap: 12 }}>
       <h1 className="page-title">Reading the interview…</h1>
-      <p className="muted" style={{ fontSize: 15 }}>
+      <p className="muted" style={{ fontSize: 16 }}>
         A long conversation takes a few minutes. You can leave this page — it keeps going, and you
         can come back to it; nothing is saved until you’ve read it over.
       </p>
@@ -237,7 +237,7 @@ export function WhoIsTelling({
     <div className="stack" style={{ gap: 12 }}>
       <div className="stack" style={{ gap: 5 }}>
         <h1 className="page-title">Who is telling?</h1>
-        <p className="muted" style={{ fontSize: 15 }}>
+        <p className="muted" style={{ fontSize: 16 }}>
           It wasn’t clear whose memories these are. Choose the people whose words should be kept as
           testimony; the others are the ones asking.
         </p>
@@ -245,10 +245,10 @@ export function WhoIsTelling({
       <fieldset className="card stack" style={{ gap: 3, margin: 0 }}>
         <legend className="visually-hidden">Speakers</legend>
         {speakers.map((s) => (
-          <label key={s.id} className="row" style={{ minHeight: 32, gap: 8 }}>
+          <label key={s.id} className="row" style={{ minHeight: 44, gap: 8 }}>
             <input
               type="checkbox"
-              style={{ width: 22, height: 22, margin: 0, accentColor: 'var(--sage)' }}
+              style={{ width: 22, height: 22, margin: 0, accentColor: 'var(--ink)' }}
               checked={chosen.includes(s.id)}
               onChange={(e) =>
                 setChosen((c) => (e.target.checked ? [...c, s.id] : c.filter((x) => x !== s.id)))
@@ -475,7 +475,7 @@ export function Review({
           </div>
         )}
         {decided[at] && !editing && (
-          <p role="status" style={{ fontWeight: 600, color: 'var(--sage-ink)' }}>
+          <p role="status" style={{ fontWeight: 600, color: 'var(--ink)' }}>
             {decided[at] === 'ok'
               ? 'This one will be kept.'
               : 'Left out. You can change your mind until you save.'}
@@ -529,7 +529,7 @@ function MemoryView({
     <>
       {meta && <span className="small muted">{meta}</span>}
       <h2 style={{ fontSize: 18, lineHeight: 1.15 }}>{shown.title}</h2>
-      <div className="prose" style={{ fontSize: 16, gap: 9 }}>
+      <div className="prose" style={{ gap: 9 }}>
         {parts.paragraphs.map((p, i) => (
           <p key={i}>
             <Linked text={p} notes={notes} archiveId={archiveId} />
@@ -538,11 +538,11 @@ function MemoryView({
       </div>
       {parts.provenance.length > 0 && (
         <div className="said">
-          <span className="small" style={{ fontWeight: 600, color: 'var(--sage-ink)' }}>
+          <span className="small" style={{ fontWeight: 600, color: 'var(--ink)' }}>
             Where it came from
           </span>
           {parts.provenance.map((line, i) => (
-            <span key={i} style={{ fontSize: 13 }}>
+            <span key={i} style={{ fontSize: 16 }}>
               {line}
             </span>
           ))}
@@ -578,7 +578,7 @@ function MemoryView({
         </div>
       )}
       {memory.notes.map((n, i) => (
-        <p key={i} className="notice notice-wonder" style={{ color: 'var(--wonder-ink)' }}>
+        <p key={i} className="notice notice-wonder" style={{ color: 'var(--ink)' }}>
           {n}
         </p>
       ))}
@@ -586,14 +586,14 @@ function MemoryView({
         <div
           key={i}
           className="stack"
-          style={{ background: 'var(--family)', borderRadius: 8, padding: '9px 12px', gap: 3 }}
+          style={{ background: 'var(--canvas)', borderRadius: 8, padding: '9px 12px', gap: 3 }}
         >
-          <span className="small" style={{ fontWeight: 600, color: 'var(--family-ink)' }}>
+          <span className="small" style={{ fontWeight: 600, color: 'var(--ink)' }}>
             {c.source
               ? `May disagree with “${c.source.title}”`
               : 'May disagree with another memory'}
           </span>
-          <span style={{ fontSize: 13 }}>
+          <span style={{ fontSize: 16 }}>
             That says “{c.existing}”. Both will be kept, and marked.
           </span>
         </div>

@@ -41,7 +41,7 @@ export function ResetPassword() {
   }
 
   return (
-    <div className="stack" style={{ minHeight: '100vh', fontSize: 15 }}>
+    <div className="stack" style={{ minHeight: '100vh', fontSize: 16 }}>
       <title>Reset password · Firepit</title>
       <header className="public-header" style={{ width: '100%' }}>
         <Brand />

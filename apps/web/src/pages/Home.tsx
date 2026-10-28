@@ -1,5 +1,4 @@
 import { useEffect, useRef, useState } from 'react';
-import { createPortal } from 'react-dom';
 import { Link } from 'react-router';
 import { Flip } from 'gsap/Flip';
 import {
@@ -118,19 +117,6 @@ export function Home() {
   const studio = phase.kind === 'studio';
   return (
     <ArchiveLayout title="Home" wide focus={studio}>
-      {/* the light of a fire across the whole screen: a glow that breathes and embers rising
-          (looks.css). Rendered into <body> so it sits behind everything, sidebar included.
-          During the interview it stays, quieter, and the embers rest. */}
-      {phase.kind !== 'review' &&
-        phase.kind !== 'processing' &&
-        createPortal(
-          <div className={studio ? 'home-aura home-aura-quiet' : 'home-aura'} aria-hidden="true">
-            {!studio &&
-              Array.from({ length: 14 }, (_, i) => <span key={i} className="home-ember" />)}
-          </div>,
-          document.body,
-        )}
-
       {phase.kind === 'idle' && (
         <section className="home-start">
           <header className="home-caption">
@@ -212,7 +198,7 @@ export function Home() {
               </div>
               {mode === 'call' && <p className="home-hint">{SHARE_HOW}</p>}
               {!liveSupported() && <p className="home-hint">{FAILURE.unsupported}</p>}
-              <Link to={inArchive(archive.id, '/interviews/new')} className="small muted">
+              <Link to={inArchive(archive.id, '/interviews/new')} className="small muted tap">
                 or bring in a recorded transcript
               </Link>
             </div>

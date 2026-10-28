@@ -95,7 +95,7 @@ export function SignIn() {
   }
 
   return (
-    <div className="stack" style={{ minHeight: '100vh', fontSize: 15 }}>
+    <div className="stack" style={{ minHeight: '100vh', fontSize: 16 }}>
       <title>Sign in · Firepit</title>
       <header className="public-header" style={{ width: '100%' }}>
         <Brand />
@@ -103,8 +103,8 @@ export function SignIn() {
           to="/"
           className="small"
           style={{
-            color: 'var(--muted)',
-            minHeight: 32,
+            color: 'var(--graphite)',
+            minHeight: 44,
             display: 'inline-flex',
             alignItems: 'center',
           }}
@@ -151,7 +151,7 @@ export function SignIn() {
           <button
             type="button"
             className="btn btn-outline"
-            style={{ minHeight: 32 }}
+            style={{ minHeight: 44 }}
             data-testid="login-google"
             onClick={() => void signInGoogle()}
           >
@@ -161,9 +161,9 @@ export function SignIn() {
               style={{
                 width: 22,
                 height: 22,
-                background: 'var(--soft)',
+                background: 'var(--canvas)',
                 fontFamily: 'var(--sans)',
-                fontSize: 13,
+                fontSize: 16,
                 fontWeight: 700,
               }}
             >

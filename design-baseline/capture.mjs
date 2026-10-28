@@ -15,7 +15,17 @@ async function settle(page) {
 
 async function shoot(page, name, label) {
   const file = `${out}/${name}--${label}.png`;
-  await page.screenshot({ path: file, fullPage: true });
+  // a full-page shot draws fixed bars (a phone's tabs, the floating transcript) where the first
+  // screen ends, over the content; with the window as tall as the page they sit at its end,
+  // where scrolling down shows them
+  const size = page.viewportSize();
+  const tall = await page.evaluate(() => document.documentElement.scrollHeight);
+  if (tall > size.height) {
+    await page.setViewportSize({ width: size.width, height: tall });
+    await page.waitForTimeout(300);
+  }
+  await page.screenshot({ path: file });
+  await page.setViewportSize(size);
   console.log('saved', file, page.url());
 }
 

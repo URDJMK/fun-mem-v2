@@ -2,28 +2,13 @@
  * Home and the interview (pages/Home.tsx, components/Studio.tsx). Home is the name at the top
  * left and Start interview at the bottom; the button then becomes the interview assistant, a
  * large card in the middle of the page, and the transcript floats in a small box beside it.
- * Loaded after looks.css and uses its tokens.
+ * Loaded after looks.css and uses the tokens in styles.css.
  */
 
-/* ── during an interview the sidebar slides away ─────── */
-.app-focus .sidebar {
-  position: fixed;
-  inset: 0 auto 0 0;
-  width: 240px;
-  z-index: 3;
-  transform: translateX(-105%);
-  opacity: 0;
-  transition:
-    transform 0.7s var(--ease-out),
-    opacity 0.5s var(--ease-out);
-}
-.app-focus .main {
-  padding-bottom: 24px;
-}
-
 /* ── home: name top left, the start at the bottom ─────── */
+/* the bar above and the page's own padding (and on a phone the tabs) are what the screen has left */
 .home-start {
-  min-height: calc(100vh - 88px);
+  min-height: calc(100dvh - var(--appbar) - 96px);
   display: flex;
   flex-direction: column;
   gap: 16px;
@@ -32,11 +17,10 @@
   display: flex;
   align-items: center;
   gap: 10px;
-  animation: fp-rise 0.6s var(--ease-out) both;
 }
 .home-name,
 .studio-caption span {
-  font-family: var(--serif);
+  font-family: var(--display);
   font-weight: 400;
   font-size: 22px;
   line-height: 1.2;
@@ -59,55 +43,40 @@
   align-items: center;
   gap: 12px;
   padding-bottom: 12px;
-  animation: fp-rise 0.7s var(--ease-out) 120ms both;
 }
+/* the record button (DESIGN.md): Voice green, a full pill; the card it becomes grows out of it */
 .home-start-btn {
   position: relative;
-  min-height: 56px;
-  padding: 0 34px;
-  font-size: 16px;
-  /* a real radius and a solid colour under the gradient, so the card it becomes grows out of a
-     rounded orange shape (Flip reads both) rather than a grey oval */
-  border-radius: 28px;
-  background-color: var(--sage);
+  min-height: 64px;
+  padding: 0 32px;
+  font-size: 18px;
+  border-radius: 999px;
+  background-color: var(--voice);
+  color: var(--paper);
   gap: 10px;
-  box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.25),
-    0 2px 4px rgba(0, 0, 0, 0.12),
-    0 16px 36px -10px rgba(var(--glow), 0.75);
-}
-.home-start-btn::before {
-  content: '';
-  position: absolute;
-  inset: -7px;
-  border-radius: inherit;
-  border: 1.5px solid rgba(var(--glow), 0.45);
-  animation: fp-ring 2.8s var(--ease-out) infinite;
-  pointer-events: none;
 }
 .home-start-btn:hover {
-  transform: translateY(-2px);
+  color: var(--paper);
 }
 .home-mode {
   display: inline-flex;
   padding: 3px;
   gap: 2px;
   border-radius: 999px;
-  background: color-mix(in srgb, var(--card) 70%, transparent);
+  background: var(--paper);
   border: 1px solid var(--line);
-  backdrop-filter: blur(8px);
 }
 .home-mode button {
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  min-height: 28px;
+  min-height: 44px;
   padding: 0 12px;
   border: 0;
   border-radius: 999px;
   background: none;
-  color: var(--muted);
-  font-size: 13px;
+  color: var(--graphite);
+  font-size: 16px;
   font-weight: 500;
   cursor: pointer;
   transition:
@@ -115,15 +84,14 @@
     color 0.2s;
 }
 .home-mode button[aria-checked='true'] {
-  background: var(--card);
-  color: var(--ink);
-  box-shadow: var(--shadow-1);
+  background: var(--ink);
+  color: var(--paper);
 }
 .home-hint {
   max-width: 54ch;
   text-align: center;
-  font-size: 13px;
-  color: var(--muted);
+  font-size: 16px;
+  color: var(--graphite);
 }
 .home-aura {
   transition: opacity 1s var(--ease-out);
@@ -170,13 +138,10 @@
 .assist-card {
   position: relative;
   width: min(100%, 760px);
-  background: var(--card);
+  background: var(--paper);
   border: 1px solid var(--line);
   border-radius: 24px;
   overflow: hidden;
-  box-shadow:
-    var(--shadow-3),
-    0 0 0 6px rgba(var(--glow), 0.07);
 }
 .assist-inner {
   display: flex;
@@ -189,18 +154,16 @@
   align-items: center;
   justify-content: space-between;
   gap: 12px;
-  font-size: 12px;
+  font-size: 16px;
   font-weight: 600;
-  letter-spacing: 0.05em;
-  text-transform: uppercase;
-  color: var(--sage);
+  color: var(--ink);
 }
 .assist-step .btn {
   text-transform: none;
   letter-spacing: 0;
 }
 .assist-prompt {
-  font-family: var(--serif);
+  font-family: var(--display);
   font-weight: 400;
   font-size: clamp(26px, 3.4vw, 36px);
   line-height: 1.22;
@@ -211,9 +174,9 @@
   font-size: clamp(28px, 3.8vw, 40px);
 }
 .assist-eyebrow {
-  font-size: 14px;
+  font-size: 16px;
   font-weight: 600;
-  color: var(--muted);
+  color: var(--graphite);
   margin-bottom: -8px;
 }
 .assist-hearing,
@@ -221,8 +184,8 @@
   display: flex;
   align-items: center;
   gap: 10px;
-  font-size: 14px;
-  color: var(--muted);
+  font-size: 16px;
+  color: var(--graphite);
 }
 .assist-wave {
   display: inline-flex;
@@ -234,7 +197,7 @@
   width: 3px;
   height: 5px;
   border-radius: 2px;
-  background: var(--sage);
+  background: var(--ink);
   opacity: 0.55;
 }
 .assist-hearing[data-talking='true'] .assist-wave span {
@@ -256,17 +219,10 @@
   width: 9px;
   height: 9px;
   border-radius: 50%;
-  background: var(--sage);
-  box-shadow: 0 0 0 0 rgba(var(--glow), 0.5);
-  animation: assist-pulse 1.6s ease-out infinite;
-}
-@keyframes assist-pulse {
-  to {
-    box-shadow: 0 0 0 10px rgba(var(--glow), 0);
-  }
+  background: var(--voice);
 }
 .assist-state[data-state='listening'] {
-  color: var(--sage-ink);
+  color: var(--ink);
   font-weight: 500;
 }
 
@@ -283,23 +239,22 @@
   display: inline-flex;
   align-items: center;
   gap: 8px;
-  min-height: 34px;
+  min-height: 44px;
   padding: 0 14px 0 8px;
   border-radius: 999px;
-  border: 1px dashed var(--dashed);
-  color: var(--muted);
-  font-size: 15px;
+  border: 1px dashed var(--line);
+  color: var(--graphite);
+  font-size: 16px;
   transition:
     background-color 0.3s,
     border-color 0.3s,
     color 0.3s;
 }
 .assist-person[data-heard='true'] {
-  border: 1px solid color-mix(in srgb, var(--sage) 40%, var(--line));
-  background: var(--sage-tint);
-  color: var(--sage-ink);
+  border: 1px solid color-mix(in srgb, var(--ink) 40%, var(--line));
+  background: var(--canvas);
+  color: var(--ink);
   font-weight: 600;
-  animation: fp-pop 0.45s var(--ease-spring) both;
 }
 .assist-person-dot {
   width: 18px;
@@ -311,13 +266,13 @@
   opacity: 0.7;
 }
 .assist-person[data-heard='true'] .assist-person-dot {
-  background: var(--sage);
-  border-color: var(--sage);
-  color: var(--on-sage);
+  background: var(--ink);
+  border-color: var(--ink);
+  color: var(--paper);
   opacity: 1;
 }
 .assist-person-wait {
-  font-size: 12px;
+  font-size: 16px;
   font-weight: 400;
 }
 .assist-who {
@@ -327,18 +282,16 @@
   gap: 8px;
   padding: 12px 14px;
   border-radius: 14px;
-  background: var(--wonder-2);
-  animation: fp-rise 0.45s var(--ease-out) both;
+  background: var(--canvas);
 }
 .assist-note {
-  font-size: 13px;
-  color: var(--muted-2);
+  font-size: 16px;
+  color: var(--graphite);
 }
 .assist-quote {
-  font-family: var(--serif);
+  font-family: var(--display);
   font-size: 18px;
-  color: var(--ink-3);
-  animation: fp-rise 0.45s var(--ease-out) both;
+  color: var(--ink);
 }
 .assist-topics {
   display: flex;
@@ -346,15 +299,15 @@
   gap: 8px;
 }
 .assist-topics .chip {
-  min-height: 34px;
+  min-height: 44px;
   padding: 0 14px;
-  font-size: 14px;
+  font-size: 16px;
   border-radius: 999px;
   transition:
     background-color 0.25s,
     border-color 0.25s,
     color 0.25s,
-    transform 0.25s var(--ease-spring);
+    transform 0.25s var(--ease-out);
 }
 .assist-topics .chip[aria-pressed='true'] {
   transform: scale(1.04);
@@ -373,7 +326,7 @@
   right: 0;
   bottom: 0;
   height: 3px;
-  background: var(--sage);
+  background: var(--ink);
   transform-origin: left;
   transition: transform 0.25s linear;
 }
@@ -382,7 +335,6 @@
   display: grid;
   grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr);
   gap: 14px;
-  animation: fp-rise 0.6s var(--ease-out) 0.2s both;
 }
 .assist-next {
   display: flex;
@@ -404,14 +356,14 @@
   border: 0;
   border-radius: 8px;
   background: none;
-  color: var(--ink-3);
-  font-size: 14px;
+  color: var(--ink);
+  font-size: 16px;
   line-height: 1.45;
   cursor: pointer;
   transition: background-color 0.2s;
 }
 .assist-next button:hover {
-  background: color-mix(in srgb, var(--card) 70%, transparent);
+  background: color-mix(in srgb, var(--paper) 70%, transparent);
 }
 .assist-tip {
   display: flex;
@@ -419,31 +371,30 @@
   gap: 4px;
   padding: 12px 14px;
   border-radius: 12px;
-  background: color-mix(in srgb, var(--wonder-2) 85%, transparent);
-  font-size: 14px;
+  background: color-mix(in srgb, var(--canvas) 85%, transparent);
+  font-size: 16px;
   line-height: 1.5;
   align-self: start;
-  animation: fp-rise 0.5s var(--ease-out) both;
 }
 
 /* ── the transcript, floating, Granola-style ───────────── */
+/* a floating layer: inside the screen's safe area on every side, whatever its width */
 .float-transcript {
   position: fixed;
-  right: 24px;
-  bottom: 24px;
+  right: max(16px, env(safe-area-inset-right));
+  bottom: calc(16px + env(safe-area-inset-bottom));
   z-index: 20;
-  width: min(360px, calc(100vw - 32px));
+  width: min(360px, calc(100vw - 32px - env(safe-area-inset-left) - env(safe-area-inset-right)));
   display: flex;
   flex-direction: column;
-  background: color-mix(in srgb, var(--card) 92%, transparent);
-  backdrop-filter: blur(14px);
+  background: var(--paper);
   border: 1px solid var(--line);
   border-radius: 16px;
-  box-shadow: var(--shadow-3);
+  box-shadow: var(--shadow-float);
   overflow: hidden;
 }
 .float-transcript-closed {
-  width: min(420px, calc(100vw - 32px));
+  width: min(420px, calc(100vw - 32px - env(safe-area-inset-left) - env(safe-area-inset-right)));
   border-radius: 999px;
 }
 .float-head {
@@ -464,17 +415,15 @@
 }
 .float-title {
   flex: 1;
-  font-size: 12px;
+  font-size: 16px;
   font-weight: 600;
-  letter-spacing: 0.05em;
-  text-transform: uppercase;
-  color: var(--muted-2);
+  color: var(--graphite);
 }
 .float-latest {
   flex: 1;
   min-width: 0;
-  font-size: 13px;
-  color: var(--ink-3);
+  font-size: 16px;
+  color: var(--ink);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -483,26 +432,25 @@
   width: 8px;
   height: 8px;
   border-radius: 50%;
-  background: var(--muted-2);
+  background: var(--graphite);
   flex: none;
 }
 .float-dot-live {
-  background: var(--ember-hot);
-  box-shadow: 0 0 8px rgba(226, 85, 58, 0.7);
+  background: var(--danger);
 }
 .float-toggle {
-  width: 30px;
-  height: 30px;
+  width: 44px;
+  height: 44px;
   border: 0;
   border-radius: 50%;
   background: none;
-  color: var(--muted);
+  color: var(--graphite);
   display: grid;
   place-items: center;
   cursor: pointer;
 }
 .float-toggle:hover {
-  background: var(--soft-2);
+  background: var(--canvas);
 }
 .float-body {
   max-height: min(46vh, 420px);
@@ -513,12 +461,12 @@
   gap: 10px;
 }
 .float-body .live-turn p {
-  font-size: 14px;
+  font-size: 16px;
   line-height: 1.5;
 }
 .transcript-empty {
-  color: var(--muted-2);
-  font-size: 14px;
+  color: var(--graphite);
+  font-size: 16px;
 }
 
 /* ── reading it over ──────────────────────────────────── */
@@ -526,13 +474,12 @@
   display: flex;
   flex-direction: column;
   gap: 18px;
-  animation: fp-rise 0.6s var(--ease-out) both;
 }
 .review-box {
   max-height: 60vh;
   overflow-y: auto;
   padding: 16px 20px;
-  background: var(--card);
+  background: var(--paper);
   border: 1px solid var(--line);
   border-radius: 14px;
 }
@@ -545,13 +492,13 @@
   margin: 0;
   padding: 10px 14px;
   border-radius: 10px;
-  font-size: 14px;
-  background: var(--soft-2);
-  color: var(--muted);
+  font-size: 16px;
+  background: var(--canvas);
+  color: var(--graphite);
 }
 .review-pass[data-state='done'] {
-  background: var(--sage-tint);
-  color: var(--ink-3);
+  background: var(--canvas);
+  color: var(--ink);
 }
 /* words the notes spell differently from the transcript */
 .review-fix-list,
@@ -571,17 +518,17 @@
   padding: 8px 12px;
   border: 1px solid var(--line);
   border-radius: 10px;
-  background: var(--card);
+  background: var(--paper);
 }
 .review-fix-words {
-  font-size: 14px;
+  font-size: 16px;
   white-space: nowrap;
 }
 .review-fix-words s {
-  color: var(--muted-2);
+  color: var(--graphite);
 }
 .review-notes li {
-  font-size: 14px;
+  font-size: 16px;
   line-height: 1.5;
 }
 .review-stray {
@@ -599,11 +546,11 @@
 
 /* ── the coach: one suggested move at a time ──────────── */
 .coach-thinking {
-  font-size: 12px;
+  font-size: 16px;
   font-weight: 500;
   letter-spacing: 0;
   text-transform: none;
-  color: var(--muted-2);
+  color: var(--graphite);
   animation: guide-pulse 1.4s ease-in-out infinite;
 }
 @keyframes guide-pulse {
@@ -618,10 +565,10 @@
   margin-bottom: -6px;
 }
 .coach-eyebrow[data-state='offer'] {
-  color: var(--sage);
+  color: var(--ink);
 }
 .coach-eyebrow[data-state='moment'] {
-  color: var(--muted-2);
+  color: var(--graphite);
 }
 .assist-question {
   transition:
@@ -630,7 +577,7 @@
 }
 /* while the narrator talks, the question steps back: the answer matters, not the prompt */
 .assist-question[data-dim='true'] {
-  opacity: 0.42;
+  opacity: 0.55;
 }
 .assist-label {
   font-size: clamp(22px, 2.6vw, 28px);
@@ -640,18 +587,16 @@
   display: flex;
   align-items: center;
   gap: 8px;
-  font-size: 14px;
-  color: var(--muted);
+  font-size: 16px;
+  color: var(--graphite);
 }
 .coach-source {
-  font-size: 11px;
+  font-size: 16px;
   font-weight: 700;
-  letter-spacing: 0.05em;
-  text-transform: uppercase;
   padding: 2px 6px;
   border-radius: 4px;
-  background: var(--sage-tint);
-  color: var(--sage-ink);
+  background: var(--canvas);
+  color: var(--ink);
 }
 .coach-moves {
   display: flex;
@@ -660,7 +605,7 @@
   padding-top: 4px;
 }
 .coach-moves .btn {
-  min-height: 36px;
+  min-height: 44px;
   padding: 0 14px;
 }
 .coach-topics {
@@ -669,18 +614,17 @@
   gap: 6px;
   padding: 12px;
   border-radius: 12px;
-  background: var(--soft-2);
-  animation: fp-rise 0.35s var(--ease-out) both;
+  background: var(--canvas);
 }
 .coach-thread {
   border-style: dashed;
 }
 .coach-extra {
-  color: var(--muted);
+  color: var(--graphite);
 }
 .coach-privacy {
-  font-size: 12px;
-  color: var(--muted-2);
+  font-size: 16px;
+  color: var(--graphite);
   padding-top: 6px;
   border-top: 1px solid var(--line);
 }
@@ -693,22 +637,21 @@
   gap: 6px;
 }
 .coach-threads button {
-  min-height: 30px;
+  min-height: 44px;
   padding: 0 12px;
-  border: 1px dashed var(--dashed);
+  border: 1px dashed var(--line);
   border-radius: 999px;
-  background: color-mix(in srgb, var(--card) 70%, transparent);
-  color: var(--ink-3);
-  font-size: 13px;
+  background: color-mix(in srgb, var(--paper) 70%, transparent);
+  color: var(--ink);
+  font-size: 16px;
   cursor: pointer;
-  animation: fp-pop 0.4s var(--ease-spring) both;
   transition:
     border-color 0.2s,
     background-color 0.2s;
 }
 .coach-threads button:hover {
-  border-color: var(--sage);
-  background: var(--sage-tint);
+  border-color: var(--ink);
+  background: var(--canvas);
 }
 /* the interviewer's notes: across the whole aside, above what to come back to */
 .coach-notes {
@@ -719,7 +662,7 @@
   padding: 12px 14px;
   border: 1px solid var(--line);
   border-radius: 12px;
-  background: color-mix(in srgb, var(--card) 80%, transparent);
+  background: color-mix(in srgb, var(--paper) 80%, transparent);
 }
 .coach-notes-head {
   display: flex;
@@ -742,13 +685,13 @@
   display: flex;
   align-items: baseline;
   gap: 8px;
-  font-size: 14px;
+  font-size: 16px;
   line-height: 1.45;
 }
 .coach-notes-time {
   flex: none;
-  font-size: 12px;
-  color: var(--muted-2);
+  font-size: 16px;
+  color: var(--graphite);
   font-variant-numeric: tabular-nums;
 }
 .coach-notes-text {
@@ -760,7 +703,7 @@
   flex: none;
   border: 0;
   background: none;
-  color: var(--muted-2);
+  color: var(--graphite);
   font-size: 16px;
   line-height: 1;
   cursor: pointer;
@@ -771,7 +714,7 @@
 }
 .coach-notes-input {
   width: 100%;
-  min-height: 34px;
+  min-height: 44px;
 }
 .coach-notes-terms {
   margin: 0;
@@ -779,30 +722,19 @@
 .coach-time {
   padding: 10px 12px;
   border-radius: 10px;
-  font-size: 13px;
-  background: var(--soft-2);
-  color: var(--muted);
+  font-size: 16px;
+  background: var(--canvas);
+  color: var(--graphite);
 }
 .coach-time[data-strong='true'] {
-  background: var(--wonder);
+  background: var(--canvas);
   color: var(--ink);
 }
-/* the interview has reached its thanks: End stands out */
-.coach-end {
-  animation: coach-end 1.8s var(--ease-out) infinite;
-}
-@keyframes coach-end {
-  0% {
-    box-shadow: 0 0 0 0 rgba(var(--glow), 0.5);
-  }
-  100% {
-    box-shadow: 0 0 0 12px rgba(var(--glow), 0);
-  }
-}
+/* the interview has reached its thanks: End stands out (as the primary button, still) */
 
 .studio-with {
-  font-size: 14px;
-  color: var(--muted);
+  font-size: 16px;
+  color: var(--graphite);
   font-family: var(--sans);
 }
 
@@ -814,15 +746,11 @@
   gap: 12px;
   padding: 18px 20px;
   border-radius: 20px;
-  background: var(--card);
+  background: var(--paper);
   border: 1px solid var(--line);
-  box-shadow:
-    var(--shadow-3),
-    0 0 0 6px rgba(var(--glow), 0.07);
-  animation: fp-rise 0.45s var(--ease-out) both;
 }
 .narrator-title {
-  font-family: var(--serif);
+  font-family: var(--display);
   font-size: 22px;
   letter-spacing: -0.01em;
 }
@@ -835,13 +763,13 @@
   display: inline-flex;
   align-items: center;
   gap: 8px;
-  min-height: 38px;
+  min-height: 44px;
   padding: 0 14px 0 8px;
   border-radius: 999px;
   border: 1px solid var(--line);
-  background: var(--card);
+  background: var(--paper);
   color: var(--ink);
-  font-size: 15px;
+  font-size: 16px;
   cursor: pointer;
   transition:
     border-color 0.2s,
@@ -849,13 +777,13 @@
     transform 0.2s var(--ease-out);
 }
 .narrator-person:hover {
-  border-color: var(--sage);
-  background: var(--sage-tint);
+  border-color: var(--ink);
+  background: var(--canvas);
   transform: translateY(-1px);
 }
 .narrator-new {
   border-style: dashed;
-  color: var(--muted);
+  color: var(--graphite);
   padding-left: 12px;
 }
 
@@ -873,7 +801,7 @@
   display: flex;
   align-items: center;
   gap: 8px;
-  min-height: 34px;
+  min-height: 44px;
   font-weight: 400;
 }
 .country-picker {
@@ -891,34 +819,34 @@
   overflow-y: auto;
   border: 1px solid var(--line);
   border-radius: 8px;
-  background: var(--card);
-  box-shadow: var(--shadow-2);
+  background: var(--paper);
+  box-shadow: var(--shadow-float);
 }
 .country-list li {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 12px;
-  min-height: 32px;
+  min-height: 44px;
   padding: 0 10px;
   border-radius: 6px;
-  font-size: 14px;
+  font-size: 16px;
   cursor: pointer;
 }
 .country-list li[data-active='true'] {
-  background: var(--soft-2);
+  background: var(--canvas);
 }
 .country-list li[aria-selected='true'] {
-  color: var(--sage-ink);
+  color: var(--ink);
   font-weight: 600;
 }
 .country-code {
-  font-size: 12px;
-  color: var(--muted-2);
+  font-size: 16px;
+  color: var(--graphite);
   font-variant-numeric: tabular-nums;
 }
 .country-list .country-empty {
-  color: var(--muted-2);
+  color: var(--graphite);
   cursor: default;
 }
 
@@ -945,7 +873,7 @@
   padding: 4px;
   border: 1px solid var(--line);
   border-radius: 8px;
-  background: var(--card);
+  background: var(--paper);
 }
 .invite-result {
   display: flex;
@@ -963,7 +891,7 @@
 }
 .invite-result:hover:not(:disabled),
 .invite-result:focus-visible {
-  background: var(--sage-tint);
+  background: var(--canvas);
 }
 .invite-result:disabled {
   cursor: default;
@@ -1043,7 +971,13 @@
 }
 .member-role {
   width: auto;
-  min-height: 28px;
+  min-height: 44px;
   padding: 0 8px;
-  font-size: 13px;
+  font-size: 16px;
+}
+
+@media (max-width: 639px) {
+  .home-start {
+    min-height: calc(100dvh - var(--appbar) - var(--tabbar) - env(safe-area-inset-bottom) - 56px);
+  }
 }

@@ -111,7 +111,7 @@ export function Ask() {
               key={s}
               type="button"
               className="chip small"
-              style={{ color: 'var(--muted)' }}
+              style={{ color: 'var(--graphite)' }}
               onClick={() => void submit(s)}
             >
               {s}
@@ -158,10 +158,10 @@ function Answer({
       <div
         data-testid="ask-abstained"
         className="stack"
-        style={{ background: 'var(--wonder-2)', borderRadius: 8, padding: '10px 12px', gap: 4 }}
+        style={{ background: 'var(--canvas)', borderRadius: 8, padding: '10px 12px', gap: 4 }}
       >
-        <span style={{ fontWeight: 600, color: 'var(--wonder-ink)' }}>Not in the records</span>
-        <p style={{ fontSize: 15, lineHeight: 1.5 }}>
+        <span style={{ fontWeight: 600, color: 'var(--ink)' }}>Not in the records</span>
+        <p style={{ fontSize: 16, lineHeight: 1.5 }}>
           {answer.message ?? 'There is not enough in the records to answer this.'}
         </p>
         <span className="small muted">
@@ -179,9 +179,9 @@ function Answer({
       {answer.selfIdentification && <p className="small muted">{answer.selfIdentification}</p>}
       <div className="stack" style={{ gap: 8 }}>
         {answer.claims.map((c, i) => (
-          <p key={i} style={{ fontSize: 15, lineHeight: 1.6 }}>
+          <p key={i} style={{ fontSize: 16, lineHeight: 1.6 }}>
             <span className={c.kind === 'quote' ? 'quote' : undefined}>{c.text}</span>{' '}
-            <span className="small" style={{ fontFamily: 'var(--sans)', color: 'var(--muted-2)' }}>
+            <span className="small" style={{ fontFamily: 'var(--sans)', color: 'var(--graphite)' }}>
               — {KIND_LABEL[c.kind] ?? c.kind}
             </span>
           </p>
@@ -199,7 +199,7 @@ function Answer({
                 key={id}
                 to={noteHref(archiveId, n ?? { id, type: 'event' })}
                 className="pill pill-sage"
-                style={{ minHeight: 32, padding: '0 9px', textDecoration: 'none' }}
+                style={{ minHeight: 44, padding: '0 9px', textDecoration: 'none' }}
               >
                 {n?.title ?? 'A record'}
               </Link>

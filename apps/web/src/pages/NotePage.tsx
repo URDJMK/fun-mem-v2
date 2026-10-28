@@ -198,15 +198,7 @@ function Story({ archive, data, onEdit }: { archive: Archive; data: Loaded; onEd
     <>
       <div className="spread">
         <nav aria-label="Breadcrumb" className="row small muted">
-          <Link
-            to={stories}
-            style={{
-              color: 'var(--muted-2)',
-              minHeight: 32,
-              display: 'inline-flex',
-              alignItems: 'center',
-            }}
-          >
+          <Link to={stories} style={{ color: 'var(--graphite)' }}>
             Stories
           </Link>
           <span aria-hidden="true">/</span>
@@ -315,7 +307,7 @@ function Story({ archive, data, onEdit }: { archive: Archive; data: Loaded; onEd
               <div className="differ">
                 {parts.differs.map((d, i) => (
                   <div key={i}>
-                    <p style={{ fontSize: 14, lineHeight: 1.5 }}>
+                    <p style={{ fontSize: 16, lineHeight: 1.5 }}>
                       <Linked text={d} notes={notes} archiveId={archive.id} />
                     </p>
                   </div>
@@ -328,7 +320,7 @@ function Story({ archive, data, onEdit }: { archive: Archive; data: Loaded; onEd
         <aside aria-label="About this story" className="story-aside">
           {(inThis.length > 0 || (archive.writer && missing.length > 0)) && (
             <section className="stack" style={{ gap: 5 }}>
-              <h2 className="label-heading" style={{ fontSize: 13 }}>
+              <h2 className="label-heading" style={{ fontSize: 16 }}>
                 In this story
               </h2>
               <div className="row" style={{ gap: 4 }}>
@@ -353,7 +345,7 @@ function Story({ archive, data, onEdit }: { archive: Archive; data: Loaded; onEd
             </section>
           )}
           <section data-testid="backlinks" className="stack" style={{ gap: 6 }}>
-            <h2 className="label-heading" style={{ fontSize: 13 }}>
+            <h2 className="label-heading" style={{ fontSize: 16 }}>
               Mentioned in
             </h2>
             {backlinks.occurrences.length === 0 ? (
@@ -371,7 +363,7 @@ function Story({ archive, data, onEdit }: { archive: Archive; data: Loaded; onEd
                   style={{ textDecoration: 'none' }}
                 >
                   <span style={{ fontWeight: 600 }}>{o.sourceTitle}</span>
-                  <span style={{ fontSize: 13, color: 'var(--muted)' }}>
+                  <span style={{ fontSize: 16, color: 'var(--graphite)' }}>
                     {plainLinks(o.snippet)}
                   </span>
                 </Link>

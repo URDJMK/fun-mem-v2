@@ -377,8 +377,8 @@ export function Studio({
     if (!prompt.current || reduceMotion()) return;
     gsap.fromTo(
       prompt.current,
-      { opacity: 0, y: 12, filter: 'blur(4px)' },
-      { opacity: 1, y: 0, filter: 'blur(0px)', duration: 0.6, ease: 'power3.out' },
+      { opacity: 0, y: 6 },
+      { opacity: 1, y: 0, duration: 0.25, ease: 'power2.out' },
     );
   }, [promptKey]);
 
@@ -746,7 +746,7 @@ function WhoIsThis({
             <input
               id={`who-${n}`}
               className="input"
-              style={{ width: 140, minHeight: 28 }}
+              style={{ width: 140, minHeight: 44 }}
               autoFocus
               placeholder="Their name"
               value={value}

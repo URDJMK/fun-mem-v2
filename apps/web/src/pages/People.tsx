@@ -104,7 +104,7 @@ export function People({ noteId }: { noteId?: string }) {
                     <span className="stack" style={{ lineHeight: 1.3, minWidth: 0 }}>
                       <span style={{ fontWeight: 600 }}>{n.title}</span>
                       {'backlinks' in n && (
-                        <span style={{ fontSize: 13 }} className="muted">
+                        <span style={{ fontSize: 16 }} className="muted">
                           {n.backlinks === 0
                             ? 'Not mentioned elsewhere yet'
                             : // the API counts mentions (one memory may name them twice), not memories
@@ -227,7 +227,7 @@ function EntityView({
 
       <div className="grid-auto" style={{ '--min': '280px' } as CSSProperties}>
         <section aria-labelledby="facts-h" className="card stack" style={{ gap: 8, padding: 13 }}>
-          <h2 id="facts-h" style={{ fontSize: 15 }}>
+          <h2 id="facts-h" style={{ fontSize: 16 }}>
             What we know
           </h2>
           <div data-testid="note-text" className="stack" style={{ gap: 6 }}>
@@ -241,7 +241,7 @@ function EntityView({
               ))
             )}
             {parts.provenance.map((line, i) => (
-              <span key={i} className="small" style={{ color: 'var(--sage-ink)', fontWeight: 600 }}>
+              <span key={i} className="small" style={{ color: 'var(--ink)', fontWeight: 600 }}>
                 <Linked text={line} notes={notes} archiveId={archive.id} />
               </span>
             ))}
@@ -253,7 +253,7 @@ function EntityView({
           className="card stack"
           style={{ gap: 8, padding: 13 }}
         >
-          <h2 id="in-h" style={{ fontSize: 15 }}>
+          <h2 id="in-h" style={{ fontSize: 16 }}>
             Where {note.type === 'place' ? 'it' : 'they'} come{note.type === 'place' ? 's' : ''} up
           </h2>
           {backlinks.occurrences.length === 0 ? (
@@ -271,7 +271,9 @@ function EntityView({
                 style={{ textDecoration: 'none' }}
               >
                 <span style={{ fontWeight: 600 }}>{o.sourceTitle}</span>
-                <span style={{ fontSize: 13, color: 'var(--muted)' }}>{plainLinks(o.snippet)}</span>
+                <span style={{ fontSize: 16, color: 'var(--graphite)' }}>
+                  {plainLinks(o.snippet)}
+                </span>
               </Link>
             ))
           )}
@@ -285,13 +287,13 @@ function EntityView({
 
       {parts.differs.length > 0 && (
         <section aria-labelledby="differ-h" className="stack" style={{ gap: 8 }}>
-          <h2 id="differ-h" style={{ fontSize: 15 }}>
+          <h2 id="differ-h" style={{ fontSize: 16 }}>
             Remembered a little differently
           </h2>
           <div className="differ">
             {parts.differs.map((d, i) => (
               <div key={i}>
-                <p style={{ fontSize: 13 }}>
+                <p style={{ fontSize: 16 }}>
                   <Linked text={d} notes={notes} archiveId={archive.id} />
                 </p>
               </div>
@@ -336,7 +338,7 @@ function Graph({
 
   return (
     <section aria-labelledby="graph-h" className="card" style={{ padding: 2, overflow: 'hidden' }}>
-      <h2 id="graph-h" style={{ fontSize: 15, padding: '12px 14px 0' }}>
+      <h2 id="graph-h" style={{ fontSize: 16, padding: '12px 14px 0' }}>
         How {center.title} fits in
       </h2>
       <div className="graph" role="img" aria-label={`${center.title} is linked with ${said}.`}>
@@ -352,7 +354,7 @@ function Graph({
               key={n.id}
               d={`M50 50 C ${(50 + x) / 2} 50, ${(50 + x) / 2} ${y}, ${x} ${y}`}
               fill="none"
-              stroke="var(--dashed)"
+              stroke="var(--line)"
               strokeWidth="2"
               vectorEffect="non-scaling-stroke"
             />

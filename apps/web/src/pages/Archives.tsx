@@ -88,7 +88,7 @@ export function Archives() {
             {greeting()}
             {first ? `, ${first}` : ''}
           </h1>
-          <p className="muted" style={{ fontSize: 15 }}>
+          <p className="muted" style={{ fontSize: 16 }}>
             Whose stories would you like to spend time with?
           </p>
         </div>
@@ -173,7 +173,7 @@ export function Archives() {
                   alignItems: 'center',
                   justifyContent: 'center',
                   textAlign: 'center',
-                  border: '1.5px dashed var(--dashed)',
+                  border: '1.5px dashed var(--line)',
                   borderRadius: 8,
                   padding: 16,
                   minHeight: 140,
@@ -186,13 +186,13 @@ export function Archives() {
                   style={{
                     width: 32,
                     height: 32,
-                    background: 'var(--sage-tint)',
-                    color: 'var(--sage)',
+                    background: 'var(--canvas)',
+                    color: 'var(--ink)',
                   }}
                 >
                   <Icon name="plus" size={24} stroke={2.2} />
                 </span>
-                <span className="title" style={{ fontSize: 15 }}>
+                <span className="title" style={{ fontSize: 16 }}>
                   Start a new project
                 </span>
                 <span className="small muted">For one person, or a whole family</span>

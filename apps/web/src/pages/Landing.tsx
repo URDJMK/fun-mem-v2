@@ -59,14 +59,6 @@ export function Landing() {
         heroLoop();
         askScene();
         graphScene();
-        gsap.from('.lp-trust > div', {
-          y: 24,
-          opacity: 0,
-          stagger: 0.12,
-          duration: 0.6,
-          ease: 'power2.out',
-          scrollTrigger: { trigger: '.lp-trust', start: 'top 85%' },
-        });
       });
 
       // no motion: every scene shown in its finished state
@@ -223,21 +215,6 @@ export function Landing() {
         </div>
       </section>
 
-      <section className="lp-trust">
-        {[
-          { icon: 'person' as const, label: 'Members only' },
-          { icon: 'check' as const, label: 'Never sold or trained on' },
-          { icon: 'timeline' as const, label: 'Nothing overwritten' },
-        ].map((t) => (
-          <div key={t.label}>
-            <span className="lp-trust-icon">
-              <Icon name={t.icon} size={18} />
-            </span>
-            {t.label}
-          </div>
-        ))}
-      </section>
-
       <section className="lp-final">
         <h2 className="h-section">Start with one afternoon.</h2>
         <Link to="/sign-in" className="btn btn-primary btn-lg">
@@ -277,7 +254,7 @@ function heroLoop() {
     const hl = line.querySelector('.lp-hl');
     if (!hl) return;
     tl.to(hl, { backgroundSize: '100% 100%', duration: 0.5 })
-      .to('.lp-arrow', { x: 6, color: 'var(--sage)', duration: 0.2, yoyo: true, repeat: 1 }, '<')
+      .to('.lp-arrow', { x: 6, color: 'var(--ink)', duration: 0.2, yoyo: true, repeat: 1 }, '<')
       .to(mems[told] ?? [], { opacity: 1, x: 0, scale: 1, duration: 0.6 }, '-=0.1')
       .to(dots[told] ?? [], { opacity: 1, scale: 1, duration: 0.4, ease: 'back.out(3)' }, '-=0.2');
     told += 1;
