@@ -25,7 +25,8 @@ const VERDICTS: readonly Verdict[] = ['supported', ...FAILING, 'less_certain_in_
 export const JUDGE_SYSTEM = `You check a story written for a family archive against the interview lines each sentence cites.
 
 Wording is free: paraphrase, condensing, reordering and summary are all fine. Judge ONLY whether
-anything is made up. For each sentence give one verdict:
+anything is made up. "Who this is about" is what the family entered about the narrator: a fact
+from it (cited as the "Profile" line) is supported. For each sentence give one verdict:
 - "supported": the cited lines tell this, in any wording.
 - "made_up": it adds an event, action, detail or claim the cited lines do not tell.
 - "contradicts": it says the opposite of the cited lines.
@@ -43,6 +44,8 @@ export async function judgeStory(
   d: StoryDraft,
   lines: readonly Line[],
   signal?: AbortSignal,
+  /** "Who this is about" (stories/profile.ts), or '' */
+  profile = '',
 ): Promise<{ rulings: Ruling[]; calls: number }> {
   const task = d.sentences
     .map(
@@ -52,7 +55,7 @@ export async function judgeStory(
     .join('\n\n');
   const out = await runWithTools(chat, {
     system: JUDGE_SYSTEM,
-    task: `The story "${d.title}", sentence by sentence:\n\n${task}`,
+    task: `${profile ? `${profile}\n\n` : ''}The story "${d.title}", sentence by sentence:\n\n${task}`,
     tools: [],
     maxToolCalls: 0,
     maxCalls: 2,

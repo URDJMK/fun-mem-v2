@@ -20,6 +20,8 @@ export interface Sentence {
 
 export interface StoryDraft {
   title: string;
+  /** the narrator's age when it happened, as said in the cited lines: a year is worked out from it in code */
+  age?: { years: number; cites: Range[] };
   /** when it happened, as a fuzzy date ("1946", "~1946", "1966-06"), or null */
   occurred: string | null;
   /** when it ended, for a story that spans years */
@@ -53,8 +55,12 @@ How it reads:
   "The tin of savings", "Sundays at the pier". Bad: a summary ("Met Minho at a church supper when
   he spilled gravy") or a label ("Childhood").
 - Date: "occurred" is when it happened, as "1946", "1966-06" or "~1946" (when unsure), ONLY if a
-  year is said in this story's lines; never work one out ("at eighteen" is not a year). Otherwise
-  null. "until" is when it ended, for a story spanning years, else null.
+  year is said in this story's lines; never work one out, not even in a sentence ("at eighteen" is
+  not a year). Otherwise null. "until" is when it ended, for a story spanning years, else null.
+- Age: when no year is said but the narrator's age is ("at eighteen", "when I was seven"), give
+  "age": {"years": 18, "cites": ["L14"]} and leave "occurred" null: the year is worked out for you.
+- "Who this is about" is what the family entered about the narrator. A sentence may use a fact
+  from it, citing "P".
 
 Every sentence lists the lines it comes from in "cites" (like ["L3", "L7-L9"]). A summarizing
 sentence may cite a wider range. Set "paragraph": true on a sentence that starts a new paragraph.
@@ -84,10 +90,18 @@ export function parseDraft(v: unknown): StoryDraft | string {
     });
   }
   if (sentences.length === 0) return 'the story has no sentences: write it, sentence by sentence';
+  const age =
+    isObj(v.age) && Number.isInteger(v.age.years) && Array.isArray(v.age.cites)
+      ? {
+          years: v.age.years as number,
+          cites: v.age.cites.map((c) => parseCite(c)).filter((r): r is Range => r !== null),
+        }
+      : null;
   return {
     title: typeof v.title === 'string' ? v.title.trim() : '',
     occurred: fuzzy(v.occurred),
     until: fuzzy(v.until),
+    ...(age && age.cites.length ? { age } : {}),
     sentences,
   };
 }
@@ -95,7 +109,9 @@ export function parseDraft(v: unknown): StoryDraft | string {
 /** a draft as the model sees it again: numbered sentences with their lines */
 export function showDraft(d: StoryDraft): string {
   const cite = (rs: Range[]) =>
-    rs.map((r) => (r.from === r.to ? `L${r.from}` : `L${r.from}-L${r.to}`)).join(', ');
+    rs
+      .map((r) => (r.from === 0 ? 'P' : r.from === r.to ? `L${r.from}` : `L${r.from}-L${r.to}`))
+      .join(', ');
   return [
     `Title: ${d.title}`,
     `Occurred: ${d.occurred ?? 'none'}${d.until ? ` until ${d.until}` : ''}`,
@@ -113,10 +129,13 @@ export async function writeStory(
     lookup: StoryLookup;
     maxToolCalls: number;
     signal?: AbortSignal;
+    /** "Who this is about" (stories/profile.ts), or '' */
+    profile?: string;
   },
 ): Promise<{ draft: StoryDraft; calls: number }> {
   const own = o.lines.filter((l) => o.story.ranges.some((r) => l.n >= r.from && l.n <= r.to));
   const task = [
+    o.profile ?? '',
     `The narrator: ${o.subject}. Told by: ${o.story.tellers.join(', ')}.`,
     `Working title: ${o.story.title}`,
     `The story's lines:\n${renderLines(own)}`,

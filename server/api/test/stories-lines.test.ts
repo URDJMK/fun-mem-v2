@@ -57,6 +57,9 @@ describe('parseCite', () => {
     expect(parseCite('12-15')).toEqual({ from: 12, to: 15 });
     expect(parseCite(' l3 ')).toEqual({ from: 3, to: 3 });
     expect(parseCite({ from: 2, to: 4 })).toEqual({ from: 2, to: 4 });
+    // the protagonist's profile, cited as P, is line 0
+    expect(parseCite('P')).toEqual({ from: 0, to: 0 });
+    expect(parseCite(' p ')).toEqual({ from: 0, to: 0 });
   });
 
   it('refuses what is not a line', () => {

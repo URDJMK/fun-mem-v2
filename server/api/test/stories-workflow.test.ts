@@ -23,6 +23,13 @@ const TRANSCRIPT = [
 const parsed = () => parseTranscript(TRANSCRIPT);
 const OPTS = { interviewees: ['Sunja'] };
 const noLookup = { search: async () => [], read: async () => null };
+const SUNJA_PROFILE = {
+  noteId: 'n1',
+  name: 'Sunja Kim',
+  born: '~1946',
+  died: null,
+  aliases: ['Grandma Sunja', 'Sunja'],
+};
 
 const PLAN = {
   interviewName: 'Sunja on Busan and Minho',
@@ -235,6 +242,86 @@ describe('writeStories', () => {
       /> Told by Sunja, “Talk”, 0:03–0:05$|> Told by Sunja, “Talk”, 0:05$/,
     );
     expect(out.memories[0]!.body).not.toMatch(/(\d:\d\d)–\1$/);
+  });
+
+  it('the profile goes with every step, and a fact from it may be cited', async () => {
+    const seen: Record<string, string[]> = { plan: [], write: [], judge: [] };
+    const chat = model((step, user) => {
+      seen[step]!.push(user);
+      if (step === 'write' && user.includes('Working title: The harbour')) {
+        return {
+          ...HARBOUR,
+          sentences: [...HARBOUR.sentences, sentence('Her family calls her Grandma Sunja.', ['P'])],
+        };
+      }
+      return happy(step, user);
+    });
+    const out = await writeStories(parsed(), OPTS, {
+      chat,
+      lookup: noLookup,
+      titles: [],
+      profiles: [SUNJA_PROFILE],
+    });
+    for (const step of ['plan', 'write', 'judge']) {
+      expect(seen[step]![0]).toContain(
+        'Who this is about:\n- Sunja Kim (called "Grandma Sunja", "Sunja"). Born about 1946.',
+      );
+    }
+    const harbour = out.memories.find((m) => m.title === 'The harbour where she was born')!;
+    expect(harbour.body).toContain('Her family calls her Grandma Sunja.');
+    expect(harbour.sources!.at(-1)).toMatchObject({ from: 0, to: 0 });
+    expect(harbour.sources!.at(-1)!.text).toContain('Grandma Sunja');
+    expect(out.stats.stories!.removed).toBe(0);
+  });
+
+  it('an age said in the interview becomes a year, from the profile', async () => {
+    const factory = parseTranscript(
+      [
+        'Interviewer: What happened after you left school?',
+        'Sunja: At eighteen I started at a textile factory, and I gave my whole pay to my mother.',
+        'Interviewer: And after that?',
+        'Sunja: She put a little aside for me in a tin, every month.',
+      ].join('\n'),
+    );
+    const ask = (age: { years: number; cites: string[] }) =>
+      model((step, user) =>
+        step === 'plan'
+          ? { stories: [{ title: 'The tin of savings', lines: ['L1-L4'], tellers: ['Sunja'] }] }
+          : step === 'judge'
+            ? allSupported(user)
+            : {
+                title: 'The tin of savings',
+                occurred: null,
+                age,
+                sentences: [
+                  sentence('At eighteen Sunja started work at a textile factory.', ['L2'], true),
+                  sentence('Her mother put a little aside for her in a tin every month.', ['L4']),
+                ],
+              },
+      );
+    const deps = { lookup: noLookup, titles: [], profiles: [SUNJA_PROFILE] };
+    const said = await writeStories(factory, OPTS, {
+      ...deps,
+      chat: ask({ years: 18, cites: ['L2'] }),
+    });
+    expect(said.memories[0]).toMatchObject({
+      occurred: '~1964',
+      dateBasis: 'Sunja Kim was 18; born about 1946',
+    });
+    // an age the cited lines do not say is not used
+    const unsaid = await writeStories(factory, OPTS, {
+      ...deps,
+      chat: ask({ years: 30, cites: ['L4'] }),
+    });
+    expect(unsaid.memories[0]!.occurred).toBeNull();
+    expect(unsaid.memories[0]!.dateBasis).toBeUndefined();
+    // without a birth date there is no year to work out
+    const noBirth = await writeStories(factory, OPTS, {
+      ...deps,
+      profiles: [{ ...SUNJA_PROFILE, born: null }],
+      chat: ask({ years: 18, cites: ['L2'] }),
+    });
+    expect(noBirth.memories[0]!.occurred).toBeNull();
   });
 
   it('with no AI, the stories wait, and nothing is chopped into fragments', async () => {

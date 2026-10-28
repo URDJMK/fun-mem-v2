@@ -14,10 +14,11 @@ import {
 import { asModelError, ModelError, type ChatModel } from '../nim';
 import { mapPool } from '../pool';
 import { applyRoles, type ParsedTranscript } from '../transcript';
-import { checkDraft, type Problem } from './check';
+import { checkDraft, saysNumber, type Problem } from './check';
 import { FAILING, judgeStory, type Ruling } from './judge';
-import { clock, linesOf, partsOf, textOf, type Line } from './lines';
+import { clock, linesOf, partsOf, PROFILE_LINE, textOf, type Line } from './lines';
 import { planPart, type PlannedStory } from './plan';
+import { ageYear, profileBlock, profileLine, saidDate, type Profile } from './profile';
 import type { StoryLookup } from './tools';
 import { writeStory, type StoryDraft } from './write';
 
@@ -57,6 +58,8 @@ export interface StoriesDeps {
   interviewName?: string | null;
   /** who the project is about: the narrator's name when the transcript gives none ("SPEAKER_00") */
   subject?: string | null;
+  /** the protagonist's profile, and each narrator's (PRD D14): in every step's prompt */
+  profiles?: Profile[];
 }
 
 export const DEFAULT_STORY_DEADLINE_MS = 12 * 60_000;
@@ -109,7 +112,31 @@ export async function writeStories(
     [...new Set(tellerLines.map((l) => l.name))].join(' and ') ||
     roles.interviewee ||
     'the narrator';
-  const known = [...new Set([...names.map(([, n]) => n), ...lines.map((l) => l.name), subject])];
+  const profiles = deps.profiles ?? [];
+  const profile = profileBlock(profiles);
+  // what the checks and the judge read: the transcript, and the profile as line 0 (cited "P")
+  const withProfile: Line[] = profiles.length
+    ? [
+        {
+          n: PROFILE_LINE,
+          speaker: 'profile',
+          name: 'Profile',
+          teller: false,
+          start: null,
+          end: null,
+          text: profileLine(profiles),
+        },
+        ...lines,
+      ]
+    : lines;
+  const known = [
+    ...new Set([
+      ...names.map(([, n]) => n),
+      ...lines.map((l) => l.name),
+      subject,
+      ...profiles.flatMap((p) => [p.name, ...p.aliases]),
+    ]),
+  ];
 
   const counts = {
     planned: 0,
@@ -224,6 +251,7 @@ export async function writeStories(
           lookup: deps.lookup,
           maxToolCalls: PLAN_TOOL_CALLS,
           signal,
+          profile,
         }));
       } catch (e) {
         const why = reasonOf(e);
@@ -280,9 +308,10 @@ export async function writeStories(
             lookup: deps.lookup,
             maxToolCalls: WRITE_TOOL_CALLS,
             signal,
+            profile,
           })
         ).draft;
-        problems = checkDraft(draft, lines, known, story.ranges);
+        problems = checkDraft(draft, withProfile, known, story.ranges);
         // a date the lines do not give is simply dropped: not worth writing the story again
         if (problems.some((p) => p.kind === 'date')) {
           for (const p of problems)
@@ -293,7 +322,7 @@ export async function writeStories(
         }
         rulings = [];
         if (problems.length === 0) {
-          rulings = (await judgeStory(judge, draft, lines, signal)).rulings;
+          rulings = (await judgeStory(judge, draft, withProfile, signal, profile)).rulings;
           problems = failing(rulings);
         }
         for (const p of problems) counts.problems[p.kind] = (counts.problems[p.kind] ?? 0) + 1;
@@ -318,7 +347,7 @@ export async function writeStories(
         counts.removed += out.size;
         if (!judged && kept.length > 0) {
           // the code checks stopped the last draft before the judge saw it: judge what is left
-          rulings = (await judgeStory(judge, draft, lines, signal)).rulings;
+          rulings = (await judgeStory(judge, draft, withProfile, signal, profile)).rulings;
           const fail = new Set(failing(rulings).map((p) => p.sentence));
           for (const i of fail) notes.push(leftOut(draft.sentences[i]!.text));
           counts.removed += fail.size;
@@ -342,11 +371,32 @@ export async function writeStories(
       counts.sentences += draft.sentences.length;
       for (const f of flags)
         notes.push(`${subject} may have been less sure than this says: “${f}”`);
-      return assemble(story, draft, flags, notes, name);
+      // an age said in the story's lines becomes a year, in code (PRD 7.5)
+      let dateBasis: string | undefined;
+      if (!draft.occurred && draft.age) {
+        const who = profileOf(story.tellers);
+        const year = who ? ageYear(who.born, draft.age.years) : null;
+        const cites = draft.age.cites.filter((r) => r.from >= 1);
+        if (who && year && cites.length && saysNumber(textOf(lines, cites), draft.age.years)) {
+          draft.occurred = year;
+          dateBasis = `${who.name} was ${draft.age.years}; born ${saidDate(who.born!)}`;
+        }
+      }
+      return assemble(story, draft, flags, notes, name, dateBasis);
     }
   } finally {
     clearTimeout(timer);
     deps.signal?.removeEventListener('abort', onCancel);
+  }
+
+  /** the teller's profile: by name or by a name the family uses; the only one when there is one */
+  function profileOf(tellers: readonly string[]): Profile | undefined {
+    const same = (a: string, b: string) => a.trim().toLowerCase() === b.trim().toLowerCase();
+    return (
+      profiles.find((p) =>
+        tellers.some((t) => same(t, p.name) || p.aliases.some((a) => same(t, a))),
+      ) ?? (profiles.length === 1 ? profiles[0] : undefined)
+    );
   }
 
   function failing(rulings: Ruling[]): Problem[] {
@@ -370,12 +420,14 @@ export async function writeStories(
     flags: string[],
     notes: string[],
     interviewName: string,
+    dateBasis?: string,
   ): ProposedMemory {
     const paragraphs: string[][] = [];
     for (const s of draft.sentences) {
       if (s.paragraph || paragraphs.length === 0) paragraphs.push([s.text]);
       else paragraphs[paragraphs.length - 1]!.push(s.text);
     }
+    // transcript lines only: the profile (line 0) has no time and no turn
     const cited: Line[] = lines.filter((l) =>
       draft.sentences.some((s) => s.cites.some((r) => l.n >= r.from && l.n <= r.to)),
     );
@@ -395,14 +447,14 @@ export async function writeStories(
     ].join('\n\n');
     const firstTeller = cited.find((l) => l.teller) ?? cited[0]!;
     const sources: StorySource[] = draft.sentences.map((s) => {
-      const within = lines.filter((l) => s.cites.some((r) => l.n >= r.from && l.n <= r.to));
+      const within = withProfile.filter((l) => s.cites.some((r) => l.n >= r.from && l.n <= r.to));
       return {
         sentence: s.text,
         from: Math.min(...s.cites.map((r) => r.from)),
         to: Math.max(...s.cites.map((r) => r.to)),
         start: within.find((l) => l.start !== null)?.start ?? null,
         end: [...within].reverse().find((l) => l.end !== null)?.end ?? null,
-        text: textOf(lines, s.cites).slice(0, SOURCE_CHARS),
+        text: textOf(withProfile, s.cites).slice(0, SOURCE_CHARS),
       };
     });
     const turnIndex = (l: Line) => turns[l.n - 1]!.index;
@@ -423,6 +475,7 @@ export async function writeStories(
       tellers: story.tellers,
       sources,
       flags,
+      ...(dateBasis ? { dateBasis } : {}),
       writtenBy: {
         workflow: WORKFLOW_VERSION,
         writer: deps.chat!.id,

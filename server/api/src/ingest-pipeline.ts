@@ -200,6 +200,8 @@ export interface ProposedMemory {
   sources?: StorySource[];
   /** a story only: sentences more certain than the speaker was, for the reviewer */
   flags?: string[];
+  /** a story only: how its date was worked out from an age ("Sunja was 18; born about 1946") */
+  dateBasis?: string;
   /** a story only: how it was written (PRD 7.3) */
   writtenBy?: { workflow: string; writer: string; judge: string };
   /** claims that may disagree with notes already in the archive (both are kept, marked) */

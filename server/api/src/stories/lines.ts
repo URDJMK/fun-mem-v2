@@ -49,8 +49,13 @@ export function renderLines(lines: readonly Line[]): string {
 
 const CITE = /^\s*l?(\d+)\s*(?:[-–—]|to)\s*l?(\d+)\s*$|^\s*l?(\d+)\s*$/i;
 
-/** "L12", "L12-L15", "L12–15", "12-15" or `{from, to}`; null for anything else. */
+/** the protagonist's profile, cited as "P" (stories/profile.ts), is line 0 */
+export const PROFILE_LINE = 0;
+
+/** "L12", "L12-L15", "L12–15", "12-15", "P" (the profile) or `{from, to}`; null for anything else. */
 export function parseCite(v: unknown): Range | null {
+  if (typeof v === 'string' && /^\s*p\s*$/i.test(v))
+    return { from: PROFILE_LINE, to: PROFILE_LINE };
   if (v && typeof v === 'object') {
     const { from, to } = v as { from?: unknown; to?: unknown };
     if (Number.isInteger(from) && Number.isInteger(to)) {

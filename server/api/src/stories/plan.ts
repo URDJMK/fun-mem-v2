@@ -161,6 +161,8 @@ export async function planPart(
     lookup: StoryLookup;
     maxToolCalls: number;
     signal?: AbortSignal;
+    /** "Who this is about" (stories/profile.ts), or '' */
+    profile?: string;
   },
 ): Promise<{ plan: StoryPlan; calls: number }> {
   const carriedText = o.carried.length
@@ -169,6 +171,7 @@ export async function planPart(
         .join('\n')}`
     : '';
   const task = [
+    o.profile ?? '',
     `The narrator: ${o.subject}.`,
     carriedText,
     `The transcript:\n${renderLines(o.lines)}`,

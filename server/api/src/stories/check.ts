@@ -67,6 +67,9 @@ function digits(text: string): string {
 const numbersOf = (text: string): string[] =>
   [...digits(text).matchAll(/\d[\d,]*(?:\.\d+)?/g)].map((m) => m[0].replace(/,/g, ''));
 
+/** Does the text say this number, however it was said ("eighteen", "18")? */
+export const saysNumber = (text: string, n: number): boolean => numbersOf(text).includes(String(n));
+
 /** capitalized words that are not names: they may open a clause or stand for a relative */
 const NOT_NAMES = new Set(
   `i a an the and but or so then when where while after before during later later in on at of to
@@ -130,7 +133,9 @@ export function checkDraft(
     if (allowed) {
       // the line just before a range counts only when it is a question, never another answer
       const asked = (n: number) => lines.some((l) => l.n === n && !l.teller);
+      // the profile (line 0, cited as P) belongs to every story
       const inside = (n: number) =>
+        n === 0 ||
         allowed.some((r) => (n >= r.from && n <= r.to) || (n === r.from - 1 && asked(n)));
       const outside = s.cites.find((r) => !inside(r.from) || !inside(r.to));
       if (outside) {

@@ -38,6 +38,7 @@ import {
   type InterviewOptions,
 } from './stories/interviews';
 import { writeStories } from './stories/workflow';
+import { profilesFor } from './stories/profile-store';
 
 /**
  * Interviews are LONG: an hour of speech is tens of model calls, so a request that
@@ -868,7 +869,18 @@ export class IngestJobs {
       [job.archiveId],
     );
     const p = project.rows[0] as { subject_name: string; kind: string } | undefined;
+    // who the interview is about, and who tells it: in every step's prompt (PRD D14)
+    const tellers = [
+      req.teller,
+      req.interviewee,
+      ...(Array.isArray(req.interviewees) ? req.interviewees : []),
+      ...Object.values(
+        req.speakerNames && typeof req.speakerNames === 'object' ? req.speakerNames : {},
+      ),
+    ].filter((t): t is string => typeof t === 'string');
+    const profiles = await profilesFor(pool, job.archiveId, job.userId, tellers);
     const result = await writeStories(parsed, req, {
+      profiles,
       chat: this.deps.chat ?? null,
       judge: this.deps.chat ?? null,
       lookup: archiveLookup(this.deps, job.archiveId, job.userId),

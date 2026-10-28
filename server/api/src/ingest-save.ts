@@ -948,6 +948,7 @@ export async function persistImport(
                     ...(m.until ? { until: m.until } : {}),
                     sources: m.sources ?? [],
                     ...(m.flags?.length ? { flags: m.flags } : {}),
+                    ...(m.dateBasis ? { dateBasis: m.dateBasis } : {}),
                     ...(m.writtenBy ? { writtenBy: m.writtenBy } : {}),
                   },
                 }
