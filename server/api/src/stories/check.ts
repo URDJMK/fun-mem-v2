@@ -18,6 +18,7 @@ export type ProblemKind =
   | 'quote'
   | 'date'
   | 'title'
+  | 'outside_story'
   // from the AI judge
   | 'made_up'
   | 'contradicts'
@@ -45,9 +46,17 @@ const ORDINALS: Record<string, string> = {
   twelfth: '12',
 };
 
-/** spoken numbers, years and ordinals as digits ("nineteen forty-six" → 1946, "fifth" → 5) */
+/**
+ * Spoken numbers, years and ordinals as digits ("nineteen forty-six" → 1946, "fifth" → 5). Clause
+ * by clause: the converter will not read a year near a word about money ("… sixty-seven, in a
+ * small ceremony, because we did not have money …") in case it is a price. Here, reading too many
+ * numbers only lets a story repeat a number that was said; reading too few fails a true sentence.
+ */
 function digits(text: string): string {
-  return spokenNumbersToDigits(spokenYearsToDigits(text))
+  return text
+    .split(/(?<=[,.;:!?])\s+/)
+    .map((clause) => spokenNumbersToDigits(spokenYearsToDigits(clause)))
+    .join(' ')
     .replace(/\b(\d+)(?:st|nd|rd|th)\b/gi, '$1')
     .replace(
       /\b(first|second|third|fourth|fifth|sixth|seventh|eighth|ninth|tenth|eleventh|twelfth)\b/gi,
@@ -83,10 +92,18 @@ const flat = (s: string): string =>
 
 const QUOTE = /[“"]([^”"]{3,}?)[”"]/g;
 
+/** a title from the story's heart is a few words; more is a summary */
+const TITLE_WORDS = 7;
+
+/**
+ * `allowed`: the story's own lines. A sentence citing lines outside them (beyond the question
+ * just before) tells another story, which is written on its own.
+ */
 export function checkDraft(
   d: StoryDraft,
   lines: readonly Line[],
   known: readonly string[],
+  allowed?: readonly Range[],
 ): Problem[] {
   const problems: Problem[] = [];
   const last = lines.length ? lines[lines.length - 1]!.n : 0;
@@ -109,6 +126,23 @@ export function checkDraft(
         detail: `the transcript ends at L${last}`,
       });
       return;
+    }
+    if (allowed) {
+      // the line just before a range counts only when it is a question, never another answer
+      const asked = (n: number) => lines.some((l) => l.n === n && !l.teller);
+      const inside = (n: number) =>
+        allowed.some((r) => (n >= r.from && n <= r.to) || (n === r.from - 1 && asked(n)));
+      const outside = s.cites.find((r) => !inside(r.from) || !inside(r.to));
+      if (outside) {
+        const at =
+          outside.to !== outside.from ? `L${outside.from}-L${outside.to}` : `L${outside.from}`;
+        problems.push({
+          sentence: i,
+          kind: 'outside_story',
+          detail: `${at} belongs to another story: tell only this story, from its own lines`,
+        });
+        return;
+      }
     }
     allCites.push(...s.cites);
     const source = textOf(lines, s.cites);
@@ -184,6 +218,25 @@ export function checkDraft(
   // the title: its shape, and no name, number or heavy fact the story does not hold
   if (!acceptTitle(d.title)) {
     problems.push({ sentence: -1, kind: 'title', detail: 'the title is missing or not usable' });
+  } else if (
+    d.title
+      .split(/\s+/)
+      .some(
+        (w) => /^I$|^(?:my|me|we|our|us)$/i.test(w.replace(/[^\p{L}]/gu, '')) && !/^US$/.test(w),
+      )
+  ) {
+    problems.push({
+      sentence: -1,
+      kind: 'title',
+      detail:
+        'the title is in the narrator\'s voice ("my", "I"): write it about them, like the story',
+    });
+  } else if (d.title.split(/\s+/).length > TITLE_WORDS) {
+    problems.push({
+      sentence: -1,
+      kind: 'title',
+      detail: `the title is a summary: give a few words from the story's heart (at most ${TITLE_WORDS}), like "Gravy at the church supper"`,
+    });
   } else {
     const facts = checkTitleFacts(
       d.title,

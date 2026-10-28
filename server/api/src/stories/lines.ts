@@ -36,7 +36,8 @@ export function linesOf(
     name: nameOf(t.speaker),
     teller: tellers.includes(t.speaker),
     start: t.start,
-    end: t.end,
+    // a transcript with only start times ("[00:28] Sunja: …"): a line ends where the next begins
+    end: t.end ?? turns[i + 1]?.start ?? null,
     text: t.text,
   }));
 }

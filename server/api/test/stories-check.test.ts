@@ -107,4 +107,79 @@ describe('checkDraft', () => {
       kinds(draft([['She was born in Busan.', ['L2']]], { title: 'Born in Seoul in 1950' })),
     ).toEqual(['-1:title']);
   });
+
+  it('finds a year said near a word about money', () => {
+    const wed = linesOf(
+      [
+        say(
+          'S',
+          'We married in June of nineteen sixty-seven, in a small ceremony, because we did not have money for anything bigger.',
+        ),
+      ],
+      ['S'],
+      [['S', 'Sunja']],
+    );
+    expect(
+      checkDraft(
+        {
+          title: 'A small wedding',
+          occurred: '1967-06',
+          until: null,
+          sentences: [
+            { text: 'They married in June 1967.', cites: [{ from: 1, to: 1 }], paragraph: true },
+          ],
+        },
+        wed,
+        ['Sunja'],
+      ),
+    ).toEqual([]);
+  });
+
+  it('a story tells only its own lines (and the questions just before them)', () => {
+    const d = draft([
+      ['Her teacher, Mrs. Han, gave her a pencil box.', ['L4']],
+      ['Sunja was born in Busan.', ['L2']],
+    ]);
+    expect(
+      checkDraft(d, lines, ['Sunja'], [{ from: 4, to: 4 }]).map((p) => `${p.sentence}:${p.kind}`),
+    ).toEqual(['1:outside_story']);
+    // the line just before is part of it only when it is a question, not another answer
+    expect(
+      checkDraft(
+        draft([['Sunja was born in Busan.', ['L2']]]),
+        lines,
+        ['Sunja'],
+        [{ from: 3, to: 4 }],
+      ).map((p) => p.kind),
+    ).toEqual(['outside_story']);
+    // the question just before the story's lines is part of it
+    expect(
+      checkDraft(
+        draft([['Her teacher gave her a pencil box.', ['L3-L4']]]),
+        lines,
+        ['Sunja'],
+        [{ from: 4, to: 4 }],
+      ),
+    ).toEqual([]);
+  });
+
+  it('a title is a few words from the story’s heart, not a summary', () => {
+    expect(
+      kinds(
+        draft([['Her teacher, Mrs. Han, gave her a pencil box.', ['L4']]], {
+          title: 'Teacher Mrs. Han gave her a pencil box as a prize for handwriting',
+        }),
+      ),
+    ).toEqual(['-1:title']);
+  });
+
+  it('a title is about the narrator, not in her voice', () => {
+    expect(
+      kinds(
+        draft([['Her teacher, Mrs. Han, gave her a pencil box.', ['L4']]], {
+          title: 'My pencil box',
+        }),
+      ),
+    ).toEqual(['-1:title']);
+  });
 });

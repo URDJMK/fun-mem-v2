@@ -290,6 +290,7 @@ export interface IngestResult {
       removed: number;
       flagged: number;
       calls: number;
+      problems?: Record<string, number>;
     };
   };
 }

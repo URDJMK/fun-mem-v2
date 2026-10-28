@@ -86,6 +86,25 @@ describe('parsePlan', () => {
     expect(plan.stories.map((s) => s.title)).toEqual(['Busan']);
   });
 
+  it('joins the stories of one period of the narrator’s life into one', () => {
+    const plan = parsePlan(
+      {
+        stories: [
+          story('Born by the harbour', ['L3-L4'], { period: 'Childhood in Busan' }),
+          story('Sundays at the pier', ['L5-L6'], { period: 'childhood in Busan ' }),
+          story('Gravy at the church supper', ['L7-L8'], { period: 'Marriage' }),
+        ],
+      },
+      lines,
+      [],
+    );
+    if (typeof plan === 'string') throw new Error(plan);
+    expect(plan.stories.map((s) => [s.title, s.ranges])).toEqual([
+      ['Born by the harbour', [{ from: 3, to: 6 }]],
+      ['Gravy at the church supper', [{ from: 7, to: 8 }]],
+    ]);
+  });
+
   it('names the tellers from the lines when the plan does not', () => {
     const plan = parsePlan({ stories: [{ title: 'Busan', lines: ['L4'] }] }, lines, []);
     if (typeof plan === 'string') throw new Error(plan);

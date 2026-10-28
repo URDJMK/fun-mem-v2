@@ -2,7 +2,7 @@ import { parseFuzzyDate } from '@funmem/core';
 import { acceptTitle } from '../ingest-lang';
 import type { ChatModel } from '../nim';
 import type { Problem } from './check';
-import { estimateTokens, parseCite, renderLines, type Line, type Range } from './lines';
+import { parseCite, renderLines, type Line, type Range } from './lines';
 import type { PlannedStory } from './plan';
 import { runWithTools, writeTools, type StoryLookup } from './tools';
 
@@ -45,18 +45,21 @@ How it reads:
 - Keep doubt where it matters: "I think it was 1946" becomes "probably in 1946".
 - If several people tell it, say who remembers what. If they disagree, tell both accounts.
 - A short quotation of a memorable phrase is welcome, in quotation marks, word for word as said.
-- Title: under 60 characters, from the story's heart, using only what the story says (for example
-  "Gravy at the church supper"). Not a label like "Childhood".
-- Date: "occurred" is when it happened, as "1946", "1966-06" or "~1946" (when unsure), or null if
-  no date was told. "until" is when it ended, for a story spanning years, else null.
+- Tell ONLY this story, from its own lines. The rest of the interview is there to help you
+  understand (who "he" is); it is told in other stories, so do not repeat it here.
+- Paragraphs: start a new one for each part of the story, about every 3 to 5 sentences.
+- Title: in the third person like the story (never "my" or "I"), 2 to 6 words from the story's heart, naming its most memorable image, object or moment,
+  using only what the story says. Good: "Gravy at the church supper", "Mrs. Han's pencil box",
+  "The tin of savings", "Sundays at the pier". Bad: a summary ("Met Minho at a church supper when
+  he spilled gravy") or a label ("Childhood").
+- Date: "occurred" is when it happened, as "1946", "1966-06" or "~1946" (when unsure), ONLY if a
+  year is said in this story's lines; never work one out ("at eighteen" is not a year). Otherwise
+  null. "until" is when it ended, for a story spanning years, else null.
 
 Every sentence lists the lines it comes from in "cites" (like ["L3", "L7-L9"]). A summarizing
 sentence may cite a wider range. Set "paragraph": true on a sentence that starts a new paragraph.
 
 Result: {"title": "...", "occurred": "1946" | null, "until": null, "sentences": [{"text": "...", "cites": ["L3"], "paragraph": true}]}`;
-
-/** the whole interview is shown beside the story's lines when it is at most this long */
-const WHOLE_INTERVIEW_TOKENS = 30_000;
 
 const isObj = (v: unknown): v is Record<string, unknown> =>
   typeof v === 'object' && v !== null && !Array.isArray(v);
@@ -113,14 +116,13 @@ export async function writeStory(
   },
 ): Promise<{ draft: StoryDraft; calls: number }> {
   const own = o.lines.filter((l) => o.story.ranges.some((r) => l.n >= r.from && l.n <= r.to));
-  const whole = renderLines(o.lines);
   const task = [
     `The narrator: ${o.subject}. Told by: ${o.story.tellers.join(', ')}.`,
     `Working title: ${o.story.title}`,
     `The story's lines:\n${renderLines(own)}`,
-    estimateTokens(whole) <= WHOLE_INTERVIEW_TOKENS
-      ? `The whole interview, for context (write only this story):\n${whole}`
-      : 'Other lines of the interview can be read with read_lines.',
+    // only the story's own lines: shown the whole interview, the writer borrows from other
+    // stories (a wedding date in the story of the savings tin), and the checks then cut it
+    'If you need to understand something (who "he" is), read nearby lines with read_lines; tell nothing from them.',
     o.feedback
       ? `Your previous draft:\n${showDraft(o.feedback.draft)}\n\nProblems found (fix them; write the whole story again):\n${o.feedback.problems
           .map((p) =>

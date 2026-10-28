@@ -205,6 +205,38 @@ describe('writeStories', () => {
     expect(out.stats.stories).toMatchObject({ planned: 2, written: 1, dropped: 1 });
   });
 
+  it('gives the time in the recording, once when a story is a single moment', async () => {
+    const timed = parseTranscript(
+      [
+        '[00:03] Interviewer: Where were you born?',
+        '[00:05] Sunja: I was born in Busan, in a little house near the harbour. My father repaired boats.',
+      ].join('\n'),
+    );
+    const chat = model((step, user) =>
+      step === 'plan'
+        ? { stories: [{ title: 'The harbour', lines: ['L1-L2'], tellers: ['Sunja'] }] }
+        : step === 'judge'
+          ? allSupported(user)
+          : {
+              title: 'The harbour',
+              sentences: [
+                sentence('Sunja was born in Busan, near the harbour.', ['L2'], true),
+                sentence('Her father repaired boats.', ['L2']),
+              ],
+            },
+    );
+    const out = await writeStories(timed, OPTS, {
+      chat,
+      lookup: noLookup,
+      titles: [],
+      interviewName: 'Talk',
+    });
+    expect(out.memories[0]!.body).toMatch(
+      /> Told by Sunja, “Talk”, 0:03–0:05$|> Told by Sunja, “Talk”, 0:05$/,
+    );
+    expect(out.memories[0]!.body).not.toMatch(/(\d:\d\d)–\1$/);
+  });
+
   it('with no AI, the stories wait, and nothing is chopped into fragments', async () => {
     const out = await writeStories(parsed(), OPTS, { chat: null, lookup: noLookup, titles: [] });
     expect(out.pending).toEqual({ reason: 'no_model' });

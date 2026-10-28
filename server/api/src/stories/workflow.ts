@@ -1,5 +1,5 @@
 import { linkKnownTitles } from '../drafts';
-import { acceptTitle } from '../ingest-lang';
+import { acceptTitle, isPersonLabel } from '../ingest-lang';
 import {
   anchorsFor,
   hashTurns,
@@ -55,6 +55,8 @@ export interface StoriesDeps {
   contextTokens?: number;
   /** the interview's name when a person gave one; else the plan names it */
   interviewName?: string | null;
+  /** who the project is about: the narrator's name when the transcript gives none ("SPEAKER_00") */
+  subject?: string | null;
 }
 
 export const DEFAULT_STORY_DEADLINE_MS = 12 * 60_000;
@@ -94,6 +96,13 @@ export async function writeStories(
   const { turns, roles, warnings } = applyRoles(parsed, named);
   const names = namesFor(opts, roles.interviewees);
   const lines = linesOf(turns, roles.interviewees, names);
+  // a narrator known only as a voice ("SPEAKER_00") is the person the project is about
+  const subjectName = str(deps.subject);
+  if (subjectName) {
+    for (const l of lines) {
+      if (l.teller && l.name === l.speaker && !isPersonLabel(l.speaker)) l.name = subjectName;
+    }
+  }
   const anchors = new Map(anchorsFor(parsed.turns, turns));
   const tellerLines = lines.filter((l) => l.teller && /[\p{L}\p{N}]/u.test(l.text));
   const subject =
@@ -111,6 +120,8 @@ export async function writeStories(
     removed: 0,
     flagged: 0,
     calls: 0,
+    /** what the checks found in every draft, by kind: where the prompts need work */
+    problems: {} as Record<string, number>,
   };
   let rounds = 0;
   let retried = 0;
@@ -271,12 +282,21 @@ export async function writeStories(
             signal,
           })
         ).draft;
-        problems = checkDraft(draft, lines, known);
+        problems = checkDraft(draft, lines, known, story.ranges);
+        // a date the lines do not give is simply dropped: not worth writing the story again
+        if (problems.some((p) => p.kind === 'date')) {
+          for (const p of problems)
+            if (p.kind === 'date') counts.problems.date = (counts.problems.date ?? 0) + 1;
+          draft.occurred = null;
+          draft.until = null;
+          problems = problems.filter((p) => p.kind !== 'date');
+        }
         rulings = [];
         if (problems.length === 0) {
           rulings = (await judgeStory(judge, draft, lines, signal)).rulings;
           problems = failing(rulings);
         }
+        for (const p of problems) counts.problems[p.kind] = (counts.problems[p.kind] ?? 0) + 1;
         if (problems.length === 0) {
           if (round === 0) counts.firstPass++;
           break;
@@ -289,11 +309,6 @@ export async function writeStories(
       if (problems.length > 0) {
         if (problems.some((p) => p.kind === 'title')) {
           draft.title = acceptTitle(story.title) ?? 'A story from the interview';
-        }
-        if (problems.some((p) => p.kind === 'date')) {
-          draft.occurred = null;
-          draft.until = null;
-          notes.push('The date was left out: the interview does not give it.');
         }
         const out = new Set(problems.filter((p) => p.sentence >= 0).map((p) => p.sentence));
         const judged = rulings.length > 0;
@@ -368,7 +383,12 @@ export async function writeStories(
     const ends = cited.map((l) => l.end ?? l.start).filter((n): n is number => n !== null);
     const start = starts.length ? Math.min(...starts) : null;
     const end = ends.length ? Math.max(...ends) : null;
-    const span = start !== null && end !== null ? `, ${clock(start)}–${clock(end)}` : '';
+    const span =
+      start === null
+        ? ''
+        : end === null || clock(end) === clock(start)
+          ? `, ${clock(start)}`
+          : `, ${clock(start)}–${clock(end)}`;
     const body = [
       ...paragraphs.map((p) => linkKnownTitles(p.join(' '), titles()).body),
       `> Told by ${story.tellers.join(' and ')}, “${interviewName}”${span}`,

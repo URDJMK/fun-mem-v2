@@ -111,4 +111,19 @@ describe('clock', () => {
     expect(clock(3725)).toBe('1:02:05');
     expect(clock(null)).toBeNull();
   });
+
+  it('a line without an end time ends where the next one starts', () => {
+    const timed = linesOf(
+      [
+        { index: 0, speaker: 'Q', start: 3, end: null, text: 'Where?' },
+        { index: 1, speaker: 'S', start: 28, end: null, text: 'Busan.' },
+      ],
+      ['S'],
+      [],
+    );
+    expect(timed.map((l) => [l.start, l.end])).toEqual([
+      [3, 28],
+      [28, null],
+    ]);
+  });
 });
