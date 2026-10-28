@@ -28,7 +28,16 @@ const SAMPLES: Record<string, Sample> = {
     teller: 'Noah',
     profile: { noteId: null, name: 'Noah Kim', born: '1971', died: null, aliases: ['Noah'] },
     expect: {
-      nodes: ['noah kim', 'mother', 'korea', 'seaweed soup', 'kimchi soup', 'sarah', 'tom'],
+      // "a|b": either name will do (the interview calls the soup both)
+      nodes: [
+        'noah kim',
+        'mother',
+        'korea',
+        'seaweed soup|miyeokguk',
+        'kimchi soup',
+        'sarah',
+        'tom',
+      ],
       joined: [
         ['sarah', 'tom'],
         ['sarah', 'noah kim'],
@@ -112,7 +121,8 @@ for (const [name, sample] of Object.entries(SAMPLES)) {
     console.log(`   - ${nameOf(r.a)} ↔ ${nameOf(r.b)}: ${r.description} (${r.story})`);
 
   // the checks of "Done when": a name matches when its key holds the expected words
-  const has = (want: string) => g.entities.find((e) => matchKey(e.name).includes(want));
+  const has = (want: string) =>
+    want.split('|').some((w) => g.entities.some((e) => matchKey(e.name).includes(w)));
   const joined = (a: string, b: string) =>
     g.relationships.some((r) => {
       const x = matchKey(nameOf(r.a));
@@ -121,7 +131,7 @@ for (const [name, sample] of Object.entries(SAMPLES)) {
     });
   console.log('\n   checks:');
   for (const n of sample.expect.nodes) {
-    const ok = !!has(n);
+    const ok = has(n);
     if (!ok) failed++;
     console.log(`   ${ok ? 'PASS' : 'FAIL'} a node for "${n}"`);
   }
