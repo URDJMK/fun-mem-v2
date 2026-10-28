@@ -16,16 +16,16 @@ A story names "Noah Kim", "his mother", "Korea", "kimchi soup", and none of them
 
 ## 2. Decisions
 
-| # | Decision |
-|---|---|
+| #    | Decision                                                                                                                                                                                                                                              |
+| ---- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | G-D1 | **Lines are relationships told in the interviews** ("Sarah Lee — Noah's friend from school"), drawn solid. **Being named in the same story** is drawn as a faint line, leaving out the protagonist and the story's tellers (they are in every story). |
-| G-D2 | **Nodes are people, places and things** (objects and foods that matter to a story: "the sewing machine", "kimchi soup"). |
-| G-D3 | **Someone mentioned only by relationship becomes a node named by it** ("Noah's mother"). When a name is given later, the node is renamed and the old wording kept as an alias. |
-| G-D4 | **A separate graph, LightRAG-style:** entities and relationships live in their own tables, apart from notes. |
-| G-D5 | **One entity per person, place or thing; a note is optional.** An entity may point at a note written about it. The protagonist's entity points at their profile note. People, places & things lists entities. |
-| G-D6 | **Imports build the graph**, as a step after the stories are written, and the person reviews it before it is saved (as PRD D9: anything can be left out). |
-| G-D7 | **A button builds it from stories already saved**, with the same review. |
-| G-D8 | **Ask does not use the graph yet.** Graph retrieval (LightRAG's entity and relationship matching) is the next step, once the graph has been seen to be right. |
+| G-D2 | **Nodes are people, places and things** (objects and foods that matter to a story: "the sewing machine", "kimchi soup").                                                                                                                              |
+| G-D3 | **Someone mentioned only by relationship becomes a node named by it** ("Noah's mother"). When a name is given later, the node is renamed and the old wording kept as an alias.                                                                        |
+| G-D4 | **A separate graph, LightRAG-style:** entities and relationships live in their own tables, apart from notes.                                                                                                                                          |
+| G-D5 | **One entity per person, place or thing; a note is optional.** An entity may point at a note written about it. The protagonist's entity points at their profile note. People, places & things lists entities.                                         |
+| G-D6 | **Imports build the graph**, as a step after the stories are written, and the person reviews it before it is saved (as PRD D9: anything can be left out).                                                                                             |
+| G-D7 | **A button builds it from stories already saved**, with the same review.                                                                                                                                                                              |
+| G-D8 | **Ask does not use the graph yet.** Graph retrieval (LightRAG's entity and relationship matching) is the next step, once the graph has been seen to be right.                                                                                         |
 
 What LightRAG does, and what is taken from it: an AI reads each chunk and extracts entities (name, type, description) and relationships between them (two entities and a description); entities with the same name are merged; questions are later matched against entities (specific) and relationships (broader themes). Taken here: entities as nodes of their own, relationships as described edges between them, merging by name (with aliases), and incremental building. Left for later: the retrieval side (G-D8) and AI-written entity summaries.
 
@@ -36,6 +36,7 @@ Migration `supabase/migrations/20261028140000_graph.sql`. RLS on for every table
 ### 3.1 Tables
 
 **`public.graph_entities`**
+
 - `id`, `archive_id` (cascade with the project), `type` (`person` | `place` | `thing`), `name`, `match_key`;
 - `note_id` (nullable, unique, `references notes(id) on delete set null`): the note written about it;
 - `description` (text, default ''): its lines from the stories every member can see, joined in code (3.3);
@@ -43,29 +44,35 @@ Migration `supabase/migrations/20261028140000_graph.sql`. RLS on for every table
 - Unique on `(archive_id, type, match_key)`.
 
 **`public.graph_aliases`**
+
 - `archive_id`, `entity_id` (cascade), `alias`, `match_key`.
 - Unique on `(archive_id, match_key)`. An alias may not equal another entity's name key in the same project.
 - Family words ("Dad", "Grandma", "my mother") are never aliases: they mean someone different to each speaker (3.4). A name made from a relationship ("Noah's mother") is an alias once the entity is renamed.
 
 **`public.graph_mentions`**: one row per entity per story.
+
 - `archive_id`, `entity_id` (cascade), `note_id` (the story; cascade), `words` (text[]: as written in the story, "his mother"), `line` (one sentence about the entity from this story, in the third person), `sources` (jsonb: the interview lines, `[{ interviewId, from, to }]`, or the story's own sentences for stories without an interview), `run_id`, `created_at`.
 - Unique on `(entity_id, note_id)`.
 
 **`public.graph_relationships`**: one row per relationship per story. Rows are added or deleted, never changed.
+
 - `archive_id`, `a_id`, `b_id` (entities, cascade), `description` ("Sarah Lee — Noah's friend from school"), `note_id` (the story it came from; cascade), `sources` (as mentions), `run_id`, `created_by`, `created_at`.
 - `a_id <> b_id`. The pair is unordered for drawing; the description carries the direction.
 - Unique on `(least(a_id, b_id), greatest(a_id, b_id), note_id)`: one relationship per pair per story.
 
 **`public.graph_changes`**: who changed the graph by hand, and when (G4).
+
 - `archive_id`, `entity_id`, `kind` (`rename` | `type` | `merge` | `remove` | `remove-relationship` | `note`), `before` and `after` (jsonb), `created_by`, `created_at`.
 
 **Changed:**
+
 - `ingest_runs`: a run may make no notes (a graph-only run from the button), and gains `kind` (`import` | `graph`).
 - `archives`: gains `graph_backfilled_at` (3.5).
 
 ### 3.2 Match keys
 
 `matchKey(name)`, in `@funmem/core`, used everywhere a name is compared:
+
 - Unicode NFC, lowercased, trimmed, inner whitespace collapsed;
 - punctuation removed ("Mrs. Han" = "Mrs Han"; "Sarah-Lee" = "Sarah Lee");
 - a leading "the " removed for things and places ("the sewing machine" = "sewing machine").
@@ -75,6 +82,7 @@ A name and its aliases resolve to one entity: `find_entity` and the review's "sa
 ### 3.3 Visibility
 
 Notes can be private to their author (`visibleSql`). The graph never shows what someone cannot read:
+
 - A **mention** or **relationship** is visible to a member if they can see its story.
 - An **entity** is visible if they can see its note, or at least one of its mentions or relationships. The protagonist's entity is always visible to members.
 - An entity's **name and aliases** are visible with the entity.
@@ -102,12 +110,13 @@ A new step in `server/api/src/stories/workflow.ts`, after the stories are writte
 
 **Tools** (read-only, `stories/tools.ts` style):
 
-| Tool | Returns |
-|---|---|
+| Tool                | Returns                                                                                                                              |
+| ------------------- | ------------------------------------------------------------------------------------------------------------------------------------ |
 | `find_entity(name)` | entities whose name or alias has the same match key, plus close spellings as candidates: id, name, type, aliases, a few of its lines |
-| `read_entity(id)` | its description, aliases, and relationships (descriptions only) |
+| `read_entity(id)`   | its description, aliases, and relationships (descriptions only)                                                                      |
 
 **Out** (JSON):
+
 - **entities:** `{ ref, name, type, match: <entityId> | "new" | "ask", candidates?: [ids], mentions: [{ story, words: [..], line, cites: [..] }] }`.
 - **relationships:** `{ a: ref, b: ref, description, story, cites: [..] }`. Only what the lines say: being in the same story is not a relationship.
 
@@ -116,8 +125,9 @@ A new step in `server/api/src/stories/workflow.ts`, after the stories are writte
 ### 4.2 Checks
 
 Every mention line and relationship description is checked like a story sentence (`stories/check.ts`, `stories/judge.ts`):
+
 1. **Code:** every name and number in it appears in its cited lines (or the profile, `P`); the mention's words appear in the story's text; citations stay within the story's own lines; a relationship's two entities are both mentioned in that story.
-2. **AI judge** (temperature 0, one call for all of a part's lines): `supported` or `made_up` (and the other verdicts as for stories). A line that fails is dropped; a relationship that fails is dropped; an entity left with no supported mention is dropped. There is no rewrite round: the graph is cheap to leave out and easy to build again.
+2. **AI judge** (temperature 0, one call for all of a part's lines): `supported` or `made_up` (and the other verdicts as for stories). A mention's line that fails is cleared (the mention stays: its words are in the story); a relationship that fails is dropped; an entity left with no mention is dropped. There is no rewrite round: the graph is cheap to leave out and easy to build again.
 
 ### 4.3 Limits
 
@@ -128,6 +138,7 @@ Every mention line and relationship description is checked like a story sentence
 ### 4.4 The button: "Find people, places and things"
 
 On People, places & things (for members who can add memories). It starts a background job like an import (`POST /v1/archives/:id/graph/build`), which:
+
 - groups the project's saved stories by interview, and for each group runs the Graph step over the stories and their interview's transcript;
 - for stories without an interview (hand-written, or older memories), uses the story's own sentences as its numbered lines;
 - proposes only what is new: mentions and relationships already in the graph are not proposed again.
@@ -139,11 +150,13 @@ It shows the same review as an import (5.1) and saves nothing until the person s
 ### 5.1 Review
 
 The import review (`ImportRun.tsx`) gets a group under the stories, **People, places and things**, using the stories' "Looks right / Leave it out" pattern. Each row shows:
+
 - the name and type, marked **New** or **Already here as "Sarah Lee"** (or, for `ask`, "Is this Sarah Lee?" with the candidates);
 - the words used, and its line from each story;
 - its relationships, each of which can be left out on its own.
 
 Quick fixes:
+
 - **Rename** a new entity ("Noah's mother" → "Mina Kim"): the old name becomes an alias.
 - **Same as…** an existing entity, chosen from a list (by match key and close spellings).
 
@@ -160,6 +173,7 @@ Undoing a run deletes its mentions and relationships, and the entities it made u
 ### 5.4 Editing (on the entity page)
 
 For members who can add memories; each change is recorded in `graph_changes`.
+
 - **Rename**: the old name becomes an alias.
 - **Change type**: person, place or thing.
 - **Merge** another entity into this one: its mentions, relationships and aliases move here (its name becomes an alias); it is removed. A relationship that would join the entity to itself is dropped.
@@ -172,6 +186,7 @@ For members who can add memories; each change is recorded in `graph_changes`.
 ### 6.1 Home: "Who and where"
 
 A graph under the interview area of Home.
+
 - People as circles with initials, places as pins, things as small squares; size grows with the number of stories.
 - The protagonist is a little larger and starts in the centre; only told relationships connect to them.
 - Solid lines: told relationships. Faint dashed lines: in the same story (G-D1), with a switch to hide them.
@@ -186,6 +201,7 @@ A graph under the interview area of Home.
 ### 6.2 People, places & things
 
 The People & places page lists entities in three tabs, with story counts. An entity's page shows:
+
 - its name, aliases and type, and its note if it has one (the protagonist's shows their profile);
 - **What the stories say**: each visible mention's line, linking to its story;
 - **Relationships**: each description, linking to the other entity and the story;
@@ -198,17 +214,17 @@ On a story's page and in the review, the words of each mention are underlined an
 
 ### 6.4 API
 
-| Route | |
-|---|---|
-| `GET /v1/archives/:id/graph` | members: `{ nodes: [{ id, name, type, stories, subject, noteId }], told: [{ a, b, lines: [{ description, storyId, storyTitle }] }], together: [{ a, b, stories }], more }`, all filtered by visibility |
-| `GET /v1/archives/:id/entities` | members: entities with type, aliases and story counts |
-| `GET /v1/archives/:id/entities/:entityId` | members: the entity, its mentions, relationships and note |
-| `PATCH /v1/archives/:id/entities/:entityId` | writers: `{ name?, type? }` |
-| `DELETE /v1/archives/:id/entities/:entityId` | writers |
-| `POST /v1/archives/:id/entities/:entityId/merge` | writers: `{ from: entityId }` |
-| `DELETE /v1/archives/:id/relationships/:relationshipId` | writers |
-| `POST /v1/archives/:id/graph/build` | writers: starts the button's job; returns the job like an import |
-| `GET /v1/archives/:id/notes/:noteId` | gains `mentions: [{ entityId, words }]` |
+| Route                                                   |                                                                                                                                                                                                        |
+| ------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `GET /v1/archives/:id/graph`                            | members: `{ nodes: [{ id, name, type, stories, subject, noteId }], told: [{ a, b, lines: [{ description, storyId, storyTitle }] }], together: [{ a, b, stories }], more }`, all filtered by visibility |
+| `GET /v1/archives/:id/entities`                         | members: entities with type, aliases and story counts                                                                                                                                                  |
+| `GET /v1/archives/:id/entities/:entityId`               | members: the entity, its mentions, relationships and note                                                                                                                                              |
+| `PATCH /v1/archives/:id/entities/:entityId`             | writers: `{ name?, type? }`                                                                                                                                                                            |
+| `DELETE /v1/archives/:id/entities/:entityId`            | writers                                                                                                                                                                                                |
+| `POST /v1/archives/:id/entities/:entityId/merge`        | writers: `{ from: entityId }`                                                                                                                                                                          |
+| `DELETE /v1/archives/:id/relationships/:relationshipId` | writers                                                                                                                                                                                                |
+| `POST /v1/archives/:id/graph/build`                     | writers: starts the button's job; returns the job like an import                                                                                                                                       |
+| `GET /v1/archives/:id/notes/:noteId`                    | gains `mentions: [{ entityId, words }]`                                                                                                                                                                |
 
 The browser-only demo (`lib/demo-api.ts`) answers the same routes.
 
@@ -246,6 +262,7 @@ No test calls a live AI.
 - **Real model:** an eval over Sunja and a Noah fixture with the example above (`scripts/eval-graph.ts`), and a click-through in the browser.
 
 **Done when:**
+
 - On the Noah fixture: Noah, his mother, Korea, kimchi soup and seaweed soup are nodes; Tom joins only through Sarah.
 - No duplicate entities on name variants ("Sarah" / "Sarah Lee" / "sarah lee"; "Mrs. Han" / "Mrs Han").
 - Undo returns the graph to how it was before the run.

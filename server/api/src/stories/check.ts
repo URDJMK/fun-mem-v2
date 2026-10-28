@@ -211,6 +211,13 @@ export function checkDraft(
       const parts = lower.split(/[-'’.]/).filter(Boolean);
       if (sourceFlat.includes(` ${lower} `) || parts.every((p) => sourceFlat.includes(` ${p}`)))
         return;
+      // the cited name with an ending: "Korean" for Korea, "Busanese" for Busan (three letters at most)
+      if (
+        sourceFlat
+          .split(' ')
+          .some((x) => x.length >= 4 && lower.startsWith(x) && lower.length - x.length <= 3)
+      )
+        return;
       problems.push({
         sentence: i,
         kind: 'not_in_source',

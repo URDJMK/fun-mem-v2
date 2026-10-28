@@ -229,8 +229,8 @@ describe('graphStep', () => {
     const p = await run(model(graph, () => ['made his birthday soup']));
     expect(p.entities.map((e) => e.name)).not.toContain('Tom');
     expect(relOf(p, 'Tom', 'Sarah')).toBeUndefined();
-    // Sarah's only line failed: she has no supported mention left, so she goes too
-    expect(p.entities.map((e) => e.name)).not.toContain('Sarah');
+    // Sarah's line failed: the line goes, but the story does name her, so she stays
+    expect(p.entities.find((e) => e.name === 'Sarah')!.mentions[0]!.line).toBe('');
     // the judge ruled the mother's relationship made up
     expect(relOf(p, 'Noah Kim’s mother', 'Noah Kim')).toBeUndefined();
     expect(p.entities.map((e) => e.name)).toContain('Noah Kim’s mother');

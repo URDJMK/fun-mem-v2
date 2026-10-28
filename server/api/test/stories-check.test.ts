@@ -63,6 +63,13 @@ describe('checkDraft', () => {
     ).toEqual([]);
   });
 
+  it('a name may be the cited one with an ending: Korean for Korea, not Koreatown', () => {
+    expect(kinds(draft([['She made the soup the Busanese way.', ['L2']]]))).toEqual([]);
+    expect(kinds(draft([['She made the soup the Busanites way.', ['L2']]]))).toEqual([
+      '0:not_in_source',
+    ]);
+  });
+
   it('a sentence must say where it comes from, in lines that exist', () => {
     expect(kinds(draft([['Sunja was born in Busan.', []]]))).toEqual(['0:no_citation']);
     expect(kinds(draft([['Sunja was born in Busan.', ['L2-L9']]]))).toEqual(['0:bad_citation']);

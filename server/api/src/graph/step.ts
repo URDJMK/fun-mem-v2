@@ -478,7 +478,8 @@ export async function graphStep(o: {
         text: m.line || `${e.name} is named in this story.`,
         cites: m.cites,
         story: m.story,
-        drop: () => (e.mentions = e.mentions.filter((x) => x !== m)),
+        // a line that fails goes; the mention stays (its words are in the story)
+        drop: () => (m.line = ''),
       });
     }
   }
