@@ -64,7 +64,7 @@ const isObj = (v: unknown): v is Record<string, unknown> =>
 const fuzzy = (v: unknown): string | null =>
   typeof v === 'string' && parseFuzzyDate(v.trim()) ? v.trim() : null;
 
-export function parseDraft(v: unknown, _lines: readonly Line[]): StoryDraft | string {
+export function parseDraft(v: unknown): StoryDraft | string {
   if (!isObj(v) || !Array.isArray(v.sentences)) {
     return 'give {"title": ..., "occurred": ..., "until": ..., "sentences": [...]}';
   }
@@ -138,7 +138,7 @@ export async function writeStory(
     task,
     tools: writeTools(o.lookup, o.lines),
     maxToolCalls: o.maxToolCalls,
-    parse: (v) => parseDraft(v, o.lines),
+    parse: (v) => parseDraft(v),
     signal: o.signal,
   });
   const draft = out.value;

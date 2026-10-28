@@ -161,7 +161,8 @@ export function parseProposals(raw: unknown): RawProposal[] | null {
 
 /* ── what the pipeline returns ───────────────────────────────────────── */
 
-export type MemoryMethod = 'ai-grounded' | 'verbatim';
+/** 'story': written by the story workflow (stories/workflow.ts), every sentence cited and checked */
+export type MemoryMethod = 'ai-grounded' | 'verbatim' | 'story';
 
 export interface ProposedMemory {
   title: string;
@@ -191,6 +192,16 @@ export interface ProposedMemory {
    * eight words share an anchor, and a caller must treat a shared anchor as "cannot tell".
    */
   anchor: string;
+  /** a story only: when it ended, for a story that spans years */
+  until?: string | null;
+  /** a story only: the names of the people telling it */
+  tellers?: string[];
+  /** a story only: each sentence with the transcript lines it comes from, and their words */
+  sources?: StorySource[];
+  /** a story only: sentences more certain than the speaker was, for the reviewer */
+  flags?: string[];
+  /** a story only: how it was written (PRD 7.3) */
+  writtenBy?: { workflow: string; writer: string; judge: string };
   /** claims that may disagree with notes already in the archive (both are kept, marked) */
   conflicts?: Array<{
     claim: string;
@@ -198,6 +209,27 @@ export interface ProposedMemory {
     source: { id: string; title: string } | null;
   }>;
 }
+
+export interface StorySource {
+  sentence: string;
+  /** the cited transcript lines (L numbers of the story workflow, from 1) */
+  from: number;
+  to: number;
+  /** seconds into the recording, when the transcript had timing */
+  start: number | null;
+  end: number | null;
+  /** the cited lines' words, cut to a few hundred characters */
+  text: string;
+}
+
+/** Why the stories of an interview could not be written yet; its transcript is kept. */
+export type StoriesPendingReason =
+  | 'no_model'
+  | 'auth'
+  | 'unavailable'
+  | 'deadline'
+  | 'budget'
+  | 'bad_plan';
 
 export type ExitReason = 'converged' | 'round_budget' | 'no_model';
 
@@ -228,6 +260,12 @@ export interface IngestResult {
   /** identifies this transcript's words, whatever format they arrived in */
   sourceHash: string;
   memories: ProposedMemory[];
+  /** the story workflow could not write this interview's stories (yet); `memories` is empty */
+  pending?: { reason: StoriesPendingReason };
+  /** the interview row this import belongs to (stories/interviews.ts) */
+  interviewId?: string;
+  /** the story workflow's proposed name for the interview, from its topics */
+  interviewName?: string | null;
   stats: {
     turns: number;
     intervieweeTurns: number;
@@ -241,6 +279,18 @@ export interface IngestResult {
     exit: ExitReason;
     /** the tellers' turns that hold a word or a number, and how many of them are in a memory */
     coverage: { covered: number; total: number };
+    /** the story workflow's own counts (PRD 10.2) */
+    stories?: {
+      planned: number;
+      written: number;
+      dropped: number;
+      /** stories that passed every check on their first draft */
+      firstPass: number;
+      sentences: number;
+      removed: number;
+      flagged: number;
+      calls: number;
+    };
   };
 }
 
@@ -376,7 +426,7 @@ const TURN_ABSENT = 0.2;
  * with the text of the original turn it grew from, and the folding only ever drops or joins
  * neighbours, so a short walk finds it.
  */
-function anchorsFor(original: Turn[], folded: Turn[]): Array<[number, string]> {
+export function anchorsFor(original: Turn[], folded: Turn[]): Array<[number, string]> {
   const out: Array<[number, string]> = [];
   let j = 0;
   for (const f of folded) {
@@ -1711,7 +1761,7 @@ const str = (v: unknown): string | null =>
  * than a voice ("SPEAKER_01", "Speaker 2", "Interviewee"). Pairs, never an object keyed by speaker
  * id: a speaker labelled "constructor" must not find `Object.prototype.constructor`.
  */
-function namesFor(opts: IngestOptions, tellers: string[]): Array<[string, string]> {
+export function namesFor(opts: IngestOptions, tellers: string[]): Array<[string, string]> {
   const names: Array<[string, string]> = [];
   const given = opts.speakerNames;
   if (typeof given === 'object' && given !== null && !Array.isArray(given)) {

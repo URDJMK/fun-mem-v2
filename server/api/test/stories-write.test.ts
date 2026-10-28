@@ -25,18 +25,15 @@ const lines = linesOf(
 describe('parseDraft', () => {
   it('reads a story: title, date, and sentences with their lines', () => {
     expect(
-      parseDraft(
-        {
-          title: 'The harbour where she was born',
-          occurred: '~1946',
-          until: null,
-          sentences: [
-            { text: 'Sunja was born in Busan, probably in 1946.', cites: ['L2'], paragraph: true },
-            { text: 'Her father repaired boats.', cites: ['L3-L4'] },
-          ],
-        },
-        lines,
-      ),
+      parseDraft({
+        title: 'The harbour where she was born',
+        occurred: '~1946',
+        until: null,
+        sentences: [
+          { text: 'Sunja was born in Busan, probably in 1946.', cites: ['L2'], paragraph: true },
+          { text: 'Her father repaired boats.', cites: ['L3-L4'] },
+        ],
+      }),
     ).toEqual({
       title: 'The harbour where she was born',
       occurred: '~1946',
@@ -53,45 +50,39 @@ describe('parseDraft', () => {
   });
 
   it('keeps a sentence whose citations cannot be read (the checker reports it)', () => {
-    const d = parseDraft(
-      { title: 'T', sentences: [{ text: 'Sunja was born in Busan.', cites: ['somewhere'] }] },
-      lines,
-    );
+    const d = parseDraft({
+      title: 'T',
+      sentences: [{ text: 'Sunja was born in Busan.', cites: ['somewhere'] }],
+    });
     if (typeof d === 'string') throw new Error(d);
     expect(d.sentences[0]!.cites).toEqual([]);
     expect(d.sentences[0]!.paragraph).toBe(true);
   });
 
   it('takes only a real fuzzy date', () => {
-    const d = parseDraft(
-      {
-        title: 'T',
-        occurred: 'spring 1946',
-        until: '1958',
-        sentences: [{ text: 'A.', cites: ['L2'] }],
-      },
-      lines,
-    );
+    const d = parseDraft({
+      title: 'T',
+      occurred: 'spring 1946',
+      until: '1958',
+      sentences: [{ text: 'A.', cites: ['L2'] }],
+    });
     if (typeof d === 'string') throw new Error(d);
     expect(d.occurred).toBeNull();
     expect(d.until).toBe('1958');
   });
 
   it('drops empty sentences, and sends back a story with none', () => {
-    const d = parseDraft(
-      {
-        title: 'T',
-        sentences: [
-          { text: '  ', cites: ['L2'] },
-          { text: 'B.', cites: ['L4'] },
-        ],
-      },
-      lines,
-    );
+    const d = parseDraft({
+      title: 'T',
+      sentences: [
+        { text: '  ', cites: ['L2'] },
+        { text: 'B.', cites: ['L4'] },
+      ],
+    });
     if (typeof d === 'string') throw new Error(d);
     expect(d.sentences).toHaveLength(1);
-    expect(parseDraft({ title: 'T', sentences: [] }, lines)).toMatch(/sentences/);
-    expect(parseDraft(null, lines)).toMatch(/sentences/);
+    expect(parseDraft({ title: 'T', sentences: [] })).toMatch(/sentences/);
+    expect(parseDraft(null)).toMatch(/sentences/);
   });
 });
 
