@@ -20,6 +20,7 @@ import {
   type Draft,
 } from '../lib/interview';
 import type { Segment } from '../lib/live';
+import { interviewName } from '../lib/interview-name';
 import { Transcript } from './Transcript';
 
 type Pass = 'working' | 'done' | 'failed' | 'none';
@@ -131,15 +132,10 @@ export function InterviewReview({
   const [teller, setTeller] = useState(
     () => known ?? [...speakers].sort((a, b) => said(b) - said(a))[0] ?? '',
   );
-  const [source, setSource] = useState(() => {
-    const about = draft.setup?.about.trim() ?? '';
-    if (about && about.length <= 60) return about;
-    return `Interview, ${new Date(draft.startedAt).toLocaleDateString(undefined, {
-      day: 'numeric',
-      month: 'short',
-      year: 'numeric',
-    })}`;
-  });
+  // the date and the topics chosen at the start: never the first words said ("Hi.")
+  const [source, setSource] = useState(() =>
+    interviewName(draft.startedAt, draft.setup?.topics ?? []),
+  );
 
   const named = (sp: string) => !/^Speaker \d+$/.test(labels.get(sp) ?? '');
   // the archive's own name for the person being remembered, so memories say who told them
@@ -191,8 +187,8 @@ export function InterviewReview({
       <div className="stack" style={{ gap: 4 }}>
         <h1 className="page-title">Interview with {name}</h1>
         <p className="muted">
-          {clock(segments[segments.length - 1]?.end ?? 0)} recorded. Next, Firepit sorts it into
-          memories for you to read over.
+          {clock(segments[segments.length - 1]?.end ?? 0)} recorded. Next, Firepit
+          writes its stories for you to read over.
         </p>
       </div>
 
@@ -342,7 +338,7 @@ export function InterviewReview({
           disabled={pass === 'working'}
           onClick={bringIn}
         >
-          Turn into memories
+          Write the stories
         </button>
         <button type="button" className="btn btn-outline" onClick={download}>
           Download transcript

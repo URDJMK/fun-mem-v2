@@ -60,8 +60,8 @@ function busyText(reason: string | null): string {
 
 const STAGE: Record<ImportJob['stage'], string> = {
   reading: 'Reading the transcript',
-  organizing: 'Sorting it into memories',
-  checking: 'Checking each memory against what was said, and against the project',
+  organizing: 'Finding the stories and writing them',
+  checking: 'Checking each story against what was said, and against the project',
   saving: 'Saving',
   done: 'Done',
 };
@@ -77,7 +77,7 @@ export type RunStep =
 /**
  * Starts an import, or resumes watching one already running, and follows it until it finishes:
  * a long interview takes a few minutes, and the job outlives whatever page is looking at it.
- * Shared by the manual "Add an interview" page and the live interview's "Turn into memories",
+ * Shared by the manual "Add an interview" page and the live interview's "Write the stories",
  * so leaving and coming back never loses track of it or starts a second one by mistake.
  */
 export function useImportRun(
@@ -291,14 +291,19 @@ export function Review({
   outcome,
   name,
   onSaved,
+  onRetry,
 }: {
   archiveId: string;
   jobId: string;
   outcome: ImportOutcome;
   name: string;
   onSaved: (o: ImportOutcome) => void;
+  /** write the stories again from the same transcript (when they could not be written) */
+  onRetry?: () => void;
 }) {
   const memories = outcome.memories;
+  const stories = memories.some((x) => x.method === 'story');
+  const unit: [string, string] = stories ? ['story', 'stories'] : ['memory', 'memories'];
   const [at, setAt] = useState(0);
   const [decided, setDecided] = useState<Record<number, Decision>>({});
   const [edits, setEdits] = useState<Record<number, Edit>>({});
@@ -315,10 +320,30 @@ export function Review({
       });
   }, [archiveId]);
 
+  if (outcome.pending) {
+    return (
+      <div className="stack" style={{ gap: 10 }} data-testid="stories-pending">
+        <h1 className="page-title">Stories not written yet</h1>
+        <p className="muted">{PENDING[outcome.pending.reason] ?? PENDING.unavailable}</p>
+        <p className="muted">
+          The transcript is kept with the interview, so nothing is lost. You can write its stories
+          again from here, or later from Interviews.
+        </p>
+        {onRetry && (
+          <div className="row">
+            <button type="button" className="btn btn-primary" onClick={onRetry}>
+              Try again
+            </button>
+          </div>
+        )}
+      </div>
+    );
+  }
+
   if (memories.length === 0) {
     return (
       <div className="stack" style={{ gap: 10 }}>
-        <h1 className="page-title">No memories in this one</h1>
+        <h1 className="page-title">No stories in this one</h1>
         <p className="muted">
           Nothing in the transcript could be kept as a memory. Nothing was saved.
         </p>
@@ -378,8 +403,8 @@ export function Review({
       <div className="stack" style={{ gap: 4 }}>
         <h1 className="page-title">A few things to read over</h1>
         <p className="muted">
-          {count(memories.length, 'memory', 'memories')} from this interview. Nothing joins {name}’s
-          project until you save it.
+          {count(memories.length, ...unit)} from this interview. Nothing joins {name}’s project
+          until you save it.
         </p>
       </div>
 
@@ -392,7 +417,7 @@ export function Review({
               type="button"
               className={`review-dot${d ? ` ${d}` : ''}`}
               aria-current={i === at}
-              aria-label={`Memory ${i + 1}${d === 'ok' ? ', looks right' : d === 'out' ? ', left out' : ''}`}
+              aria-label={`${stories ? 'Story' : 'Memory'} ${i + 1}${d === 'ok' ? ', looks right' : d === 'out' ? ', left out' : ''}`}
               onClick={() => {
                 setAt(i);
                 setEditing(false);
@@ -414,11 +439,13 @@ export function Review({
           className={m.method === 'verbatim' ? 'pill pill-sage' : 'pill pill-keep'}
           style={{ alignSelf: 'flex-start' }}
         >
-          {m.method === 'verbatim'
-            ? m.speakerName
-              ? `${m.speakerName}’s own words`
-              : 'Their own words'
-            : 'Tidied up by Firepit, checked against what was said'}
+          {m.method === 'story'
+            ? 'Written by Firepit from what was said, checked that nothing is made up'
+            : m.method === 'verbatim'
+              ? m.speakerName
+                ? `${m.speakerName}’s own words`
+                : 'Their own words'
+              : 'Tidied up by Firepit, checked against what was said'}
         </span>
         {editing ? (
           <MemoryEditor
@@ -459,8 +486,8 @@ export function Review({
       {error && <Failed>{error}</Failed>}
       <div className="spread card" style={{ padding: '10px 13px' }}>
         <span className="muted">
-          {left > 0 ? `${count(left, 'memory', 'memories')} still to read.` : 'All read.'} Saving
-          keeps {count(keeping, 'memory', 'memories')}.
+          {left > 0 ? `${count(left, ...unit)} still to read.` : 'All read.'} Saving keeps{' '}
+          {count(keeping, ...unit)}.
         </span>
         <button
           type="button"
@@ -469,7 +496,7 @@ export function Review({
           disabled={saving || keeping === 0}
           onClick={() => void save()}
         >
-          {saving ? 'Saving…' : `Save ${count(keeping, 'memory', 'memories')}`}
+          {saving ? 'Saving…' : `Save ${count(keeping, ...unit)}`}
         </button>
       </div>
     </div>
@@ -488,9 +515,19 @@ function MemoryView({
   archiveId: string;
 }) {
   const parts = splitNote(shown.body);
+  const [showSources, setShowSources] = useState(false);
+  const told = memory.tellers?.length ? `told by ${memory.tellers.join(' and ')}` : null;
+  const span = clockSpan(memory.startSec ?? null, memory.endSec ?? null);
+  // a date worked out from an age ("Around 1964 (Sunja was 18; born about 1946)"), while it stands
+  const when = whenLabel(shown.occurred);
+  const basis =
+    memory.dateBasis && shown.occurred === (memory.occurred ?? '') ? memory.dateBasis : null;
+  const meta = [when ? (basis ? `${when} (${basis})` : when) : null, told, span]
+    .filter(Boolean)
+    .join(' · ');
   return (
     <>
-      {shown.occurred && <span className="small muted">{whenLabel(shown.occurred)}</span>}
+      {meta && <span className="small muted">{meta}</span>}
       <h2 style={{ fontSize: 18, lineHeight: 1.15 }}>{shown.title}</h2>
       <div className="prose" style={{ fontSize: 16, gap: 9 }}>
         {parts.paragraphs.map((p, i) => (
@@ -509,6 +546,35 @@ function MemoryView({
               {line}
             </span>
           ))}
+        </div>
+      )}
+      {(memory.sources?.length ?? 0) > 0 && (
+        <div className="stack" style={{ gap: 6 }}>
+          <button
+            type="button"
+            className="btn btn-quiet btn-sm"
+            style={{ alignSelf: 'flex-start' }}
+            aria-expanded={showSources}
+            onClick={() => setShowSources((v) => !v)}
+          >
+            {showSources ? 'Hide where this comes from' : 'Where this comes from'}
+          </button>
+          {showSources && (
+            <ol className="stack" style={{ gap: 8, paddingLeft: 18, margin: 0 }}>
+              {memory.sources!.map((s, i) => (
+                <li key={i} className="small">
+                  <span style={{ fontWeight: 600 }}>{s.sentence}</span>
+                  <span
+                    className="said"
+                    style={{ display: 'block', whiteSpace: 'pre-line', marginTop: 3 }}
+                  >
+                    {clockSpan(s.start, s.end) ? `${clockSpan(s.start, s.end)} · ` : ''}
+                    {s.text}
+                  </span>
+                </li>
+              ))}
+            </ol>
+          )}
         </div>
       )}
       {memory.notes.map((n, i) => (
@@ -609,8 +675,14 @@ export function Saved({
     <div className="stack" style={{ gap: 12 }}>
       <h1 className="page-title">Added to the project</h1>
       <p role="status" className="notice notice-sage">
-        {count(saved.length, 'memory was', 'memories were')} saved. Thank you! If something’s not
-        right, you can fix it on its page, or undo the whole interview from Interviews.
+        {count(
+          saved.length,
+          ...((outcome.memories.some((m) => m.method === 'story')
+            ? ['story was', 'stories were']
+            : ['memory was', 'memories were']) as [string, string]),
+        )}{' '}
+        saved. Thank you! If something’s not right, you can fix it on its page, or undo the whole
+        interview from Interviews.
       </p>
       <ul className="list">
         {saved.map((s) => (
@@ -642,4 +714,26 @@ export function Saved({
       </div>
     </div>
   );
+}
+
+/** Why the stories could not be written yet (server/api/src/ingest-pipeline.ts, StoriesPendingReason). */
+const PENDING: Record<string, string> = {
+  no_model: 'Writing stories needs the AI, and it is not set up here yet.',
+  auth: 'The AI service refused our key. Whoever runs Firepit needs to renew it.',
+  unavailable: 'The AI service did not answer just now.',
+  deadline: 'Writing the stories took too long and was stopped.',
+  budget: 'This interview needed more AI work than one import may use. Try a shorter part of it.',
+  bad_plan: 'The AI could not make sense of this interview just now.',
+};
+
+/** "0:03–1:56" in the recording, or one time, or nothing when the transcript had no times. */
+function clockSpan(start: number | null, end: number | null): string | null {
+  if (start === null) return null;
+  const c = (sec: number) => {
+    const s = Math.floor(sec);
+    const h = Math.floor(s / 3600);
+    const mm = String(Math.floor((s % 3600) / 60)).padStart(h ? 2 : 1, '0');
+    return `${h ? `${h}:` : ''}${mm}:${String(s % 60).padStart(2, '0')}`;
+  };
+  return end === null || c(end) === c(start) ? c(start) : `${c(start)}–${c(end)}`;
 }

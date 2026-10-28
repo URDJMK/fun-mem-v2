@@ -27,6 +27,7 @@ import {
   inTransaction,
   withoutMarkersNaming,
 } from './notes';
+import { forgetInterviewOf, markWritten, recordedAt } from './stories/interviews';
 
 /**
  * Taking an interview into the archive: who may, titles, disagreements, one atomic write,
@@ -930,14 +931,31 @@ export async function persistImport(
               memories.map((m) => ({ title: m.title, hint: hintOf(m) })),
             ),
           );
-          return memories.map((m) => ({
-            title: m.title,
-            type: m.type,
-            body: m.body,
-            occurred: m.occurred,
-          }));
+          // a story carries its metadata (PRD 7.3): when it was told, by whom, from which lines
+          const told = result.interviewId ? await recordedAt(client, result.interviewId) : null;
+          return memories.map((m) =>
+            m.method === 'story'
+              ? {
+                  title: m.title,
+                  type: m.type,
+                  body: m.body,
+                  occurred: m.occurred,
+                  recorded: told ?? new Date().toISOString(),
+                  contributors: m.tellers ?? [],
+                  extra: {
+                    interviewId: result.interviewId ?? null,
+                    tellings: [{ interviewId: result.interviewId ?? null, at: told }],
+                    ...(m.until ? { until: m.until } : {}),
+                    sources: m.sources ?? [],
+                    ...(m.flags?.length ? { flags: m.flags } : {}),
+                    ...(m.dateBasis ? { dateBasis: m.dateBasis } : {}),
+                    ...(m.writtenBy ? { writtenBy: m.writtenBy } : {}),
+                  },
+                }
+              : { title: m.title, type: m.type, body: m.body, occurred: m.occurred },
+          );
         },
-        'ai-suggestion',
+        memories.some((m) => m.method === 'story') ? 'import' : 'ai-suggestion',
         {
           before: async (client) => {
             // held until commit: a member removed now waits for this write, or this write fails
@@ -972,6 +990,7 @@ export async function persistImport(
               ],
             );
             runId = (run.rows[0] as { id: string }).id;
+            if (result.interviewId) await markWritten(client, result.interviewId, runId);
           },
         },
       );
@@ -1140,6 +1159,8 @@ export async function undoImport(
       .filter((r) => !erasedIds.has(r.id))
       .map((r) => ({ id: r.id, title: r.title, reason: reasonOf(r)! }));
     const erase = [...erasedIds];
+    // the interview whose stories these were goes too: the import keeps no words after an undo
+    await forgetInterviewOf(client, runId);
     // what is left of the record is content-free: no file name, no hash of the words
     await client.query(
       `update public.ingest_runs

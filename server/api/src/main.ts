@@ -142,6 +142,8 @@ async function main(): Promise<void> {
     chat: createNimChat(),
     agentModel: createNimAgentModel(),
     transcriptionKey: process.env.DEEPGRAM_API_KEY || null,
+    // interviews become stories (stories/workflow.ts); `memories` brings back the earlier import
+    importMode: process.env.FUNMEM_IMPORT_MODE === 'memories' ? 'memories' : 'stories',
     // the interview coach answers within a pause: a fast model, one attempt, a short deadline
     interviewChat: createNimChat({
       model: process.env.INTERVIEW_MODEL || INTERVIEW_MODEL_DEFAULT,

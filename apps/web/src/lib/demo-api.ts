@@ -1,4 +1,11 @@
-import { countryCode, extractWikilinks, normalizeTitle } from '@funmem/core';
+import {
+  countryCode,
+  extractWikilinks,
+  normalizeTitle,
+  parseProfileInput,
+  readProfile,
+  type ProfileFields,
+} from '@funmem/core';
 import { DEMO_NAME } from './demo';
 
 /**
@@ -16,6 +23,8 @@ interface DemoNote {
   occurred: string | null;
   createdAt: string;
   revised: string | null;
+  /** a person's profile (PRD D13) */
+  profile?: ProfileFields;
 }
 
 interface DemoRun {
@@ -34,6 +43,8 @@ interface DemoArchive {
   /** absent in sample data saved before it was shown: US */
   jurisdiction?: string;
   role: string;
+  /** a personal project's protagonist (the server keeps it on their person note) */
+  profile?: ProfileFields;
   notes: DemoNote[];
   runs: DemoRun[];
   /** the other people in it; the demo person is always in, with `role` */
@@ -578,12 +589,15 @@ export async function demoFetch(method: string, path: string, body?: unknown): P
     if (!subjectName || !countryCode(typeof b.jurisdiction === 'string' ? b.jurisdiction : ''))
       throw new DemoError(400, null);
     const kind = b.kind === 'family' ? 'family' : 'personal';
+    const profile = parseProfileInput(b.profile ?? {});
+    if (typeof profile === 'string') throw new DemoError(400, 'bad_request');
     const a: DemoArchive = {
       id: uid(),
       subjectName,
       kind,
       jurisdiction: countryCode(String(b.jurisdiction)) ?? 'US',
       role: 'owner',
+      ...(kind === 'personal' ? { profile } : {}),
       notes: [],
       runs: [],
     };
@@ -812,6 +826,30 @@ export async function demoFetch(method: string, path: string, body?: unknown): P
       ],
       edges: [...near.keys()].map((target) => ({ source: n.id, target })),
     };
+  }
+  /* ── who it is about (server/api/src/stories/profile-store.ts) ── */
+  if (what === 'profile') {
+    if ((a.kind ?? 'personal') !== 'personal') throw new DemoError(404, null);
+    if (method === 'PUT') {
+      if (!['owner', 'steward', 'contributor'].includes(a.role))
+        throw new DemoError(403, 'forbidden');
+      const fields = parseProfileInput(b);
+      if (typeof fields === 'string') throw new DemoError(400, 'bad_request');
+      a.profile = fields;
+      persist();
+    }
+    return { noteId: null, name: a.subjectName, ...(a.profile ?? readProfile({})) };
+  }
+  if (what === 'people' && id && sub === 'profile' && method === 'PUT') {
+    if (!['owner', 'steward', 'contributor'].includes(a.role))
+      throw new DemoError(403, 'forbidden');
+    const n = noteOf(a, id);
+    if (n.type !== 'person') throw new DemoError(404, null);
+    const fields = parseProfileInput(b);
+    if (typeof fields === 'string') throw new DemoError(400, 'bad_request');
+    n.profile = fields;
+    persist();
+    return { noteId: n.id, name: n.title, ...fields };
   }
   if (what === 'people' && method === 'GET') {
     const all2 = links(a);

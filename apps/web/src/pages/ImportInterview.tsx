@@ -9,7 +9,7 @@ import { Failed } from '../components/ui';
 /**
  * Bringing in a transcript that wasn't made here: pasted or opened from a file, then a preview
  * of memories to read over before anything is kept. A live interview never comes through this
- * page — "Turn into memories" (components/InterviewReview.tsx) runs and watches its own job
+ * page — "Write the stories" (components/InterviewReview.tsx) runs and watches its own job
  * right there on the home page, so leaving mid-way never loses track of it.
  */
 export function ImportInterview() {
@@ -92,6 +92,7 @@ export function ImportInterview() {
           outcome={step.outcome}
           name={archive.subjectName}
           onSaved={saved}
+          onRetry={req ? () => void run(req) : undefined}
         />
       )}
       {step?.kind === 'saved' && <Saved archiveId={archive.id} outcome={step.outcome} />}

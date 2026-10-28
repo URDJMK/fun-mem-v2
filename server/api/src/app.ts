@@ -17,6 +17,9 @@ import { registerTranscriptionRoutes } from './transcription';
 import { registerCoachRoutes } from './interview-coach';
 import { registerInviteRoutes } from './invites';
 import { registerProjectSettingsRoutes } from './project-settings';
+import { registerInterviewRoutes } from './stories/interviews';
+import { parseProfileInput } from './stories/profile';
+import { registerProfileRoutes, setSubjectProfile } from './stories/profile-store';
 import type { EmbeddingProvider } from '@funmem/core';
 
 export interface AppDeps {
@@ -60,6 +63,13 @@ export interface AppDeps {
    * answers 503 and the app suggests from its own question bank.
    */
   interviewChat?: ChatModel | null;
+  /**
+   * How an imported interview becomes notes (ingest-jobs.ts). 'stories': the story workflow
+   * (stories/workflow.ts) writes whole stories from it and its transcript is kept with the
+   * interview. 'memories': the earlier import, which turns every spoken line into a memory.
+   * Absent = 'memories' (selected at the composition root from FUNMEM_IMPORT_MODE).
+   */
+  importMode?: 'stories' | 'memories';
 }
 
 export type App = Hono<{ Variables: AuthVariables }>;
@@ -80,7 +90,12 @@ export function createApp(deps: AppDeps): App {
       jurisdiction?: string;
       tenantName?: string;
       kind?: string;
+      /** the protagonist's profile (PRD D13): born, died, what the family calls them */
+      profile?: unknown;
     };
+    // checked before anything is made: a date that cannot be read refuses the project
+    const profile = parseProfileInput(body.profile ?? {});
+    if (typeof profile === 'string') return c.json({ error: profile, code: 'bad_request' }, 400);
     try {
       const provisioned = await provisionSignup(deps.pool, {
         userId: c.get('userId'),
@@ -89,6 +104,14 @@ export function createApp(deps: AppDeps): App {
         tenantName: body.tenantName,
         kind: body.kind as 'personal' | 'family' | undefined,
       });
+      // a personal project is about one person: their person note holds the profile. Made only
+      // when something was entered (else the first time it is saved in Settings). If this fails
+      // the project still stands, and the profile can be entered in Settings.
+      if (profile.born || profile.died || profile.aliases.length) {
+        await setSubjectProfile(deps, provisioned.archiveId, c.get('userId'), profile).catch(
+          (e: unknown) => console.error(`[provision] the profile was not saved: ${String(e)}`),
+        );
+      }
       return c.json(provisioned, 201);
     } catch (e) {
       if (e instanceof ProvisionError) return c.json({ error: e.message }, 400);
@@ -131,6 +154,8 @@ export function createApp(deps: AppDeps): App {
   registerCoachRoutes(app, deps);
   registerInviteRoutes(app, deps);
   registerProjectSettingsRoutes(app, deps);
+  registerInterviewRoutes(app, deps);
+  registerProfileRoutes(app, deps);
   registerInternalRoutes(app, deps, jobs);
 
   return app;

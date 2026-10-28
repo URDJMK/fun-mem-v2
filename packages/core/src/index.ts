@@ -18,3 +18,4 @@ export { chunkNote, type Chunk } from './chunk';
 export { checkFragment, extractHeadingPaths } from './fragments';
 export { DeterministicEmbeddingProvider, type EmbeddingProvider } from './embedding';
 export { COUNTRY_CODES, countryCode } from './countries';
+export { parseProfileInput, readProfile, saidDate, type ProfileFields } from './profile';

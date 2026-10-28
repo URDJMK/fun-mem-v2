@@ -12,7 +12,8 @@
     "typecheck": "tsc --noEmit",
     "start": "exec vite-node src/main.ts",
     "worker:dev": "wrangler dev",
-    "worker:deploy": "wrangler deploy"
+    "worker:deploy": "wrangler deploy",
+    "eval:stories": "vite-node scripts/eval-stories.ts"
   },
   "devDependencies": {
     "@supabase/supabase-js": "^2.118.0",
