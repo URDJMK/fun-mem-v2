@@ -65,6 +65,8 @@ The AI is also currently down in production: NVIDIA rejects the deployed key (40
 | D10 | Architecture: approach 1 (plan → write → judge) as a **fixed, repeatable workflow**, whose AI steps **use tools** to look things up (from approach 3). Tools can read and propose; they never write. |
 | D11 | **Paraphrasing is free; only making things up fails.** The AI may reword, condense, reorder, summarize and add plain transitions ("Years later,"). It may not add an event, person, place, number, date or quote that was not told, contradict what was said, or credit one person's memory to another. A merge keeps the content of every merged note, not its exact wording. |
 | D12 | **Every note the import adds or changes carries its metadata** (7.3): when it happened, who told it, in which interview and at what point in the recording, who saved it and when, and how it was written. An update never loses metadata. |
+| D13 | **The protagonist has a profile** (7.5), entered when a personal project is made, or when a family project's narrator is first interviewed: born (a fuzzy date; the year is enough), died, and what the family calls them. All optional, editable in Settings. It is the protagonist's own person note (`born`, `died`, and its aliases). |
+| D14 | **The profile goes with every AI step that writes or checks a note** (plan, write, judge), as a "Who this is about" block. Ages in the interview become years by code: born 1946 + "at eighteen" = `~1964`, recorded with how it was worked out. |
 
 ## 4. Definitions
 
@@ -302,9 +304,34 @@ On the review screen (5.2), every story shows this metadata (date, told by, inte
 | Worker restarts mid-run | The job's heartbeat marks it interrupted, and it resumes from the last stored step (today it fails as `interrupted`). |
 | Two imports touch the same note | The second save re-checks each edited note's revision; a note changed since the proposal is shown again for review, not overwritten. |
 
+### 7.5 The protagonist's profile (D13, D14)
+
+**What is asked.** When a personal project is made, the form asks, all optional:
+- **Born**: a fuzzy date (`1946`, `~1946`, `1946-04-12`); the year is enough, and asking only for the year keeps less personal data about a living person.
+- **What the family calls them**: "Grandma Nell", "Mom", "Nell".
+- **Died**, when the project remembers someone who has died.
+
+In a family project there is no one protagonist: the same is asked when a narrator is added before their first interview (the step that already creates their person note). All of it can be added or corrected later in Settings.
+
+**Where it lives.** The protagonist's own person note: its title is their name, `born` and `died` are its fuzzy-date keys, and the names the family uses are its aliases (phase 2). It is the first note of "one name, one note".
+
+**In every prompt.** Plan, write and judge each get the profile of every teller of the interview:
+
+```
+Who this is about:
+- Sunja Kim (called "Grandma Sunja", "Sunja"). Born ~1946. Living.
+```
+
+- The profile is a citable source: a sentence may cite `P` for a fact from it ("Sunja, born in 1946, …"). The code checks read the profile like cited lines, and the judge is told profile facts are supported.
+- **Ages become years in code, not by the AI.** The writer marks an age said in its lines (`{"age": 18, "cites": ["L14"]}`). Code computes `born + age`, always approximate (`~1964`, because a birthday may fall either side of the event), and stores how in `extra.dateBasis` ("she was 18; born ~1946"). The review shows "Around 1964 (she was 18; born 1946)". A derived date passes the checks only when the age is said in the cited lines and the sum is right.
+- School grades ("fifth grade") are not turned into ages: that depends on the country and the era. Dates relative to other events ("two years after we married") wait for the events to be known (phase 3).
+
+**Interviews fill it in.** When an interview says "I was born in 1946" and the profile has no birth date, the import proposes setting it. A different date than the one entered is shown as a disagreement, never overwritten (7.3).
+
 ## 9. Privacy
 
 - The transcript is now kept, deleted by undo or by deleting the project.
+- The protagonist's profile (name, birth and death dates) is sent with every AI step that writes or checks a note (D14).
 - The AI now sees the transcript **and** the existing notes it looks up. That is more family text sent to NVIDIA than today. The trial terms on NVIDIA's free API do not allow personal data, so production needs a paid plan or another provider. `docs/deploy.md` ("Who sees the data") is updated to say this.
 
 ## 10. Measuring it
@@ -371,6 +398,7 @@ Each phase ships on its own and gets its own implementation plan.
    - The evaluation set and metrics.
    - This removes problems 1–5 from section 1.
 2. **One name, one note.**
+   - First: the protagonist's profile (7.5) at project creation and in Settings, in every prompt, and age-based dates.
    - Aliases and match keys, and link resolution through aliases.
    - Step 6 (people, places and aliases proposed).
    - The People and places groups on the review screen.
