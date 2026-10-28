@@ -66,6 +66,52 @@ eighteen"), code works out the year from the birth date: `occurred` `~1964`, wit
 | `PUT /v1/archives/:id/profile` | owners, stewards, contributors: `{ born, died, aliases }` (aliases as a list or comma-separated); makes the person note if needed; `400` with `error` naming the field it cannot read |
 | `PUT /v1/archives/:id/people/:noteId/profile` | the same, on any visible person note (a family narrator) |
 
+### The people, places and things graph
+
+Design: `docs/superpowers/specs/2026-10-28-people-places-graph-design.md`. A graph apart from notes
+(`graph_entities`, `graph_aliases`, `graph_mentions`, `graph_relationships`, `graph_changes`): every
+person, place and thing the stories name is an entity (a note about it is optional), each story's
+mention of it is a row with the words it uses and one line on what it says, and a relationship the
+interview tells is a line between two entities. Being named in the same story is drawn faintly, but
+never through the protagonist or a story's tellers. A member sees only what comes from stories they
+can read.
+
+**In an import.** After the stories, the Graph step names the people, places and things in them and
+the relationships told, checking every line like a story sentence; the outcome gains `graph`:
+
+```json
+{
+  "entities": [
+    { "ref": "e2", "name": "Sarah", "type": "person",
+      "match": { "kind": "new" },
+      "mentions": [{ "story": "m2", "words": ["Sarah"], "line": "Sarah sat next to Noah…",
+                     "sources": [{ "interviewId": null, "from": 8, "to": 8 }] }] }
+  ],
+  "relationships": [
+    { "ref": "r1", "a": "e3", "b": "e2", "description": "Tom — Sarah's brother", "story": "m2", "sources": [] }
+  ]
+}
+```
+
+`match` is `new`, `{ "kind": "existing", "entityId", "name" }`, or `{ "kind": "ask", "candidates" }`.
+`story` is a memory's `id` (`m1`, `m2`, …). When the step cannot run, the stories are unaffected and
+`graph.pending` gives the reason (as `pending`). The save body may carry the reviewer's choices:
+`"graph": { "leave": [refs], "rename": { ref: name }, "same": { ref: entityId } }`; a story left out
+takes with it what came only from it. Undoing the import removes what only it brought, sparing an
+entity someone has changed, written about, or another import names.
+
+| Route | |
+|---|---|
+| `GET /v1/archives/:id/graph` | members: `{ nodes, told, together, more }` (at most 80 nodes, most-mentioned first; `?limit=`) |
+| `GET /v1/archives/:id/entities` | members: `[{ id, name, type, noteId, subject, aliases, stories }]` |
+| `GET /v1/archives/:id/entities/:entityId` | members (an entity's id or its note's): its mentions, relationships, `profile` for the protagonist, and `graph` around it |
+| `PATCH /v1/archives/:id/entities/:entityId` | writers: `{ name }` (the old name kept as an alias; `409 taken` with the `entityId` that has it) or `{ type }` |
+| `POST /v1/archives/:id/entities/:entityId/merge` | writers: `{ from }`, merged into this one; the protagonist is never merged away (`409 subject`) |
+| `DELETE /v1/archives/:id/entities/:entityId` | writers: the entity with its mentions and relationships; stories stay; never the protagonist |
+| `DELETE /v1/archives/:id/relationships/:relationshipId` | writers |
+| `POST /v1/archives/:id/graph/build` | writers: "Find people, places and things" in the saved stories; answered like `POST …/ingest` (`{ "async": true }` for a job to follow); the outcome has no memories and a `graph`; saving writes a run of kind `graph` that undo takes back |
+| `GET /v1/archives/:id/notes/:noteId` | gains `mentions: [{ entityId, words }]`, which a story's page underlines |
+
 `FUNMEM_IMPORT_MODE=memories` brings back the earlier import described below, where every spoken line
 becomes a memory.
 

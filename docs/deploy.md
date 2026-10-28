@@ -31,7 +31,9 @@ copy where; no value in this file is real.
    (or `supabase link` and `supabase db push`). Never edit a migration that has run. A project that is
    already deployed applies each new migration as it arrives, the same way: for the stories import,
    `supabase/migrations/20261028120000_interviews.sql`, then, for the protagonist's profile,
-   `supabase/migrations/20261028130000_profiles.sql`.
+   `supabase/migrations/20261028130000_profiles.sql`, then, for the people, places and things graph,
+   `supabase/migrations/20261028140000_graph.sql`. A project made before the graph gets its
+   protagonist's person note, and its people, places and things, the first time its graph is read.
 4. **Project Settings → API**: copy the **Project URL** (`https://<project-ref>.supabase.co`) and the
    **anon / publishable key**. Both are public; the web app ships them.
 5. **Project Settings → JWT Keys**: the project must sign with an **asymmetric** key (ECC P-256 or
@@ -125,6 +127,13 @@ minute and a half the review shows about 5 stories ("Mrs. Han's pencil box", "Gr
 supper", …), each with "Where this comes from"; "The tin of savings" (she was eighteen) reads "Around
 1964 (… was 18; born about 1946)". Without `NVIDIA_API_KEY` it says "Stories not written yet", and
 the interview waits under Interviews.
+
+The graph: bring in `server/api/test/fixtures/stories/noah.txt` (Who is telling: Noah) into a personal
+project for Noah Kim. Under the stories, the review lists the people, places and things (his mother,
+Sarah, Tom, Busan, Korea, the soups…) with how they relate; after saving, Home's "Who and where" shows
+Tom joined to Sarah only, not to Noah. On a project whose stories were saved before, People, places &
+things → "Find people, places and things" does the same for them. `pnpm --filter @funmem/api
+eval:graph` runs the same checks against the real model.
 
 With `DEEPGRAM_API_KEY` set, start an interview from the project's home page (Chrome or Edge;
 allow the microphone): words appear as they are said, the coach suggests a question in the

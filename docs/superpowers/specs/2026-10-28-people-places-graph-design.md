@@ -1,7 +1,7 @@
 # Design: the people, places and things graph
 
 - **Date:** 2026-10-28
-- **Status:** Draft for review
+- **Status:** Built (G1–G4), 2026-10-28; see section 11 for what building it changed
 - **Replaces:** phase 2's "one name, one note" items in `2026-10-28-interviews-become-stories-prd.md` (D8, D9, step 6, the People and places review groups, merging people). The protagonist's profile (7.5, already built) stays as it is.
 - **Scope:** a graph of the people, places and things in a project's stories: built when interviews are imported (and on demand for stories already saved), reviewed before it is saved, shown on Home and on People, places & things.
 
@@ -266,3 +266,26 @@ Each part ships on its own and gets its own implementation plan.
 2. **G2, imports fill it:** the Graph step, its checks, the review group, saving and undo.
 3. **G3, the button** for stories already saved.
 4. **G4, editing:** rename, type, merge, remove, write a note.
+
+## 11. What building it changed
+
+Measured on the real model (`eval:graph`, Noah and Sunja) and in the browser:
+
+- **Answers a brace short.** Long Graph step answers ended one `}` short (and with a lone `</think>`), so
+  every one failed to parse. `readJson` (`stories/tools.ts`) now closes what an answer left open; it
+  never mends a cut string.
+- **Second-hand lines.** Told that knowing of someone through another is not a relationship, the model
+  still wrote "Noah Kim — knew Tom only from Sarah's stories". Code drops descriptions of that shape
+  (`SECOND_HAND` in `graph/step.ts`), so Tom joins only through Sarah.
+- **Places in passing.** The model skipped places named in passing ("in Korea") in about half of the
+  runs. The step asks once more, alone, about capitalized names in the stories its answer left out;
+  what it adds is checked like the rest.
+- **Words.** A mention's words are what the story writes, at most four words; otherwise the way the
+  story writes the name ("Noah's mother" for "Noah Kim's mother"), never a name's first word.
+- **Names.** A relative named in the lines ("my father Walter") is filed under the name; the relation
+  is a relationship. One relationship per pair per story; a description repeating the name is cut to
+  one side.
+- **The protagonist from day one.** Every personal project gets its protagonist's person note when it
+  is made (tests that counted a fresh project's notes now leave it out: `NOT_PROTAGONIST`).
+- **Backfill in code, not SQL.** Existing notes become entities the first time a project's graph is
+  read, so `matchKey` has one implementation.
