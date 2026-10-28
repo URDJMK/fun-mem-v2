@@ -3,13 +3,17 @@ import { Link, useNavigate, useSearchParams } from 'react-router';
 import {
   ApiError,
   cancelImport,
+  changeEntity,
   type EntityDetail,
   type EntitySummary,
   type EntityType,
   getEntity,
   getNeighborhood,
   listEntities,
+  mergeEntity,
   type Neighborhood,
+  removeEntity,
+  removeRelationship,
 } from '../lib/api';
 import { inArchive, noteHref, useArchive, type Archive } from '../lib/archive';
 import { ArchiveLayout } from '../components/ArchiveLayout';
@@ -160,7 +164,12 @@ export function People({ noteId: id }: { noteId?: string }) {
               }}
             />
           ) : id ? (
-            <EntityPage key={id} archive={archive} id={id} />
+            <EntityPage
+              key={id}
+              archive={archive}
+              id={id}
+              onChanged={() => setReloads((n) => n + 1)}
+            />
           ) : index && index !== 'failed' && index.length === 0 ? (
             <p className="empty">
               Nobody, nowhere and nothing yet. When an interview names someone, they appear here.
@@ -233,8 +242,20 @@ function FindGraph({ archive, onDone }: { archive: Archive; onDone: () => void }
 }
 
 /** One entity: what the stories say about it, its relationships, and the graph around it. */
-function EntityPage({ archive, id }: { archive: Archive; id: string }) {
+function EntityPage({
+  archive,
+  id,
+  onChanged,
+}: {
+  archive: Archive;
+  id: string;
+  /** the list beside it has changed (a rename, a merge, a removal) */
+  onChanged: () => void;
+}) {
+  const navigate = useNavigate();
   const [entity, setEntity] = useState<EntityDetail | null | 'missing' | 'failed'>(null);
+  const [version, setVersion] = useState(0);
+  const [relFailed, setRelFailed] = useState(false);
 
   useEffect(() => {
     let live = true;
@@ -247,7 +268,11 @@ function EntityPage({ archive, id }: { archive: Archive; id: string }) {
     return () => {
       live = false;
     };
-  }, [archive.id, id]);
+  }, [archive.id, id, version]);
+  const changed = () => {
+    setVersion((v) => v + 1);
+    onChanged();
+  };
 
   if (entity === null) return <Loading what="Opening…" />;
   // a person or place note with no entity of its own (a second note of the same name)
@@ -274,6 +299,18 @@ function EntityPage({ archive, id }: { archive: Archive; id: string }) {
           </span>
         </div>
       </div>
+
+      {archive.writer && (
+        <EntityEdit
+          archive={archive}
+          entity={e}
+          onChanged={changed}
+          onGone={() => {
+            onChanged();
+            void navigate(inArchive(archive.id, '/people'), { replace: true });
+          }}
+        />
+      )}
 
       {e.subject && e.profile && (
         <p className="small muted">
@@ -331,6 +368,7 @@ function EntityPage({ archive, id }: { archive: Archive; id: string }) {
           <h2 id="rel-h" style={{ fontSize: 15 }}>
             Relationships
           </h2>
+          {relFailed && <Failed>Could not remove it just now.</Failed>}
           {e.relationships.length === 0 ? (
             <p className="muted">No relationship told yet.</p>
           ) : (
@@ -343,9 +381,29 @@ function EntityPage({ archive, id }: { archive: Archive; id: string }) {
                   {r.other.name}
                 </Link>
                 <span style={{ fontSize: 14 }}>{r.description}</span>
-                <Link to={inArchive(archive.id, `/stories/${r.storyId}`)} className="small muted">
-                  from “{r.storyTitle}”
-                </Link>
+                <span className="row" style={{ gap: 6 }}>
+                  <Link to={inArchive(archive.id, `/stories/${r.storyId}`)} className="small muted">
+                    from “{r.storyTitle}”
+                  </Link>
+                  {archive.writer && (
+                    <button
+                      type="button"
+                      className="btn btn-quiet btn-sm"
+                      aria-label={`Remove: ${r.description}`}
+                      onClick={async () => {
+                        setRelFailed(false);
+                        try {
+                          await removeRelationship(archive.id, r.id);
+                          changed();
+                        } catch {
+                          setRelFailed(true);
+                        }
+                      }}
+                    >
+                      Remove
+                    </button>
+                  )}
+                </span>
               </div>
             ))
           )}
@@ -373,6 +431,188 @@ function EntityPage({ archive, id }: { archive: Archive; id: string }) {
 }
 
 const said = (d: string) => (d.startsWith('~') ? `about ${d.slice(1)}` : d);
+
+/**
+ * Changing an entity by hand (graph design 5.4): a new name (the old one stays as another name),
+ * its type, merging a duplicate into it, or removing it. The stories are never changed.
+ */
+function EntityEdit({
+  archive,
+  entity: e,
+  onChanged,
+  onGone,
+}: {
+  archive: Archive;
+  entity: EntityDetail;
+  onChanged: () => void;
+  onGone: () => void;
+}) {
+  const [open, setOpen] = useState<null | 'rename' | 'merge' | 'remove'>(null);
+  const [name, setName] = useState(e.name);
+  const [others, setOthers] = useState<EntitySummary[]>([]);
+  const [from, setFrom] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [failed, setFailed] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (open !== 'merge') return;
+    let live = true;
+    listEntities(archive.id)
+      .then(
+        (l) =>
+          live &&
+          setOthers(
+            l
+              .filter((x) => x.id !== e.id && !x.subject)
+              .sort((a, b) => Number(b.type === e.type) - Number(a.type === e.type)),
+          ),
+      )
+      .catch(() => live && setFailed('Could not list the others just now.'));
+    return () => {
+      live = false;
+    };
+  }, [open, archive.id, e.id, e.type]);
+
+  async function act(f: () => Promise<unknown>, done: () => void) {
+    setBusy(true);
+    setFailed(null);
+    try {
+      await f();
+      setOpen(null);
+      done();
+    } catch (err) {
+      setFailed(
+        err instanceof ApiError && err.code === 'taken'
+          ? 'Another entry already has that name. If they are the same, merge them instead.'
+          : err instanceof ApiError && err.code === 'subject'
+            ? 'The person these stories are about stays in the graph.'
+            : 'Could not change it just now. Try again in a moment.',
+      );
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div className="stack" style={{ gap: 6 }} data-testid="entity-edit">
+      <div className="row" style={{ gap: 6 }}>
+        <button
+          type="button"
+          className="btn btn-sm"
+          onClick={() => setOpen(open === 'rename' ? null : 'rename')}
+        >
+          Rename
+        </button>
+        <label className="row small" style={{ gap: 4 }}>
+          <span className="muted">Type</span>
+          <select
+            className="input gr-same"
+            value={e.type}
+            disabled={busy}
+            onChange={(ev) =>
+              void act(
+                () => changeEntity(archive.id, e.id, { type: ev.target.value as EntityType }),
+                onChanged,
+              )
+            }
+          >
+            <option value="person">Person</option>
+            <option value="place">Place</option>
+            <option value="thing">Thing</option>
+          </select>
+        </label>
+        <button
+          type="button"
+          className="btn btn-sm"
+          onClick={() => setOpen(open === 'merge' ? null : 'merge')}
+        >
+          Merge a duplicate into this
+        </button>
+        {!e.subject && (
+          <button
+            type="button"
+            className="btn btn-quiet btn-sm"
+            onClick={() => setOpen(open === 'remove' ? null : 'remove')}
+          >
+            Remove
+          </button>
+        )}
+      </div>
+      {open === 'rename' && (
+        <form
+          className="row"
+          style={{ gap: 6 }}
+          onSubmit={(ev) => {
+            ev.preventDefault();
+            void act(() => changeEntity(archive.id, e.id, { name: name.trim() }), onChanged);
+          }}
+        >
+          <input
+            className="input"
+            style={{ flex: '1 1 200px' }}
+            aria-label={`A new name for ${e.name}`}
+            value={name}
+            onChange={(ev) => setName(ev.target.value)}
+            autoFocus
+          />
+          <button type="submit" className="btn btn-primary btn-sm" disabled={busy || !name.trim()}>
+            Save the name
+          </button>
+          <span className="small muted" style={{ flexBasis: '100%' }}>
+            “{e.name}” is kept as another name, so stories that say it still find them.
+          </span>
+        </form>
+      )}
+      {open === 'merge' && (
+        <form
+          className="row"
+          style={{ gap: 6 }}
+          onSubmit={(ev) => {
+            ev.preventDefault();
+            if (from) void act(() => mergeEntity(archive.id, e.id, from), onChanged);
+          }}
+        >
+          <select
+            className="input"
+            style={{ flex: '1 1 200px', width: 'auto' }}
+            aria-label={`Merge into ${e.name}`}
+            value={from}
+            onChange={(ev) => setFrom(ev.target.value)}
+          >
+            <option value="">Who is the same as {e.name}?</option>
+            {others.map((o) => (
+              <option key={o.id} value={o.id}>
+                {o.name}
+              </option>
+            ))}
+          </select>
+          <button type="submit" className="btn btn-primary btn-sm" disabled={busy || !from}>
+            Merge
+          </button>
+          <span className="small muted" style={{ flexBasis: '100%' }}>
+            Their stories, relationships and names join {e.name}’s, and the duplicate is gone.
+          </span>
+        </form>
+      )}
+      {open === 'remove' && (
+        <div className="row" style={{ gap: 6 }}>
+          <span className="small">
+            Take {e.name} out of the graph? The stories stay as they are.
+          </span>
+          <button
+            type="button"
+            className="btn btn-danger-solid btn-sm"
+            disabled={busy}
+            onClick={() => void act(() => removeEntity(archive.id, e.id), onGone)}
+          >
+            Remove {e.name}
+          </button>
+        </div>
+      )}
+      {failed && <Failed>{failed}</Failed>}
+    </div>
+  );
+}
 
 /** what someone wrote about an entity, in its own note, with the note's edit button */
 function EntityNote({ archive, noteId, name }: { archive: Archive; noteId: string; name: string }) {

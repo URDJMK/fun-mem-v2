@@ -118,6 +118,8 @@ const cites = (v: unknown): Range[] =>
 export function parseGraph(
   v: unknown,
   storyIds: ReadonlySet<string>,
+  /** entity refs of an earlier answer its relationships may name */
+  earlier: ReadonlySet<string> = new Set(),
 ): { entities: RawEntity[]; relationships: RawRelationship[] } | string {
   if (!isObj(v) || !Array.isArray(v.entities))
     return 'give {"entities": [...], "relationships": [...]}';
@@ -157,11 +159,45 @@ export function parseGraph(
     const a = str(r.a);
     const b = str(r.b);
     const description = str(r.description).slice(0, 500);
-    if (!refs.has(a) || !refs.has(b) || a === b || !description || !storyIds.has(str(r.story)))
-      continue;
+    const known = (x: string) => refs.has(x) || earlier.has(x);
+    if (!known(a) || !known(b) || a === b || !description || !storyIds.has(str(r.story))) continue;
     relationships.push({ a, b, description, story: str(r.story), cites: cites(r.cites) });
   }
   return { entities, relationships };
+}
+
+/** capitalized words that are not names: they open a sentence or stand for anyone */
+const NOT_A_NAME = new Set(
+  `i a an the and but or so if then when where while after before he she they we you it his her
+  their our my its this that these those there here one two every each mr mrs ms dr
+  monday tuesday wednesday thursday friday saturday sunday january february march april may june
+  july august september october november december`
+    .split(/\s+/)
+    .filter(Boolean),
+);
+
+/**
+ * Names in the stories that none of `covered` holds: capitalized words not opening a sentence
+ * ("in Korea", "a dance in Xenia"), at most 10. What the Graph step is asked about once more.
+ */
+export function uncovered(texts: readonly string[], covered: readonly string[]): string[] {
+  const have = new Set(covered.flatMap((c) => matchKey(c).split(' ')).filter(Boolean));
+  const out: string[] = [];
+  for (const text of texts) {
+    for (const sentence of text.split(/(?<=[.!?]["”’)]?)\s+/)) {
+      const words = sentence.split(/\s+/);
+      for (let i = 1; i < words.length; i++) {
+        const w = words[i]!.replace(/^[^\p{L}]+|[^\p{L}]+$/gu, '').replace(/['’]s$/u, '');
+        if (!/^\p{Lu}/u.test(w) || w.length < 2) continue;
+        const key = matchKey(w);
+        if (!key || NOT_A_NAME.has(key) || NOT_A_NAME.has(key.replace(/s$/, '')) || have.has(key))
+          continue;
+        if (!out.includes(w)) out.push(w);
+        if (out.length >= 10) return out;
+      }
+    }
+  }
+  return out;
 }
 
 /** case and the two apostrophes alike, one character for one, so places line up */
@@ -290,7 +326,7 @@ export async function graphStep(o: {
     .filter(Boolean)
     .join('\n\n');
 
-  const { value: raw, calls } = await runWithTools(o.chat, {
+  const first = await runWithTools(o.chat, {
     system: GRAPH_SYSTEM,
     task,
     tools,
@@ -298,6 +334,50 @@ export async function graphStep(o: {
     signal: o.signal,
     parse: (v) => parseGraph(v, new Set(sRef.keys())),
   });
+  const raw = first.value;
+  let calls = first.calls;
+  // names the stories hold that the answer left out ("in Korea"): asked about once more, alone
+  const missing = uncovered(
+    [...sRef.values()].map((x) => x.text),
+    [
+      ...o.names,
+      ...o.known.flatMap((k) => [k.name, ...k.aliases]),
+      ...raw.entities.flatMap((e) => [e.name, ...e.mentions.flatMap((m) => m.words)]),
+    ],
+  );
+  if (missing.length > 0) {
+    try {
+      const more = await runWithTools(o.chat, {
+        system: GRAPH_SYSTEM,
+        task: `${task}\n\nYour answer named: ${raw.entities.map((e) => e.name).join(', ') || 'nobody'}.\nThese names are in the stories but not in your answer: ${missing.join(', ')}. For each that is a person, place or thing, give it the same way, with the relationships the lines tell; leave out the rest. Its relationships may name the entities of your answer by their refs (${raw.entities.map((e) => `${e.ref} ${e.name}`).join(', ')}).`,
+        tools: [],
+        maxToolCalls: 0,
+        maxCalls: 2,
+        signal: o.signal,
+        parse: (v) => parseGraph(v, new Set(sRef.keys()), new Set(raw.entities.map((e) => e.ref))),
+      });
+      calls += more.calls;
+      const taken = new Set(raw.entities.map((e) => e.ref));
+      const rename = new Map<string, string>();
+      for (const e of more.value.entities) {
+        if (raw.entities.some((x) => matchKey(x.name) === matchKey(e.name) && x.type === e.type))
+          continue;
+        let ref = e.ref;
+        while (taken.has(ref)) ref = `${ref}+`;
+        taken.add(ref);
+        rename.set(e.ref, ref);
+        raw.entities.push({ ...e, ref });
+      }
+      for (const r of more.value.relationships) {
+        const a = rename.get(r.a) ?? (raw.entities.some((e) => e.ref === r.a) ? r.a : null);
+        const b = rename.get(r.b) ?? (raw.entities.some((e) => e.ref === r.b) ? r.b : null);
+        if (a && b && a !== b) raw.relationships.push({ ...r, a, b });
+      }
+    } catch (e) {
+      // the first answer stands; only a cancel is passed on
+      if (o.signal?.aborted) throw e;
+    }
+  }
   let dropped = 0;
   const proposed = raw.entities.length + raw.relationships.length;
   const left: Array<{ what: string; why: string }> = [];

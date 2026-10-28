@@ -948,6 +948,17 @@ export async function demoFetch(method: string, path: string, body?: unknown): P
       stories: n.stories,
     }));
   }
+  // the demo's entities are its notes: a new name or type changes the note; merge and remove
+  // need the real graph
+  if (what === 'entities' && id && !sub && method === 'PATCH') {
+    const n = noteOf(a, id);
+    if (typeof b.name === 'string' && b.name.trim()) n.title = b.name.trim();
+    if (b.type === 'person' || b.type === 'place') n.type = b.type;
+    if (b.type === 'thing') n.type = 'object';
+    n.revised = now();
+    persist();
+    return { ok: true };
+  }
   if (what === 'entities' && id && !sub && method === 'GET') {
     const n = noteOf(a, id);
     const type = ENTITY_TYPE[n.type];

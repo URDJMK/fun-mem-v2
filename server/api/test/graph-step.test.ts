@@ -293,6 +293,53 @@ describe('graphStep', () => {
     expect(relOf(p, 'Noah Kim’s mother', 'Noah Kim')!.description).toBe('Noah Kim’s mother');
   });
 
+  it('asks once more about names in the stories its answer left out', async () => {
+    const graph = structuredClone(HAPPY);
+    graph.entities = graph.entities.filter((e) => e.name !== 'Korea');
+    const users: string[] = [];
+    let graphCalls = 0;
+    const chat: ChatModel = {
+      id: 'scripted-recall',
+      complete: async (system, user) => {
+        if (system.startsWith(GRAPH_SYSTEM)) {
+          users.push(user);
+          graphCalls++;
+          return JSON.stringify({
+            result:
+              graphCalls === 1
+                ? graph
+                : {
+                    entities: [
+                      {
+                        ref: 'e1',
+                        name: 'Korea',
+                        type: 'place',
+                        match: 'new',
+                        mentions: [mention('S2', ['Korea'], 'Where the soup comes from.', ['L4'])],
+                      },
+                    ],
+                    relationships: [],
+                  },
+          });
+        }
+        const n = (user.match(/^\d+\. /gm) ?? []).length;
+        return JSON.stringify({
+          result: {
+            rulings: Array.from({ length: n }, (_, i) => ({ sentence: i, verdict: 'supported' })),
+          },
+        });
+      },
+    };
+    const p = await run(chat);
+    expect(graphCalls).toBe(2);
+    expect(users[1]).toMatch(/not in your answer: Korea\./);
+    expect(p.entities.map((e) => e.name)).toContain('Korea');
+    // nothing left out: no second question
+    graphCalls = 0;
+    await run(model(HAPPY));
+    expect(graphCalls).toBe(0);
+  });
+
   it('keeps at most three things from a story', async () => {
     const graph = structuredClone(HAPPY);
     const things = ['the pot', 'the spoon', 'the bowl', 'the table'];

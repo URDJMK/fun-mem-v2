@@ -167,6 +167,23 @@ export const listEntities = (archive: string) =>
 export const getEntity = (archive: string, id: string) =>
   apiFetch<EntityDetail>('GET', `/archives/${archive}/entities/${id}`);
 
+/** a new name (the old one kept as an alias) or type; 409 `taken` names the entity to merge with */
+export const changeEntity = (
+  archive: string,
+  id: string,
+  change: { name?: string; type?: EntityType },
+) => apiFetch<{ ok: true }>('PATCH', `/archives/${archive}/entities/${id}`, change);
+
+/** `from` merged into `keep`: its stories, relationships and names; then it is gone */
+export const mergeEntity = (archive: string, keep: string, from: string) =>
+  apiFetch<{ ok: true }>('POST', `/archives/${archive}/entities/${keep}/merge`, { from });
+
+export const removeEntity = (archive: string, id: string) =>
+  apiFetch<{ ok: true }>('DELETE', `/archives/${archive}/entities/${id}`);
+
+export const removeRelationship = (archive: string, id: string) =>
+  apiFetch<{ ok: true }>('DELETE', `/archives/${archive}/relationships/${id}`);
+
 export interface Occurrence {
   sourceId: string;
   snippet: string;
