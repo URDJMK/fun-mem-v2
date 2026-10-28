@@ -48,6 +48,8 @@ export interface CoachRequest {
   asked: string[];
   /** the interviewer chose a move other than the one suggested */
   want: Exclude<Move, 'wait'> | null;
+  /** what the interviewer has written down so far: their spellings are the right ones */
+  notes: string[];
 }
 
 export interface Suggestion {
@@ -106,6 +108,7 @@ export function readCoachRequest(raw: unknown): CoachRequest | { error: string }
     threads: list(r.threads, 12, 80),
     asked: list(r.asked, 30, 200),
     want,
+    notes: list(r.notes, 20, 200).slice(-12),
   };
 }
 
@@ -119,6 +122,7 @@ How oral historians interview, which you follow:
 - Painful subjects (illness, loss, war, hard times) only after about fifteen minutes, gently, and never pushed. If the narrator deflects or says they would rather not talk about something, let it go and change topic.
 - Watch for tiredness, and put it before any thread: answers of a few words, "I don't remember", or flat replies like "It was fine", especially after an hour. Then suggest a break, or after sixty minutes close: a reflective last question (what they would want the family to know, how they would like to be remembered), then thanks. Close by about ninety minutes in any case.
 - Refer only to what was actually said. Never invent details about the narrator's life.
+- The transcript is speech-to-text, and it mishears names, places, schools and acronyms, especially with an accent. The interviewer's own notes, when there are any, spell them right. When a word in the transcript looks like a mishearing of something in the notes ("THCL" where a note says "NLCS"), it IS that: write the notes' spelling in your question and threads, never the transcript's. A note can also show what the interviewer wants to come back to.
 
 Reply with ONE JSON object and nothing else:
 {"move":"follow_up|change_topic|wait|break|close","kind":"detail|meaning|restate|who_when|reflect|null","question":"the exact words to say, addressed to the narrator","reason":"why, in under twelve words","threads":["things mentioned but not explored, 2-6 words each"],"topic":"for change_topic: where to go next, else null"}
@@ -135,6 +139,7 @@ export function coachPrompt(req: CoachRequest): string {
     `Threads parked earlier: ${req.threads.join('; ') || 'none'}`,
     `Questions already asked (do not repeat): ${req.asked.slice(-12).join(' | ') || 'none'}`,
   ];
+  if (req.notes.length) parts.push(`The interviewer's notes: ${req.notes.join(' | ')}`);
   if (req.want) {
     parts.push(
       `The interviewer has chosen to ${req.want.replace('_', ' ')}: the move must be "${req.want}".`,
@@ -269,48 +274,262 @@ export async function suggest(
   return s;
 }
 
-/** at most one suggestion per person every few seconds, so a stuck page cannot run up a bill */
+/* ── today's topics, from what the interviewer said ─────── */
+
+export interface TopicsRequest {
+  narrator: string;
+  /** the interviewer's answer to "what would you like to talk about today?" */
+  about: string;
+}
+
+export interface FreeTopic {
+  label: string;
+  /** one open invitation to begin it with */
+  opener: string;
+}
+
+export function readTopicsRequest(raw: unknown): TopicsRequest | { error: string } {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return { error: 'expected an object' };
+  const r = raw as Record<string, unknown>;
+  const narrator = clip(r.narrator, 80);
+  const about = clip(r.about, 1500);
+  if (!narrator) return { error: 'narrator is required' };
+  if (!about) return { error: 'about is required' };
+  return { narrator, about };
+}
+
+export const TOPICS_SYSTEM = `Someone is about to record an oral history interview with a member of their family. They have just said, out loud, what today's interview is about. List the topics they named, so an interview assistant can raise them one at a time.
+
+- Use only what they said. A topic can be anything: a school, a place, a job, a war, a person, a period of life.
+- If they said the interview is about the person's whole life, their life in general, or anything they like, reply with an empty list: the assistant then walks through a life story.
+- Each topic has a short label (one to four words, as a heading) and an opener: one open invitation, addressed to the narrator, in plain warm words, beginning "Tell me about" or "Describe". Never a yes/no question.
+
+Reply with ONE JSON object and nothing else:
+{"topics":[{"label":"...","opener":"..."}]}`;
+
+/** a yes/no question, which never opens a topic */
+const CLOSED = /^(?:can|could|did|do|does|was|were|is|are|have|had|would)\s+you\b/i;
+
+/** The model's topics, checked: at most five, each with a heading and an open opener. */
+export function readTopics(text: string): FreeTopic[] | null {
+  const start = text.indexOf('{');
+  const end = text.lastIndexOf('}');
+  if (start < 0 || end <= start) return null;
+  let j: { topics?: unknown };
+  try {
+    j = JSON.parse(text.slice(start, end + 1)) as { topics?: unknown };
+  } catch {
+    return null;
+  }
+  if (!Array.isArray(j.topics)) return null;
+  const out: FreeTopic[] = [];
+  for (const t of j.topics) {
+    if (!t || typeof t !== 'object') continue;
+    const label = clip((t as Record<string, unknown>).label, 40);
+    const opener = clip((t as Record<string, unknown>).opener, 200);
+    if (!label || !opener || CLOSED.test(opener)) continue;
+    if (out.some((o) => o.label.toLowerCase() === label.toLowerCase())) continue;
+    out.push({ label, opener });
+  }
+  return out.slice(0, 5);
+}
+
+/** Today's topics in the interviewer's words; an empty list means the whole life. */
+export async function suggestTopics(
+  model: ChatModel | null | undefined,
+  req: TopicsRequest,
+  signal?: AbortSignal,
+): Promise<FreeTopic[]> {
+  if (!model) throw new CoachError('not_configured');
+  let text: string;
+  try {
+    text = await model.complete(
+      TOPICS_SYSTEM,
+      `Narrator: ${req.narrator}\nWhat the interviewer said today is about: "${req.about}"`,
+      { signal, temperature: 0.2, priority: 'high', timeoutMs: 9000 },
+    );
+  } catch {
+    throw new CoachError('unavailable');
+  }
+  const topics = readTopics(text);
+  if (!topics) throw new CoachError('unreadable');
+  return topics;
+}
+
+/* ── corrections: the notes' spellings, back in the transcript ── */
+
+export interface CorrectionsRequest {
+  notes: string[];
+  /** the transcript lines said near the notes, by id */
+  lines: Array<{ id: number; text: string }>;
+}
+
+export interface Correction {
+  id: number;
+  /** the words as they were transcribed, exactly as they appear in the line */
+  from: string;
+  /** the same words as the notes spell them */
+  to: string;
+}
+
+export function readCorrectionsRequest(raw: unknown): CorrectionsRequest | { error: string } {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return { error: 'expected an object' };
+  const r = raw as Record<string, unknown>;
+  const notes = (Array.isArray(r.notes) ? r.notes : [])
+    .map((n) => clip(n, 300))
+    .filter(Boolean)
+    .slice(0, 60);
+  const lines: CorrectionsRequest['lines'] = [];
+  for (const l of Array.isArray(r.lines) ? r.lines.slice(0, 400) : []) {
+    if (!l || typeof l !== 'object') continue;
+    const id = (l as Record<string, unknown>).id;
+    const text = clip((l as Record<string, unknown>).text, 600);
+    if (typeof id === 'number' && Number.isInteger(id) && text) lines.push({ id, text });
+  }
+  if (notes.length === 0) return { error: 'notes are required' };
+  if (lines.length === 0) return { error: 'lines are required' };
+  return { notes, lines };
+}
+
+export const CORRECTIONS_SYSTEM = `An oral history interview was transcribed by speech-to-text, which often mishears names, places, schools and acronyms, especially in accented speech. While it was recorded, the interviewer wrote notes by hand, and the notes spell those words right.
+
+Find the words in the transcript lines that are the speech-to-text's mishearing of something written in the notes: "THCL" in a line where the notes say "NLCS", or "Sole" where the notes say "Seoul". Only words that plausibly were misheard from a word in the notes; never an ordinary word that happens to differ, never a rewording, never a guess without a note behind it.
+
+Reply with ONE JSON object and nothing else:
+{"fixes":[{"id":<line id>,"from":"the words exactly as they appear in that line","to":"the words as the notes spell them"}]}
+No fixes: {"fixes":[]}`;
+
+/** The model's fixes, each checked against its line and the notes; an unfounded one is dropped. */
+export function readCorrections(text: string, req: CorrectionsRequest): Correction[] | null {
+  const start = text.indexOf('{');
+  const end = text.lastIndexOf('}');
+  if (start < 0 || end <= start) return null;
+  let j: { fixes?: unknown };
+  try {
+    j = JSON.parse(text.slice(start, end + 1)) as { fixes?: unknown };
+  } catch {
+    return null;
+  }
+  if (!Array.isArray(j.fixes)) return null;
+  const byId = new Map(req.lines.map((l) => [l.id, l.text]));
+  const notes = req.notes.join('\n').toLowerCase();
+  const out: Correction[] = [];
+  for (const f of j.fixes) {
+    if (!f || typeof f !== 'object') continue;
+    const r = f as Record<string, unknown>;
+    const id = typeof r.id === 'number' ? r.id : NaN;
+    const line = byId.get(id);
+    const from = clip(r.from, 80);
+    const to = clip(r.to, 80);
+    // the words must be in the line, and the spelling must come from the notes
+    if (!line || !from || !to || from === to || !line.includes(from)) continue;
+    if (!notes.includes(to.toLowerCase())) continue;
+    if (out.some((o) => o.id === id && o.from === from)) continue;
+    out.push({ id, from, to });
+  }
+  return out.slice(0, 100);
+}
+
+/** Where the transcript misheard what the notes spell right. */
+export async function suggestCorrections(
+  model: ChatModel | null | undefined,
+  req: CorrectionsRequest,
+  signal?: AbortSignal,
+): Promise<Correction[]> {
+  if (!model) throw new CoachError('not_configured');
+  const notes = req.notes.map((n) => `- ${n}`).join('\n');
+  const lines = req.lines.map((l) => `[${l.id}] ${l.text}`).join('\n');
+  let text: string;
+  try {
+    text = await model.complete(
+      CORRECTIONS_SYSTEM,
+      `The interviewer's notes:\n${notes}\n\nTranscript lines:\n${lines}`,
+      { signal, temperature: 0, timeoutMs: 45_000 },
+    );
+  } catch {
+    throw new CoachError('unavailable');
+  }
+  const fixes = readCorrections(text, req);
+  if (!fixes) throw new CoachError('unreadable');
+  return fixes;
+}
+
+/* ── the routes ─────────────────────────────────────────── */
+
+export type CoachAction = 'suggest' | 'topics' | 'corrections';
+
+/**
+ * One coach call, from the request's JSON to the answer. The route and the demo dev server
+ * (apps/web/vite.config.ts) both answer through this, so they cannot drift apart.
+ */
+export async function answerCoach(
+  action: CoachAction,
+  model: ChatModel | null | undefined,
+  raw: unknown,
+  signal?: AbortSignal,
+): Promise<{ status: 200 | 400 | 502 | 503; body: unknown }> {
+  const bad = (error: string) => ({ status: 400 as const, body: { error, code: 'bad_request' } });
+  try {
+    if (action === 'suggest') {
+      const req = readCoachRequest(raw);
+      if ('error' in req) return bad(req.error);
+      return { status: 200, body: await suggest(model, req, signal) };
+    }
+    if (action === 'topics') {
+      const req = readTopicsRequest(raw);
+      if ('error' in req) return bad(req.error);
+      return { status: 200, body: { topics: await suggestTopics(model, req, signal) } };
+    }
+    const req = readCorrectionsRequest(raw);
+    if ('error' in req) return bad(req.error);
+    return { status: 200, body: { fixes: await suggestCorrections(model, req, signal) } };
+  } catch (e) {
+    const code = e instanceof CoachError ? e.code : 'unavailable';
+    return { status: code === 'not_configured' ? 503 : 502, body: { error: 'no answer', code } };
+  }
+}
+
+/** at most one call of each kind per person every few seconds, so a stuck page cannot run up a bill */
 const MIN_GAP_MS = 3000;
 
 export function registerCoachRoutes(app: App, deps: AppDeps): void {
   const last = new Map<string, number>();
-  app.post(
-    '/v1/archives/:archiveId/interview/suggest',
-    bodyLimit({
-      maxSize: 64 * 1024,
-      onError: (c) => c.json({ error: 'the request is too large', code: 'too_large' }, 413),
-    }),
-    async (c) => {
-      const archiveId = (c.req.param('archiveId') ?? '').toLowerCase();
-      const userId = c.get('userId');
-      const role = await memberRole(deps.pool, userId, archiveId);
-      if (role === null) return c.json({ error: 'not found' }, 404);
-      if (!WRITE_ROLES.includes(role)) {
-        return c.json(
-          { error: 'only people who can add memories can record interviews', code: 'forbidden' },
-          403,
-        );
-      }
-      const now = Date.now();
-      const since = now - (last.get(userId) ?? 0);
-      if (since < MIN_GAP_MS) {
-        // when to come back: a page that waits that long gets its suggestion, and need not take
-        // the refusal for the model being down
-        const retryAfter = Math.max(1, Math.ceil((MIN_GAP_MS - since) / 1000));
-        return c.json({ error: 'one suggestion at a time', code: 'busy', retryAfter }, 429, {
-          'retry-after': String(retryAfter),
-        });
-      }
-      last.set(userId, now);
-
-      const req = readCoachRequest(await c.req.json().catch(() => null));
-      if ('error' in req) return c.json({ error: req.error, code: 'bad_request' }, 400);
-      try {
-        return c.json(await suggest(deps.interviewChat, req, c.req.raw.signal));
-      } catch (e) {
-        const code = e instanceof CoachError ? e.code : 'unavailable';
-        return c.json({ error: 'no suggestion', code }, code === 'not_configured' ? 503 : 502);
-      }
-    },
-  );
+  const route = (action: CoachAction, maxSize: number) =>
+    app.post(
+      `/v1/archives/:archiveId/interview/${action}`,
+      bodyLimit({
+        maxSize,
+        onError: (c) => c.json({ error: 'the request is too large', code: 'too_large' }, 413),
+      }),
+      async (c) => {
+        const archiveId = (c.req.param('archiveId') ?? '').toLowerCase();
+        const userId = c.get('userId');
+        const role = await memberRole(deps.pool, userId, archiveId);
+        if (role === null) return c.json({ error: 'not found' }, 404);
+        if (!WRITE_ROLES.includes(role)) {
+          return c.json(
+            { error: 'only people who can add memories can record interviews', code: 'forbidden' },
+            403,
+          );
+        }
+        const key = `${userId}:${action}`;
+        const now = Date.now();
+        const since = now - (last.get(key) ?? 0);
+        if (since < MIN_GAP_MS) {
+          // when to come back: a page that waits that long gets its answer, and need not take
+          // the refusal for the model being down
+          const retryAfter = Math.max(1, Math.ceil((MIN_GAP_MS - since) / 1000));
+          return c.json({ error: 'one at a time', code: 'busy', retryAfter }, 429, {
+            'retry-after': String(retryAfter),
+          });
+        }
+        last.set(key, now);
+        const raw = await c.req.json().catch(() => null);
+        const out = await answerCoach(action, deps.interviewChat, raw, c.req.raw.signal);
+        return c.json(out.body, out.status);
+      },
+    );
+  route('suggest', 64 * 1024);
+  route('topics', 8 * 1024);
+  route('corrections', 320 * 1024);
 }

@@ -3,20 +3,27 @@ import { callName } from '../lib/keyterms';
 import { gsap } from 'gsap';
 import { Flip } from 'gsap/Flip';
 import {
+  linesNearNotes,
+  noteTerms,
+  respell,
+  resolveVoices,
   speakerLabels,
   writeDraft,
   type Draft,
   type Mode,
+  type Note,
   type Person,
+  type Respelling,
   type Setup,
   type StartFailure,
 } from '../lib/interview';
 import type { LiveStatus, Segment } from '../lib/live';
-import { coachSuggest } from '../lib/api';
-import { asks, nameIn, sameName, topicsIn } from '../lib/listen';
+import { coachSuggest, interviewCorrections, interviewTopics } from '../lib/api';
+import { asks, nameIn, sameName, topicsIn, wordCount } from '../lib/listen';
 import { labelScript, TOPICS } from '../lib/questions';
 import { useRecording } from '../lib/useRecording';
 import { Coach } from './Coach';
+import { Notes } from './Notes';
 import { FloatingTranscript } from './FloatingTranscript';
 import { Avatar, Icon } from './ui';
 import { Clock, Level } from './Transcript';
@@ -36,9 +43,20 @@ type Phase = 'hello' | 'about' | 'label' | 'interview';
 
 /**
  * seconds of quiet after Firepit has what it needs to finish a setup step, before it moves on by
- * itself. Setup only: once the interview begins, nothing moves on without the interviewer.
+ * itself (counted from SETTLE_FROM). Setup only: once the interview begins, nothing moves on
+ * without the interviewer. Quiet is measured from when the last words were SAID, not from when
+ * the transcription came back (a second or more later), so this is real silence in the room.
  */
-const SETTLE = 4;
+const SETTLE = 1.5;
+/** longer while people introduce themselves: there is a pause before each next one speaks */
+const SETTLE_HELLO = 2.5;
+const SETTLE_FROM = 0.5;
+/** words still being worked out that are this short ("mm-hm", "yes") do not break a silence */
+const NOT_TALK_WORDS = 3;
+/** the answer to "what would you like to talk about?" has been given once it is this long */
+const ABOUT_WORDS = 5;
+/** the opening label has been read once the interviewer has said this much */
+const LABEL_WORDS = 10;
 
 const reduceMotion = () =>
   typeof window !== 'undefined' && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
@@ -69,7 +87,8 @@ export function Studio({
   mode: Mode;
   startedAt: string;
   flipFrom: Flip.FlipState | null;
-  onEnd: (d: Draft, failed: StartFailure | null) => void;
+  /** `audio` is each source's whole recording, for the second transcription at the end */
+  onEnd: (d: Draft, failed: StartFailure | null, audio: Blob[]) => void;
 }) {
   const [setup, setSetup] = useState<Setup>(() => ({
     about: '',
@@ -85,6 +104,13 @@ export function Studio({
   const [phaseFrom, setPhaseFrom] = useState(0);
   const setupRef = useRef(setup);
   setupRef.current = setup;
+  const [notes, setNotes] = useState<Note[]>([]);
+  const notesRef = useRef(notes);
+  notesRef.current = notes;
+  // what the notes showed the transcript mishears, made right everywhere from then on
+  const [respellings, setRespellings] = useState<Respelling[]>([]);
+  const respellRef = useRef(respellings);
+  respellRef.current = respellings;
   const failure = useRef<StartFailure | null>(null);
   const ended = useRef(false);
 
@@ -93,7 +119,33 @@ export function Studio({
     startedAt,
     segments: recording.rec?.segments ?? [],
     setup: setupRef.current,
+    notes: notesRef.current,
+    keyterms: [...(recording.rec?.keyterms ?? [])],
+    respell: respellRef.current,
   });
+
+  /**
+   * A new note with a name or acronym in it is checked at once against what was just said: if
+   * the transcript misheard it ("THCL" for "NLCS"), the coach and the transcript use the notes'
+   * spelling from here on.
+   */
+  function changeNotes(next: Note[]) {
+    const added = next.length > notes.length ? next[next.length - 1] : undefined;
+    setNotes(next);
+    if (!added || noteTerms([added.text]).length === 0) return;
+    const lines = linesNearNotes([added], segments);
+    if (lines.length === 0) return;
+    interviewCorrections(archiveId, { notes: next.map((n) => n.text), lines })
+      .then(({ fixes }) =>
+        setRespellings((r) => {
+          const out = [...r];
+          for (const { from, to } of fixes)
+            if (!out.some((x) => x.from === from)) out.push({ from, to });
+          return out;
+        }),
+      )
+      .catch(() => undefined);
+  }
   const recording = useRecording({
     archiveId,
     subjectName: name,
@@ -111,13 +163,13 @@ export function Studio({
   async function finish() {
     if (ended.current) return;
     ended.current = true;
-    await recording.finish();
+    const audio = await recording.finish();
     const d = draft();
     writeDraft(archiveId, d);
-    onEnd(d, failure.current);
+    onEnd(d, failure.current, audio);
   }
 
-  useEffect(() => writeDraft(archiveId, draft()), [setup]);
+  useEffect(() => writeDraft(archiveId, draft()), [setup, notes, respellings]);
 
   // Wake the coach's model while setup goes on. On NVIDIA's free service the first call after a
   // quiet spell takes up to nine seconds (measured), every later one about one; without this the
@@ -140,17 +192,30 @@ export function Studio({
     return () => ctrl.abort();
   }, []);
 
-  // the names of the people in the room, for Deepgram to spell right from here on
+  // the names of the people in the room, and the names and acronyms in the notes, for Deepgram
+  // to spell right from here on
   const peopleKey = setup.people.map((p) => p.call ?? p.name).join('|');
+  const terms = noteTerms(notes.map((n) => n.text));
+  const termsKey = terms.join('|');
   useEffect(() => {
-    recording.addNames(setup.people.flatMap((p) => [p.name, p.call ?? '']).filter(Boolean));
-  }, [peopleKey]);
+    recording.addNames(setup.people.flatMap((p) => [p.name, p.call ?? '']).filter(Boolean), terms);
+  }, [peopleKey, termsKey]);
 
   /* ── quiet: how long since anyone said anything ───────── */
+  // A finished sentence comes back a second or more after it was said; its own end time says
+  // when the talking stopped. Words still being worked out mean someone is talking now, unless
+  // they are only an "mm-hm".
   const lastSound = useRef(performance.now());
-  const soundKey = `${segments.length}:${partials.map((p) => p.text).join('|')}`;
+  const talking = partials.filter((p) => wordCount(p.text) >= NOT_TALK_WORDS);
+  const soundKey = `${segments.length}:${talking.map((p) => p.text).join('|')}`;
   useEffect(() => {
-    lastSound.current = performance.now();
+    const now = performance.now();
+    const last = segments[segments.length - 1];
+    const heardAt =
+      talking.length > 0 || !last || !rec
+        ? now
+        : now - Math.max(0, rec.elapsed() - last.end) * 1000;
+    lastSound.current = Math.min(now, Math.max(lastSound.current, heardAt));
   }, [soundKey]);
   const [, tick] = useState(0);
   useEffect(() => {
@@ -179,37 +244,82 @@ export function Studio({
   }, [phase, segments.length, partials.map((p) => p.text).join('|')]);
 
   /* ── about: pick the topics out of the answer ─────────── */
+  // The AI reads the topics out of the interviewer's own words, whatever they are ("his years at
+  // NLCS"); the bank's word lists stand in when it cannot be reached. Nothing named, as in "her
+  // life in general", is a life story: the whole bank, in order.
   const [dismissed, setDismissed] = useState<string[]>([]);
+  const aboutSaid = since.map((s) => s.text).join(' ');
+  const aboutWords = wordCount(aboutSaid);
   useEffect(() => {
     if (phase !== 'about') return;
-    const said = since.map((s) => s.text).join(' ');
-    const heard = topicsIn(said).filter((t) => !dismissed.includes(t));
+    const heard = topicsIn(aboutSaid).filter((t) => !dismissed.includes(t));
     setSetup((s) => ({
       ...s,
       topics: [...new Set([...s.topics, ...heard])],
       about: s.about || firstSentence(since[0]?.text ?? ''),
     }));
   }, [phase, segments.length]);
+  const [reading, setReading] = useState<string | null>(null);
+  const [read, setRead] = useState('');
+  const [removedFree, setRemovedFree] = useState<string[]>([]);
+  useEffect(() => {
+    if (phase !== 'about' || aboutWords < ABOUT_WORDS || quiet < SETTLE_FROM) return;
+    if (reading !== null || read === aboutSaid) return;
+    const asked = aboutSaid;
+    setReading(asked);
+    interviewTopics(archiveId, { narrator: name, about: asked })
+      .then(({ topics }) =>
+        setSetup((s) => ({
+          ...s,
+          free: topics.filter((t) => !removedFree.includes(t.label)),
+          // the AI's topics replace the word lists' guesses, which it has read the same words for
+          topics: topics.length ? s.topics.filter((id) => !topicsIn(asked).includes(id)) : s.topics,
+        })),
+      )
+      .catch(() => undefined)
+      .finally(() => {
+        setRead(asked);
+        setReading(null);
+      });
+  });
 
   /* ── when to move on by itself ────────────────────────── */
   const bound = setup.people.filter((p) => Object.values(setup.voices).includes(p.id));
+  const free = setup.free ?? [];
   // the audio label: who is speaking, when, and who is being interviewed, read by the interviewer
   const script = labelScript(
     setup.people.find((p) => p.role === 'asker')?.call ?? interviewer,
     name,
-    TOPICS.filter((t) => setup.topics.includes(t.id)).map((t) => t.label),
+    [
+      ...free.map((t) => t.label),
+      ...TOPICS.filter((t) => setup.topics.includes(t.id)).map((t) => t.label),
+    ],
     project,
   );
+  // the interviewer's voice, once known; until then anyone's words count
+  const askerVoices = Object.entries(setup.voices)
+    .filter(([, id]) => setup.people.find((p) => p.id === id)?.role === 'asker')
+    .map(([v]) => v);
+  const byAsker = (s: Segment) => askerVoices.length === 0 || askerVoices.includes(s.speaker);
   const ready =
     phase === 'hello'
       ? bound.some((p) => p.role === 'teller') && bound.length >= Math.min(2, setup.people.length)
       : phase === 'about'
-        ? setup.topics.length > 0
+        ? // any answer will do: what it names is read out of it, and nothing named is a life story
+          (setup.topics.length > 0 || free.length > 0 || aboutWords >= ABOUT_WORDS) &&
+          reading === null
         : phase === 'label'
-          ? since.some((s) => asks(s.text, script))
+          ? since.some((s) => asks(s.text, script)) ||
+            wordCount(
+              since
+                .filter(byAsker)
+                .map((s) => s.text)
+                .join(' '),
+            ) >= LABEL_WORDS
           : false;
-  const counting = ready && !held && quiet >= 1 && recording.status === 'live';
-  const progress = counting ? Math.min(1, (quiet - 1) / SETTLE) : 0;
+  const counting = ready && !held && quiet >= SETTLE_FROM && recording.status === 'live';
+  const settle = phase === 'hello' ? SETTLE_HELLO : SETTLE;
+  const progress = counting ? Math.min(1, (quiet - SETTLE_FROM) / settle) : 0;
   useEffect(() => {
     if (progress < 1) return;
     if (phase === 'hello') goTo('about');
@@ -262,7 +372,13 @@ export function Studio({
     );
   }, [promptKey]);
 
-  const labels = speakerLabels(segments, mode, setup, name);
+  // once everyone is introduced, a voice nobody owns is one of the known ones (lib/interview.ts)
+  // and a word the notes showed was misheard is spelled their way
+  const heard = respell(
+    phase === 'interview' && mode === 'room' ? resolveVoices(segments, setup) : segments,
+    respellings,
+  );
+  const labels = speakerLabels(heard, mode, setup, name);
   const pending = phase === 'hello' ? unnamedVoices(since, setup) : [];
   const stepLabel = `Getting started · ${
     phase === 'hello' ? 'who’s here' : phase === 'about' ? 'today’s topic' : 'the opening'
@@ -308,12 +424,21 @@ export function Studio({
             call={call}
             interviewer={setup.people.find((p) => p.role === 'asker')?.call ?? interviewer}
             setup={setup}
-            segments={segments}
+            segments={heard}
             partials={partials}
             labels={labels}
             quiet={quiet}
             elapsed={() => rec?.elapsed() ?? 0}
             onEnding={setEnding}
+            notes={notes.map((n) => n.text)}
+            notesPanel={
+              <Notes
+                notes={notes}
+                at={() => rec?.elapsed() ?? 0}
+                terms={terms}
+                onChange={changeNotes}
+              />
+            }
           />
         ) : (
           <section className="assist-card" data-flip-id="start" ref={card} aria-live="polite">
@@ -377,6 +502,25 @@ export function Studio({
                   <Hearing quiet={quiet} what="topics" />
                   {setup.about && <p className="assist-quote">“{setup.about}”</p>}
                   <div className="assist-topics" role="group" aria-label="Topics">
+                    {free.map((t) => (
+                      <button
+                        key={`free:${t.label}`}
+                        type="button"
+                        className="chip"
+                        aria-pressed="true"
+                        title="Named by you. Tap to leave it out."
+                        onClick={() => {
+                          setSetup((s) => ({
+                            ...s,
+                            free: (s.free ?? []).filter((x) => x.label !== t.label),
+                          }));
+                          setRemovedFree((r) => [...r, t.label]);
+                          setHeld(false);
+                        }}
+                      >
+                        {t.label}
+                      </button>
+                    ))}
                     {TOPICS.map((t) => {
                       const on = setup.topics.includes(t.id);
                       return (
@@ -399,6 +543,18 @@ export function Studio({
                       );
                     })}
                   </div>
+                  {reading !== null ? (
+                    <p className="assist-note">Reading the topics out of what you said…</p>
+                  ) : (
+                    aboutWords >= ABOUT_WORDS &&
+                    free.length === 0 &&
+                    setup.topics.length === 0 && (
+                      <p className="assist-note">
+                        Nothing in particular: a life story, from childhood on. Tap a topic to
+                        choose one.
+                      </p>
+                    )
+                  )}
                 </>
               )}
 
@@ -458,7 +614,7 @@ export function Studio({
       </main>
 
       <FloatingTranscript
-        segments={segments}
+        segments={heard}
         names={labels}
         partials={partials}
         live={recording.status === 'live'}

@@ -532,6 +532,66 @@
   border: 1px solid var(--line);
   border-radius: 14px;
 }
+/* the second transcription, of the whole recording */
+.review-pass {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 10px;
+  margin: 0;
+  padding: 10px 14px;
+  border-radius: 10px;
+  font-size: 14px;
+  background: var(--soft-2);
+  color: var(--muted);
+}
+.review-pass[data-state='done'] {
+  background: var(--sage-tint);
+  color: var(--ink-3);
+}
+/* words the notes spell differently from the transcript */
+.review-fix-list,
+.review-notes {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.review-fix-list li {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 12px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--card);
+}
+.review-fix-words {
+  font-size: 14px;
+  white-space: nowrap;
+}
+.review-fix-words s {
+  color: var(--muted-2);
+}
+.review-notes li {
+  font-size: 14px;
+  line-height: 1.5;
+}
+.review-stray {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+@media (max-width: 760px) {
+  .review-fix-list li {
+    grid-template-columns: 1fr;
+    gap: 6px;
+  }
+}
 
 /* ── the coach: one suggested move at a time ──────────── */
 .coach-thinking {
@@ -645,6 +705,72 @@
 .coach-threads button:hover {
   border-color: var(--sage);
   background: var(--sage-tint);
+}
+/* the interviewer's notes: across the whole aside, above what to come back to */
+.coach-notes {
+  grid-column: 1 / -1;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 12px 14px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--card) 80%, transparent);
+}
+.coach-notes-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 4px 12px;
+}
+.coach-notes-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  max-height: 160px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.coach-notes-list li {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  font-size: 14px;
+  line-height: 1.45;
+}
+.coach-notes-time {
+  flex: none;
+  font-size: 12px;
+  color: var(--muted-2);
+  font-variant-numeric: tabular-nums;
+}
+.coach-notes-text {
+  flex: 1;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.coach-notes-remove {
+  flex: none;
+  border: 0;
+  background: none;
+  color: var(--muted-2);
+  font-size: 16px;
+  line-height: 1;
+  cursor: pointer;
+  padding: 0 4px;
+}
+.coach-notes-remove:hover {
+  color: var(--ink);
+}
+.coach-notes-input {
+  width: 100%;
+  min-height: 34px;
+}
+.coach-notes-terms {
+  margin: 0;
 }
 .coach-time {
   padding: 10px 12px;

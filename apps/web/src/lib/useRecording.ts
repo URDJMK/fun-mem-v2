@@ -22,6 +22,8 @@ export function useRecording(opts: {
   const baseTerms = useRef<string[]>([]);
   /** the people in the room, as named so far: may come before the recording has started */
   const people = useRef<string[]>([]);
+  // the names and acronyms in the interviewer's notes, kept like the people
+  const noteWords = useRef<string[]>([]);
   const [, redraw] = useState(0);
   const [status, setStatus] = useState<LiveStatus>('connecting');
   const [mic, setMic] = useState<MediaStream | null>(null);
@@ -64,7 +66,7 @@ export function useRecording(opts: {
                 { stream: s[1]!, speaker: 'call' },
               ],
           { onChange: changed, onStatus: setStatus, onFail: (f) => cb.current.onFail(f) },
-          withPeople(baseTerms.current, people.current),
+          withPeople([...noteWords.current, ...baseTerms.current], people.current),
         );
         rec.current = t;
         void t.start();
@@ -92,15 +94,22 @@ export function useRecording(opts: {
     status,
     mic,
     callEnded,
-    /** the people in the room, added to the archive's names Deepgram listens for */
-    addNames(names: string[]) {
+    /**
+     * The people in the room, and the words in the interviewer's notes (`terms`, kept whole),
+     * added to the archive's names Deepgram listens for. The notes' words come before the
+     * archive's: they are what this interview is about, and the list has a limit.
+     */
+    addNames(names: string[], terms: string[] = []) {
       // kept for the recording yet to start, and given to the one running
       people.current = names;
-      rec.current?.setKeyterms(withPeople(baseTerms.current, names));
+      noteWords.current = terms;
+      rec.current?.setKeyterms(withPeople([...terms, ...baseTerms.current], names));
     },
-    async finish() {
+    /** Stops, and hands back each source's whole recording (none in a simulation). */
+    async finish(): Promise<Blob[]> {
       await rec.current?.stop();
       streams.current.forEach((s) => s.getTracks().forEach((t) => t.stop()));
+      return rec.current?.recordings?.() ?? [];
     },
   };
 }

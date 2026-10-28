@@ -1595,6 +1595,21 @@ a.when-card:hover {
   font-size: 13px;
   font-weight: 600;
 }
+/* in the review, a turn's speaker can be changed: the name is the control */
+.live-who-select {
+  font: inherit;
+  color: inherit;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  padding: 0 2px;
+  background: transparent;
+  cursor: pointer;
+}
+.live-who-select:hover,
+.live-who-select:focus {
+  border-color: var(--line);
+  outline: none;
+}
 .live-who-sage {
   color: var(--sage-ink);
 }

@@ -101,10 +101,19 @@ export function labelScript(
 }
 
 /**
- * The topics in the order to raise them: the chosen ones (all, when none was chosen), gentle ones
- * first and anything painful last, so it comes once there is trust.
+ * The topics in the order to raise them: the ones the interviewer named in their own words
+ * first, then the chosen ones from the bank (the whole bank, a life story, when nothing was
+ * chosen or named), gentle ones first and anything painful last, so it comes once there is trust.
  */
-export function topicOrder(chosen: string[]): Topic[] {
-  const list = chosen.length ? TOPICS.filter((t) => chosen.includes(t.id)) : TOPICS;
-  return [...list.filter((t) => !t.sensitive), ...list.filter((t) => t.sensitive)];
+export function topicOrder(
+  chosen: string[],
+  free: ReadonlyArray<{ label: string; opener: string }> = [],
+): Topic[] {
+  const own: Topic[] = free.map((t) => ({
+    id: `free:${t.label}`,
+    label: t.label,
+    opener: t.opener,
+  }));
+  const list = chosen.length || own.length ? TOPICS.filter((t) => chosen.includes(t.id)) : TOPICS;
+  return [...own, ...list.filter((t) => !t.sensitive), ...list.filter((t) => t.sensitive)];
 }

@@ -1034,9 +1034,13 @@ export async function demoFetch(method: string, path: string, body?: unknown): P
     if (!r.ok) throw new DemoError(r.status, out?.code ?? null);
     return out;
   }
-  if (what === 'interview' && id === 'suggest' && method === 'POST') {
+  if (
+    what === 'interview' &&
+    (id === 'suggest' || id === 'topics' || id === 'corrections') &&
+    method === 'POST'
+  ) {
     // the dev server runs the API's own coach with the NVIDIA key from .env
-    const r = await fetch('/demo/interview-suggest', {
+    const r = await fetch(`/demo/interview/${id}`, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify(body),
