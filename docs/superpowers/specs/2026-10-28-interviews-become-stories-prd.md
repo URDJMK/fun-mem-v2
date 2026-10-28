@@ -64,6 +64,7 @@ The AI is also currently down in production: NVIDIA rejects the deployed key (40
 | D9 | The import proposes a note for **every named person and place**. A person can untick any. |
 | D10 | Architecture: approach 1 (plan → write → judge) as a **fixed, repeatable workflow**, whose AI steps **use tools** to look things up (from approach 3). Tools can read and propose; they never write. |
 | D11 | **Paraphrasing is free; only making things up fails.** The AI may reword, condense, reorder, summarize and add plain transitions ("Years later,"). It may not add an event, person, place, number, date or quote that was not told, contradict what was said, or credit one person's memory to another. A merge keeps the content of every merged note, not its exact wording. |
+| D12 | **Every note the import adds or changes carries its metadata** (7.3): when it happened, who told it, in which interview and at what point in the recording, who saved it and when, and how it was written. An update never loses metadata. |
 
 ## 4. Definitions
 
@@ -184,8 +185,9 @@ Limits:
   - direct quotes are allowed only in quotation marks and must match the transcript word for word;
   - doubt should be kept where it matters ("probably in 1946" for "I think it was 1946"); losing it is flagged on the review screen, not rejected;
   - when several people tell it, each account is attributed; a disagreement is told as both accounts;
-  - a title under 60 characters, from the story's heart, using only what the story says.
-- An extended or merged story must carry over the content of every sentence of the notes it absorbs (see 7.3).
+  - a title under 60 characters, from the story's heart, using only what the story says;
+  - the story's date (`occurred`, and `until` for a span), with the lines that give it; `~` if the speaker was unsure; none if no date was told.
+- An extended or merged story must carry over the content of every sentence of the notes it absorbs (see 7.4).
 
 ### 6.4 Step 4, Judge
 
@@ -193,7 +195,7 @@ The judge asks one question: **is anything made up?** It does not judge wording.
 
 **Code checks first** (cheap, certain). Each one fails the sentence:
 1. Every sentence has at least one citation, and every citation points to real lines or note sentences.
-2. Every name, number, date and place in a sentence appears in its cited source. Spoken numbers are compared as digits (`speech.ts`), and names by match key or alias.
+2. Every name, number, date and place in a sentence appears in its cited source, and so does the note's `occurred` date. Spoken numbers are compared as digits (`speech.ts`), and names by match key or alias.
 3. A direct quote matches its source word for word.
 4. Merges and extensions: every sentence of each absorbed note is cited by at least one sentence of the result, so no content is lost.
 5. Title: names, numbers and heavy facts must come from the story (`checkTitleFacts`); length and shape as today (`acceptTitle`).
@@ -255,8 +257,30 @@ A run that hits a budget or the deadline keeps the stories that passed, lists th
   - gains `interview_id`;
   - gains `changes jsonb`, recording each edited or merged note and the revision it replaced, for undo.
 - **`ingest_jobs.outcome`:** holds the change set and each step's output (6).
+- **`revision_reason`** (enum) gains `import`, `import-edit` and `import-merge` (today every imported note is `ai-suggestion`).
 
-### 7.3 Policy change
+### 7.3 Metadata on every note added or changed
+
+Every note the import **adds**, and every note it **updates** (an extension, an edit or a merge), gets the following. Fields that exist today are reused; the rest go in `notes.extra`.
+
+| What | Field | On add | On update |
+|---|---|---|---|
+| **When it happened** | `occurred` (fuzzy date: `1946`, `1966-06`, `~1946` when the speaker was unsure, `unknown`) and `extra.until` when the story spans years | the date the story gives, cited to the lines that say it; `~` when the speaker hedged; empty when no date was told | filled if empty, or made more precise (`1946` → `1946-04`). A **different** date is never overwritten: both are kept and shown as a disagreement (4) |
+| **When it was told** | `recorded` (timestamp) | the interview's date | the earliest telling is kept; each later telling is listed in `extra.tellings` |
+| **Who told it** | `contributors` (names) and `extra.tellers` (person note ids) | the narrator(s) | everyone who has told it, added to the list |
+| **Where it was told** | `extra.sources`: per sentence, the interview id, line range **and recording time** (`m:ss–m:ss`) | every sentence | sources of new sentences added; existing sources kept |
+| **Who saved it, and when** | the revision log: `author`, `created_at`, `reason`, `change_id` | one revision, reason `import` | one revision per changed note, reason `import-edit` or `import-merge`, all sharing the import's `change_id`, so undo can reverse them together |
+| **When it last changed** | `revised` (timestamp) | the save time | the save time |
+| **How it was written** | `extra.writtenBy`: workflow version, model ids (writer and judge), and the judge's flags (`less_certain_in_source`) | set | updated to the latest run |
+| **What it absorbed** | `extra.mergedFrom`: ids and titles of merged-away notes, with the revision each was merged at | — | on a merge |
+
+Person and place notes get the same "who told it", "where it was told", "who saved it" and "how it was written" fields. A person also gets `born` and `died` (fuzzy dates) when an interview tells them, with the same rule: filled if empty, never overwritten.
+
+The story body also ends with one readable source line, so the text stands on its own if exported: `> Told by Sunja, “Interview, 26 Oct 2026”, 0:03–3:42`. When later tellings are added, the line lists each one.
+
+On the review screen (5.2), every story shows this metadata (date, told by, interview and time range) next to its title. The date can be edited there before saving.
+
+### 7.4 Policy change
 
 `docs/ingest/conflict-policy.md` says the AI may only add sentences and may not delete notes. It changes to:
 
@@ -317,6 +341,7 @@ Expected results:
 - 100% of saved sentences cited, and none judged `made_up`, `contradicts` or `misattributed`.
 - At least 90% of sentences pass on the first try.
 - No greeting or small talk in Stories.
+- Every saved or updated note has its metadata (7.3): told by, interview, recording time for every sentence, the revision author and time, and a date wherever the interview gives one.
 - Zero duplicate people on the name-variant cases.
 - An hour-long interview finishes within the 12-minute deadline.
 
@@ -329,7 +354,8 @@ Run in CI, with scripted fake models as today:
 - aliases and match keys;
 - link resolution through aliases;
 - merge and undo (an edited and a merged note restored);
-- the review screen's change set save, all or nothing.
+- the review screen's change set save, all or nothing;
+- metadata on add and on update (7.3): dates filled but never overwritten, tellers and sources accumulated, one revision per changed note sharing the import's change id.
 
 No test calls a live AI.
 
@@ -353,7 +379,7 @@ Each phase ships on its own and gets its own implementation plan.
    - Plan targets `extends` / `merges`.
    - Merge carry-over checks, edits on the review screen.
    - Undo of edits and merges.
-   - The policy change in 7.3.
+   - The policy change in 7.4.
 
 ## 12. Risks and open questions
 
