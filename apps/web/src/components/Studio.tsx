@@ -327,6 +327,16 @@ export function Studio({
     else if (phase === 'label') goTo('interview');
   }, [progress >= 1]);
   const [ending, setEnding] = useState(false);
+  // "End interview" asks first, with keep-recording ready to press; the recording goes on meanwhile
+  const [confirmEnd, setConfirmEnd] = useState(false);
+  const endButton = useRef<HTMLButtonElement>(null);
+  const keepButton = useRef<HTMLButtonElement>(null);
+  const askedEnd = useRef(false);
+  useEffect(() => {
+    if (confirmEnd) keepButton.current?.focus();
+    else if (askedEnd.current) endButton.current?.focus();
+    askedEnd.current = confirmEnd;
+  }, [confirmEnd]);
 
   /* ── the button becomes the assistant ─────────────────── */
   const root = useRef<HTMLDivElement>(null);
@@ -406,14 +416,49 @@ export function Studio({
             <Icon name={rec?.paused() ? 'play' : 'pause'} size={14} />
             {rec?.paused() ? 'Resume' : 'Pause'}
           </button>
-          <button
-            type="button"
-            className={ending ? 'btn btn-primary btn-sm coach-end' : 'btn btn-ink btn-sm'}
-            disabled={recording.status === 'stopping'}
-            onClick={() => void finish()}
-          >
-            <Icon name="stop" size={12} /> End interview
-          </button>
+        </div>
+        {/* apart from Pause, so one can't be pressed for the other */}
+        <div className="row studio-bar-end">
+          {confirmEnd ? (
+            <div
+              className="row studio-end-confirm"
+              role="group"
+              aria-labelledby="end-question"
+              onKeyDown={(e) => {
+                if (e.key === 'Escape') setConfirmEnd(false);
+              }}
+            >
+              <span id="end-question" className="small">
+                End the interview?
+              </span>
+              <button
+                ref={keepButton}
+                type="button"
+                className="btn btn-outline btn-sm"
+                onClick={() => setConfirmEnd(false)}
+              >
+                Keep recording
+              </button>
+              <button
+                type="button"
+                className="btn btn-ink btn-sm"
+                disabled={recording.status === 'stopping'}
+                onClick={() => void finish()}
+              >
+                <Icon name="stop" size={12} /> End and review
+              </button>
+            </div>
+          ) : (
+            <button
+              ref={endButton}
+              type="button"
+              className={ending ? 'btn btn-primary btn-sm coach-end' : 'btn btn-ink btn-sm'}
+              disabled={recording.status === 'stopping'}
+              onClick={() => setConfirmEnd(true)}
+            >
+              <Icon name="stop" size={12} /> End interview
+            </button>
+          )}
         </div>
       </header>
 

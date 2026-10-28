@@ -10,12 +10,14 @@ import {
   applyCorrections,
   clock,
   linesNearNotes,
+  newSetup,
   noteTerms,
   respell,
   resolveVoices,
   speakerLabels,
-  tellerVoice,
+  tellerVoices,
   turnsOf,
+  unsettledVoices,
   writeDraft,
   type Draft,
 } from '../lib/interview';
@@ -24,6 +26,9 @@ import { interviewName } from '../lib/interview-name';
 import { Transcript } from './Transcript';
 
 type Pass = 'working' | 'done' | 'failed' | 'none';
+
+/** the answer for a voice that is none of the people introduced */
+const OTHER = 'other';
 
 /**
  * After the interview. First the whole recording is transcribed once more (the live words were
@@ -125,31 +130,31 @@ export function InterviewReview({
 
   const labels = speakerLabels(segments, draft.mode, draft.setup, name);
   const speakers = [...new Set(segments.map((s) => s.speaker))];
-  const said = (sp: string) =>
-    segments.filter((s) => s.speaker === sp).reduce((n, s) => n + s.text.length, 0);
-  const known = tellerVoice(draft);
-  // the person being remembered: known from the introductions, or else whoever talked most
-  const [teller, setTeller] = useState(
-    () => known ?? [...speakers].sort((a, b) => said(b) - said(a))[0] ?? '',
-  );
+  const people = draft.setup?.people ?? newSetup(name, 'The interviewer').people;
+  // who each voice the introductions didn't settle is, as the interviewer says: a person's id, or
+  // OTHER for someone who isn't one of them. Nothing is chosen for them.
+  const [answers, setAnswers] = useState<Record<string, string>>({});
+  const voices: Record<string, string> = { ...(draft.setup?.voices ?? {}) };
+  for (const [sp, id] of Object.entries(answers)) if (id !== OTHER) voices[sp] = id;
+  const asked = unsettledVoices(draft.mode, segments, draft.setup?.voices ?? {});
+  const open = asked.filter((sp) => !(sp in answers));
+  const tellers = tellerVoices(draft.mode, people, voices);
+  const ready = open.length === 0 && (speakers.length === 0 || tellers.length > 0);
   // the date and the topics chosen at the start: never the first words said ("Hi.")
   const [source, setSource] = useState(() =>
     interviewName(draft.startedAt, draft.setup?.topics ?? []),
   );
 
-  const named = (sp: string) => !/^Speaker \d+$/.test(labels.get(sp) ?? '');
   // the archive's own name for the person being remembered, so memories say who told them
   const finalName = (sp: string) =>
-    sp === teller
+    tellers.includes(sp)
       ? name
-      : named(sp)
-        ? labels.get(sp)!
-        : speakers.length <= 2
-          ? 'Interviewer'
-          : labels.get(sp)!;
-  // a voice nobody was named for, in a room of more than two voices: likely one heard twice
-  const strays =
-    draft.mode === 'room' && speakers.length > 2 ? speakers.filter((sp) => !named(sp)) : [];
+      : (people.find((p) => p.id === voices[sp])?.name ?? labels.get(sp) ?? sp);
+  // a line long enough to recognise the voice by
+  const sample = (sp: string) => {
+    const own = segments.filter((s) => s.speaker === sp);
+    return (own.find((s) => s.text.split(' ').length >= 6) ?? own[0])?.text ?? '';
+  };
 
   function bringIn() {
     const transcript = JSON.stringify({
@@ -261,63 +266,37 @@ export function InterviewReview({
         </section>
       )}
 
-      {draft.mode === 'room' && !known && speakers.length > 1 && (
-        <fieldset className="stack live-who-pick" style={{ gap: 8 }}>
-          <legend className="label-heading">Which voice is {name}?</legend>
-          {speakers.map((sp) => (
-            <label key={sp} className="live-mode" data-on={sp === teller}>
-              <input
-                type="radio"
-                name="teller"
-                checked={sp === teller}
-                onChange={() => setTeller(sp)}
-              />
-              <span className="stack" style={{ gap: 2, minWidth: 0 }}>
-                <span className="row-title">{labels.get(sp)}</span>
-                <span className="small muted live-sample">
-                  “{segments.find((s) => s.speaker === sp)?.text}”
-                </span>
-              </span>
-            </label>
+      {/* asked once the voices are final: the second transcription numbers them afresh */}
+      {asked.length > 0 && pass !== 'working' && (
+        <section className="stack" style={{ gap: 12 }}>
+          <div className="stack" style={{ gap: 4 }}>
+            <h2 className="label-heading">Who is speaking?</h2>
+            <p className="small muted">
+              The introductions didn’t say who every voice is. Say who said each line below; the
+              stories are written from what {name} said. One person heard as two can be named twice.
+            </p>
+          </div>
+          {asked.map((sp) => (
+            <fieldset key={sp} className="stack live-who-pick" style={{ gap: 8 }}>
+              <legend className="row-title">Who is {labels.get(sp)}?</legend>
+              <p className="small muted live-sample">“{sample(sp)}”</p>
+              {[
+                ...people.map((p) => ({ id: p.id, label: p.name })),
+                { id: OTHER, label: 'Someone else' },
+              ].map((choice) => (
+                <label key={choice.id} className="live-mode" data-on={answers[sp] === choice.id}>
+                  <input
+                    type="radio"
+                    name={`voice-${sp}`}
+                    checked={answers[sp] === choice.id}
+                    onChange={() => setAnswers((a) => ({ ...a, [sp]: choice.id }))}
+                  />
+                  <span className="row-title">{choice.label}</span>
+                </label>
+              ))}
+            </fieldset>
           ))}
-        </fieldset>
-      )}
-
-      {strays.length > 0 && (
-        <fieldset className="stack live-who-pick" style={{ gap: 8 }}>
-          <legend className="label-heading">Voices nobody was named for</legend>
-          <p className="small muted">
-            Sometimes one person is heard as two. Say whose voice this is, or change any single turn
-            by its name in the transcript.
-          </p>
-          {strays.map((sp) => (
-            <label key={sp} className="review-stray">
-              <span className="stack" style={{ gap: 2, minWidth: 0 }}>
-                <span className="row-title">{labels.get(sp)}</span>
-                <span className="small muted live-sample">
-                  “{segments.find((s) => s.speaker === sp)?.text}”
-                </span>
-              </span>
-              <select
-                className="select"
-                value=""
-                onChange={(e) => {
-                  const to = e.target.value;
-                  if (to) save(segments.map((s) => (s.speaker === sp ? { ...s, speaker: to } : s)));
-                }}
-              >
-                <option value="">Its own voice</option>
-                {speakers
-                  .filter((x) => x !== sp)
-                  .map((x) => (
-                    <option key={x} value={x}>
-                      {finalName(x)}
-                    </option>
-                  ))}
-              </select>
-            </label>
-          ))}
-        </fieldset>
+        </section>
       )}
 
       <label className="field" style={{ maxWidth: 420 }}>
@@ -335,7 +314,8 @@ export function InterviewReview({
         <button
           type="button"
           className="btn btn-primary btn-lg"
-          disabled={pass === 'working'}
+          disabled={pass === 'working' || !ready}
+          aria-describedby={ready ? undefined : 'write-waits'}
           onClick={bringIn}
         >
           Write the stories
@@ -354,6 +334,13 @@ export function InterviewReview({
           Discard
         </button>
       </div>
+      {!ready && pass !== 'working' && (
+        <p id="write-waits" className="small muted">
+          {open.length > 0
+            ? `Say who is speaking above first (${open.length} left).`
+            : `Choose which voice is ${name} above: the stories are written from what they said.`}
+        </p>
+      )}
 
       {notes.length > 0 && (
         <section className="stack" style={{ gap: 8 }}>

@@ -1605,10 +1605,10 @@ a.when-card:hover {
   background: transparent;
   cursor: pointer;
 }
+/* focused, it keeps the focus ring every control has (:focus-visible above) */
 .live-who-select:hover,
-.live-who-select:focus {
+.live-who-select:focus-visible {
   border-color: var(--line);
-  outline: none;
 }
 .live-who-sage {
   color: var(--sage-ink);

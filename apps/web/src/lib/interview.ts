@@ -145,12 +145,31 @@ export function speakerLabels(
   return m;
 }
 
-/** The speaker id whose voice belongs to the person being remembered, when Firepit knows it. */
-export function tellerVoice(draft: Draft): string | null {
-  if (draft.mode === 'call') return 'call';
-  const teller = draft.setup?.people.find((p) => p.role === 'teller');
-  if (!teller) return null;
-  return Object.entries(draft.setup?.voices ?? {}).find(([, id]) => id === teller.id)?.[0] ?? null;
+/**
+ * The voices nobody has said who they are, in the order they were first heard. On a call the two
+ * channels already say; in the room a voice is settled once its owner was introduced, or once the
+ * interviewer has said whose it is (`voices`). Firepit never decides this for them.
+ */
+export function unsettledVoices(
+  mode: Mode,
+  segments: Segment[],
+  voices: Record<string, string>,
+): string[] {
+  if (mode === 'call') return [];
+  return [...new Set(segments.map((s) => s.speaker))].filter((sp) => !(sp in voices));
+}
+
+/** Every voice that belongs to the person being remembered: one person can be heard as two. */
+export function tellerVoices(
+  mode: Mode,
+  people: Person[],
+  voices: Record<string, string>,
+): string[] {
+  if (mode === 'call') return ['call'];
+  const teller = people.find((p) => p.role === 'teller');
+  return Object.entries(voices)
+    .filter(([, id]) => id === teller?.id)
+    .map(([voice]) => voice);
 }
 
 export interface Turn {

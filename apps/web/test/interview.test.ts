@@ -6,6 +6,8 @@ import {
   noteTerms,
   respell,
   resolveVoices,
+  tellerVoices,
+  unsettledVoices,
   type Setup,
 } from '../src/lib/interview';
 import type { Segment } from '../src/lib/live';
@@ -146,5 +148,33 @@ describe('respell', () => {
       'THCLS and NLCS again.',
     ]);
     expect(respell(segs, [])).toBe(segs);
+  });
+});
+
+describe('voices', () => {
+  const heard = [
+    seg('S1', 0, 2, 'Tell me about the house.'),
+    seg('S3', 2, 6, 'It had a green door.'),
+    seg('S2', 6, 9, 'And chickens in the yard.'),
+  ];
+
+  it('asks about every voice the introductions didn’t settle, in the order first heard', () => {
+    expect(unsettledVoices('room', heard, setup.voices)).toEqual(['S3']);
+    expect(unsettledVoices('room', heard, {})).toEqual(['S1', 'S3', 'S2']);
+  });
+
+  it('asks nothing on a call: the two channels already say who is who', () => {
+    expect(
+      unsettledVoices('call', [seg('mic', 0, 1, 'Hi.'), seg('call', 1, 2, 'Hello.')], {}),
+    ).toEqual([]);
+  });
+
+  it('finds the person being remembered in every voice said to be theirs, and in none by default', () => {
+    expect(tellerVoices('room', setup.people, {})).toEqual([]);
+    expect(tellerVoices('room', setup.people, { ...setup.voices, S3: 'teller' })).toEqual([
+      'S2',
+      'S3',
+    ]);
+    expect(tellerVoices('call', setup.people, {})).toEqual(['call']);
   });
 });

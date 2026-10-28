@@ -154,6 +154,10 @@
 .studio-bar-live {
   gap: 10px;
 }
+.studio-bar-end,
+.studio-end-confirm {
+  gap: 10px;
+}
 .assist {
   flex: 1;
   display: flex;

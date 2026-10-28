@@ -661,6 +661,12 @@ a.list-row:hover > svg:last-child {
     animation-delay: 0ms !important;
     transition-duration: 0.01ms !important;
   }
+  /* except the spinner: stopped, it no longer says that something is still happening. It turns
+     slowly instead (styles.css) */
+  .spinner {
+    animation-duration: 2.4s !important;
+    animation-iteration-count: infinite !important;
+  }
   .home-ember {
     display: none;
   }
