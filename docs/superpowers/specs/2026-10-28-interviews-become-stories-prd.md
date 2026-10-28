@@ -35,7 +35,7 @@ The AI is also currently down in production: NVIDIA rejects the deployed key (40
 ## 2. Goals
 
 1. Each imported interview becomes a small number of **stories**: whole episodes, written about the person like a biography, with titles that capture the story.
-2. Nothing in a story is invented. Every sentence is traceable to what was said, and is checked.
+2. **Nothing is made up.** Wording is free: a story may paraphrase, condense, reorder and summarize. But every event, person, place, number and date in it was actually told, and every sentence is traceable to what was said and checked.
 3. The full transcript is kept with the interview, so nothing said is lost. Greetings and small talk stay there and out of Stories.
 4. A new interview **extends or merges** existing stories instead of duplicating them.
 5. **One person or place, one note.** Names, nicknames and spelling variants resolve to it.
@@ -63,6 +63,7 @@ The AI is also currently down in production: NVIDIA rejects the deployed key (40
 | D8 | People and places get **one note each, with aliases**. Family words ("Dad", "Grandma") are resolved per speaker, not stored as aliases. |
 | D9 | The import proposes a note for **every named person and place**. A person can untick any. |
 | D10 | Architecture: approach 1 (plan → write → judge) as a **fixed, repeatable workflow**, whose AI steps **use tools** to look things up (from approach 3). Tools can read and propose; they never write. |
+| D11 | **Paraphrasing is free; only making things up fails.** The AI may reword, condense, reorder, summarize and add plain transitions ("Years later,"). It may not add an event, person, place, number, date or quote that was not told, contradict what was said, or credit one person's memory to another. A merge keeps the content of every merged note, not its exact wording. |
 
 ## 4. Definitions
 
@@ -90,7 +91,8 @@ One screen shows the change set, in four groups. Each item can be accepted, reje
 1. **New stories:**
    - title and body;
    - each sentence can show its source lines ("Where this comes from");
-   - sentences the judge removed are listed under the story ("Left out, because the interview doesn't say this: …").
+   - sentences the judge removed are listed under the story ("Left out, because the interview doesn't say this: …");
+   - sentences more certain than the speaker was are marked ("She said she wasn't sure about the year").
 2. **Changes to existing stories:**
    - the old and new text side by side, with additions marked;
    - for a merge, both old notes and the merged result.
@@ -174,39 +176,44 @@ Limits:
 
 - One run per story in the plan, up to 3 at a time.
 - Tools: `read_lines(from, to)`, `read_note(id)`.
-- Writing rules (in the prompt and checked in step 4):
+- Writing rules (in the prompt; the hard ones are checked in step 4):
   - third person, past tense; the narrator is called by the project's name for them;
-  - every sentence ends with its citation, e.g. `[L12-L15]`, or `[N:<noteId>#3]` for a sentence of an existing note;
+  - wording is free (D11): paraphrase, condense, reorder, summarize, plain transitions; minor details may be left out;
+  - nothing is made up: no event, person, place, number, date or detail that was not told;
+  - every sentence ends with its citation, e.g. `[L12-L15]`, or `[N:<noteId>#3]` for a sentence of an existing note; a summarizing sentence may cite a wide range;
   - direct quotes are allowed only in quotation marks and must match the transcript word for word;
-  - doubt is kept: "I think it was 1946" becomes "probably in 1946" or "she thinks it was 1946", never "in 1946";
+  - doubt should be kept where it matters ("probably in 1946" for "I think it was 1946"); losing it is flagged on the review screen, not rejected;
   - when several people tell it, each account is attributed; a disagreement is told as both accounts;
   - a title under 60 characters, from the story's heart, using only what the story says.
 - An extended or merged story must carry over the content of every sentence of the notes it absorbs (see 7.3).
 
 ### 6.4 Step 4, Judge
 
-**Code checks first** (cheap, certain):
+The judge asks one question: **is anything made up?** It does not judge wording.
+
+**Code checks first** (cheap, certain). Each one fails the sentence:
 1. Every sentence has at least one citation, and every citation points to real lines or note sentences.
-2. Every name, number, date, place and quoted phrase in a sentence appears in its cited source. Spoken numbers are compared as digits (`speech.ts`), and names by match key.
-3. A negation or doubt word in the source survives in the sentence.
-4. Merges and extensions: every sentence of each absorbed note is cited by at least one sentence of the result.
-5. Title: today's title rules (`acceptTitle`, `checkTitleFacts`), checked against the story's body.
+2. Every name, number, date and place in a sentence appears in its cited source. Spoken numbers are compared as digits (`speech.ts`), and names by match key or alias.
+3. A direct quote matches its source word for word.
+4. Merges and extensions: every sentence of each absorbed note is cited by at least one sentence of the result, so no content is lost.
+5. Title: names, numbers and heavy facts must come from the story (`checkTitleFacts`); length and shape as today (`acceptTitle`).
 
-**Then the AI judge**: a separate call, no tools, temperature 0. It gets the story, sentence by sentence, with each sentence's cited source, and rules on each one:
+**Then the AI judge**: a separate call, no tools, temperature 0. It gets the story, sentence by sentence, with each sentence's cited source, and is told that paraphrase, condensing and summary are fine. It rules on each sentence:
 
-| Verdict | Meaning |
-|---|---|
-| `supported` | the cited source says this |
-| `unsupported` | the source does not say this, or says something else |
-| `overstated` | the source is less certain than the sentence |
-| `misattributed` | the source says it, but someone else said it |
+| Verdict | Meaning | Effect |
+|---|---|---|
+| `supported` | the source tells this, in any wording | passes |
+| `made_up` | adds an event, action, detail or claim the source does not tell | fails |
+| `contradicts` | says the opposite of the source | fails |
+| `misattributed` | someone else told it | fails |
+| `less_certain_in_source` | the speaker was unsure and the sentence is not | passes, flagged on the review screen |
 
-A story passes when every sentence is `supported`.
+A story passes when no sentence is `made_up`, `contradicts` or `misattributed`.
 
 ### 6.5 Step 5, Fix
 
 - Failing sentences go back to step 3 with the verdicts and reasons. At most 2 rounds per story.
-- After that, sentences still not `supported` are removed and listed on the review screen.
+- After that, sentences that still fail are removed and listed on the review screen.
 - A story left with fewer than 2 sentences is dropped. Its lines stay in the transcript.
 
 ### 6.6 Step 6, Link (code)
@@ -254,7 +261,8 @@ A run that hits a budget or the deadline keeps the stories that passed, lists th
 `docs/ingest/conflict-policy.md` says the AI may only add sentences and may not delete notes. It changes to:
 
 - The AI may **propose** any edit to any note, and a **merge** of notes. A person accepts or rejects each on the review screen.
-- A merge carries over the content of every sentence of the merged notes, each cited (6.4, check 4). The merged-away note's text stays in its revision history and comes back on undo.
+- The AI may paraphrase freely (D11); it may not make anything up.
+- A merge carries over the content of every sentence of the merged notes, each cited (6.4, check 4), not the exact wording. The merged-away note's text stays in its revision history and comes back on undo.
 - Disagreements are still never resolved: both accounts stay, attributed.
 - People editing by hand are not restricted (unchanged).
 
@@ -298,7 +306,7 @@ Expected results:
 
 `pnpm --filter @funmem/api eval:stories` runs the set against the real model and reports:
 - story count and titles;
-- the share of sentences `supported` on the first try;
+- the share of sentences that pass on the first try, and how many are flagged `less_certain_in_source`;
 - sentences removed;
 - judge disagreements with a second judge run;
 - duplicate entities;
@@ -306,8 +314,8 @@ Expected results:
 
 ### 10.3 Release bar
 
-- 100% of saved sentences cited and judged `supported`.
-- At least 90% of sentences `supported` on the first try.
+- 100% of saved sentences cited, and none judged `made_up`, `contradicts` or `misattributed`.
+- At least 90% of sentences pass on the first try.
 - No greeting or small talk in Stories.
 - Zero duplicate people on the name-variant cases.
 - An hour-long interview finishes within the 12-minute deadline.
@@ -353,7 +361,7 @@ Each phase ships on its own and gets its own implementation plan.
    - The key is currently rejected.
    - The free tier is slow and fails about 1 call in 4 (measured on the coach), and its terms exclude personal data.
    - The hosted endpoint's real context limit is unknown, and must be measured before relying on 200k tokens.
-2. **Judge reliability.** An AI judge can wave through an unsupported sentence. The code checks catch names, numbers, dates, quotes and doubt; the AI judge covers the rest. The evaluation set measures how often it is wrong, by comparing two judge runs and spot checks by a person.
+2. **Judge reliability.** An AI judge can wave through a made-up sentence, and a looser wording rule (D11) leaves more to it. The code checks catch names, numbers, dates, places and quotes; the AI judge covers made-up events and details. The evaluation set measures how often it is wrong, by comparing two judge runs and spot checks by a person.
 3. **Cost and time.** About 2–4 AI calls per story, plus the plan. A two-hour interview with 20 stories is about 60–80 calls. Paid Workers plan needed for CPU time (as already noted in `docs/deploy.md`).
-4. **Merges of first-person notes.** Older notes are in the speaker's own words. Under D4, carried-over content is rewritten in the third person and cited to the old note sentence by sentence, and the original text stays in the revision history. *To confirm with the product owner: "keeping every sentence" means keeping every sentence's content, cited, not its exact wording.*
+4. **Merges of first-person notes.** Older notes are in the speaker's own words. Under D4 and D11, carried-over content is rewritten in the third person and cited to the old note sentence by sentence, and the original text stays in the revision history. (Confirmed 2026-10-28: a merge keeps content, not wording.)
 5. **Existing archives** keep their old imported notes. They have no stored transcript, so they cannot be rewritten as stories (non-goal).
