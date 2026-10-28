@@ -20,6 +20,7 @@ import { registerProjectSettingsRoutes } from './project-settings';
 import { registerInterviewRoutes } from './stories/interviews';
 import { parseProfileInput } from './stories/profile';
 import { registerProfileRoutes, setSubjectProfile } from './stories/profile-store';
+import { registerGraphRoutes } from './graph/routes';
 import type { EmbeddingProvider } from '@funmem/core';
 
 export interface AppDeps {
@@ -155,6 +156,7 @@ export function createApp(deps: AppDeps): App {
   registerProjectSettingsRoutes(app, deps);
   registerInterviewRoutes(app, deps);
   registerProfileRoutes(app, deps);
+  registerGraphRoutes(app, deps);
   registerInternalRoutes(app, deps, jobs);
 
   return app;

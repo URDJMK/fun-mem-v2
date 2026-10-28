@@ -15,6 +15,7 @@ import type { Context } from 'hono';
 import type { App, AppDeps } from './app';
 import { crossNoteMarker } from './conflicts';
 import { entityForNote } from './graph/note-entity';
+import { mentionsOf } from './graph/routes';
 import { isMember, UUID_RE, WRITE_ROLES } from './membership';
 import { visibleSql, visibleNoteSql } from './views';
 import { reindexChunks } from './chunks';
@@ -1126,7 +1127,10 @@ export function registerNotesRoutes(app: App, deps: AppDeps): void {
       [c.req.param('noteId'), c.req.param('archiveId'), c.get('userId')],
     );
     if (found.rowCount === 0) return c.json(NOT_FOUND, 404);
-    return c.json(noteShape(found.rows[0] as NoteRow));
+    const row = found.rows[0] as NoteRow;
+    // the entities a story names, for its page to underline (graph design 6.3)
+    const mentions = await mentionsOf(deps, row.archive_id, row.id, c.get('userId'));
+    return c.json({ ...noteShape(row), mentions });
   });
 
   app.put('/v1/archives/:archiveId/notes/:noteId', noteBodyLimit(), async (c) => {
