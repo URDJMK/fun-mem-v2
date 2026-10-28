@@ -66,7 +66,13 @@ export interface GraphProposal {
   relationships: ProposedRelationship[];
   /** the Graph step could not run (yet); the stories are unaffected */
   pending?: { reason: StoriesPendingReason };
-  stats?: { calls: number; proposed: number; dropped: number };
+  stats?: {
+    calls: number;
+    proposed: number;
+    dropped: number;
+    /** what was left out and why (at most 30): where the prompt needs work */
+    left?: Array<{ what: string; why: string }>;
+  };
 }
 
 /** the reviewer's choices: the save body's `graph` */

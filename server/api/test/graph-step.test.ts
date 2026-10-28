@@ -221,8 +221,8 @@ describe('graphStep', () => {
 
   it('drops what the story does not say: unwritten words, unknown names, made-up relationships', async () => {
     const graph = structuredClone(HAPPY);
-    // words the story never uses: the mention goes, and Tom with it, and his relationship
-    graph.entities[2]!.mentions[0]!.words = ['Tommy'];
+    // a story that never names him: the mention goes, and Tom with it, and his relationship
+    graph.entities[2]!.mentions[0] = mention('S2', ['Tom'], 'Tom came for soup.', ['L4']);
     // a name the cited lines do not hold
     graph.entities[1]!.mentions[0]!.line = 'Sarah sat next to Noah and Jessica.';
     graph.entities[1]!.mentions.push(mention('S1', ['Sarah'], 'unused'));
@@ -235,6 +235,62 @@ describe('graphStep', () => {
     expect(relOf(p, 'Noah Kim’s mother', 'Noah Kim')).toBeUndefined();
     expect(p.entities.map((e) => e.name)).toContain('Noah Kim’s mother');
     expect(p.stats!.dropped).toBeGreaterThan(0);
+  });
+
+  it('keeps the words short, falling back to the name, and one relationship per pair per story', async () => {
+    const graph = structuredClone(HAPPY);
+    // a whole phrase is not the words for someone: the name the story uses is
+    graph.entities[0]!.mentions[0]!.words = ['Noah met his friend Sarah on his first day'];
+    graph.relationships.push({
+      a: 'e1',
+      b: 'e2',
+      description: 'Noah — Sarah’s friend',
+      story: 'S1',
+      cites: ['L2'],
+    });
+    // a name made from a relationship is found as the story says it, never by its first word
+    graph.entities[3]!.mentions[0]!.words = ['the mother of Noah who cooked'];
+    const p = await run(model(graph), {
+      stories: [
+        STORIES[0]!,
+        {
+          ...STORIES[1]!,
+          text: 'Every birthday Noah’s mother made seaweed soup, the way they did in Korea.',
+        },
+      ],
+    });
+    expect(p.entities[0]!.mentions[0]!.words).toEqual(['Noah']);
+    expect(p.entities.find((e) => e.name === 'Noah Kim’s mother')!.mentions[0]!.words).toEqual([
+      'Noah’s mother',
+    ]);
+    expect(
+      p.relationships.filter((r) => r.story === 'm1' && [r.a, r.b].includes('e1')),
+    ).toHaveLength(1);
+  });
+
+  it('drops a line that only says one knew of another through someone', async () => {
+    const graph = structuredClone(HAPPY);
+    graph.relationships.push(
+      {
+        a: 'e1',
+        b: 'e3',
+        description: 'Noah — knew Tom only from Sarah’s stories',
+        story: 'S1',
+        cites: ['L2'],
+      },
+      {
+        a: 'e3',
+        b: 'e1',
+        description: 'Tom — known to Noah through Sarah',
+        story: 'S1',
+        cites: ['L2'],
+      },
+    );
+    graph.relationships[2]!.description = 'Noah Kim’s mother — Noah Kim’s mother';
+    const p = await run(model(graph));
+    expect(relOf(p, 'Tom', 'Noah Kim')).toBeUndefined();
+    expect(p.stats!.left!.map((l) => l.why)).toContain('known only through another person');
+    expect(relOf(p, 'Noah Kim’s mother', 'Noah Kim')!.description).toBe('Noah Kim’s mother');
   });
 
   it('keeps at most three things from a story', async () => {

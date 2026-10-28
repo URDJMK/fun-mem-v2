@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import { GraphReview, NO_CHOICES, patchOf, type GraphChoices } from './GraphReview';
 import { Link, useNavigate } from 'react-router';
 import {
   ApiError,
@@ -311,6 +312,7 @@ export function Review({
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [notes, setNotes] = useState<NoteSummary[]>([]);
+  const [graphChoices, setGraphChoices] = useState<GraphChoices>(NO_CHOICES);
 
   useEffect(() => {
     listNotes(archiveId)
@@ -384,7 +386,14 @@ export function Review({
       };
     });
     try {
-      onSaved(await saveImport(archiveId, jobId, patches));
+      onSaved(
+        await saveImport(
+          archiveId,
+          jobId,
+          patches,
+          outcome.graph ? patchOf(graphChoices) : undefined,
+        ),
+      );
     } catch (e) {
       const code = e instanceof ApiError ? e.code : null;
       setError(
@@ -482,6 +491,20 @@ export function Review({
           </p>
         )}
       </article>
+
+      {outcome.graph && (
+        <GraphReview
+          archiveId={archiveId}
+          graph={outcome.graph}
+          storyTitle={(id) => memories.find((x) => x.id === id)?.title ?? 'a story'}
+          storyKept={(id) => {
+            const i = memories.findIndex((x) => x.id === id);
+            return i >= 0 && decided[i] !== 'out';
+          }}
+          choices={graphChoices}
+          onChange={setGraphChoices}
+        />
+      )}
 
       {error && <Failed>{error}</Failed>}
       <div className="spread card" style={{ padding: '10px 13px' }}>
@@ -681,7 +704,11 @@ export function Saved({
             ? ['story was', 'stories were']
             : ['memory was', 'memories were']) as [string, string]),
         )}{' '}
-        saved. Thank you! If something’s not right, you can fix it on its page, or undo the whole
+        saved
+        {outcome.graph && outcome.graph.entities.length > 0
+          ? `, with ${count(outcome.graph.entities.length, 'person, place or thing', 'people, places and things')} for the graph`
+          : ''}
+        . Thank you! If something’s not right, you can fix it on its page, or undo the whole
         interview from Interviews.
       </p>
       <ul className="list">

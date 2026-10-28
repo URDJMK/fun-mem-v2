@@ -1,7 +1,13 @@
 import { describe, expect, it } from 'vitest';
 import { ModelError, type ChatModel } from '../src/nim';
 import { linesOf } from '../src/stories/lines';
-import { planTools, runWithTools, writeTools, type StoryLookup } from '../src/stories/tools';
+import {
+  planTools,
+  readJson,
+  runWithTools,
+  writeTools,
+  type StoryLookup,
+} from '../src/stories/tools';
 
 /**
  * The AI's steps use tools through a small JSON protocol over the ordinary chat call: each
@@ -190,5 +196,26 @@ describe('the story tools', () => {
     const readLines = writeTools(lookup, lines).find((t) => t.name === 'read_lines')!;
     expect(await readLines.run({ lines: 'L1-L2' })).toBe('L1 Q (asking): Where?\nL2 Sunja: Busan.');
     expect(await readLines.run({ lines: 'L9' })).toContain('no such lines');
+  });
+});
+
+describe('readJson', () => {
+  it('reads the JSON in an answer, fenced or not, after any thinking', () => {
+    expect(readJson('{"result": 1}')).toEqual({ result: 1 });
+    expect(readJson('Sure.\n```json\n{"result": [1, 2]}\n```')).toEqual({ result: [1, 2] });
+    expect(readJson('<think>{"draft": true}</think>{"result": 3}')).toEqual({ result: 3 });
+    expect(readJson('no json here')).toBeUndefined();
+  });
+
+  it('closes what an answer left open: the model stops a brace short', () => {
+    // measured on the real model: a long Graph step answer ending "]}" and "</think>"
+    expect(readJson('{"result": {"entities": [{"a": "x}"}], "relationships": []}</think>')).toEqual(
+      {
+        result: { entities: [{ a: 'x}' }], relationships: [] },
+      },
+    );
+    expect(readJson('{"result": {"list": [1, 2')).toEqual({ result: { list: [1, 2] } });
+    // a cut in the middle of a string cannot be mended
+    expect(readJson('{"result": "half a sen')).toBeUndefined();
   });
 });

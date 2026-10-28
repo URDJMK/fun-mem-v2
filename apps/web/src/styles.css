@@ -1756,3 +1756,31 @@ a.mention {
   text-decoration-thickness: 2px;
   text-underline-offset: 3px;
 }
+
+/* the people, places and things an import found, in its review */
+.gr-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  gap: 8px;
+}
+.gr-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: 6px 10px;
+  padding: 8px 0;
+  border-top: 1px solid var(--line);
+}
+.gr-row:first-child {
+  border-top: 0;
+}
+.gr-gone {
+  opacity: 0.45;
+}
+.gr-same {
+  width: auto;
+  min-height: 30px;
+  padding: 2px 8px;
+  font-size: 13px;
+}

@@ -433,6 +433,43 @@ export interface ImportOutcome {
   runId?: string | null;
   duplicateOf?: { createdAt: string; source: string | null };
   degraded: { windows: number };
+  /** the people, places and things in the stories, and the relationships told */
+  graph?: GraphProposal;
+}
+
+/** What an import proposes for the graph (server/api/src/graph/types.ts). */
+export interface GraphProposal {
+  entities: ProposedEntity[];
+  relationships: ProposedRelationship[];
+  /** it could not be found yet; the stories are unaffected */
+  pending?: { reason: string };
+}
+
+export interface ProposedEntity {
+  ref: string;
+  name: string;
+  type: EntityType;
+  match:
+    | { kind: 'new' }
+    | { kind: 'existing'; entityId: string; name: string }
+    | { kind: 'ask'; candidates: Array<{ entityId: string; name: string }> };
+  /** `story` is a memory id ("m1"), or a note id when built from saved stories */
+  mentions: Array<{ story: string; words: string[]; line: string }>;
+}
+
+export interface ProposedRelationship {
+  ref: string;
+  a: string;
+  b: string;
+  description: string;
+  story: string;
+}
+
+/** the reviewer's choices: refs left out, renamed, or the same as an entity already here */
+export interface GraphPatch {
+  leave?: string[];
+  rename?: Record<string, string>;
+  same?: Record<string, string>;
 }
 
 export interface ImportJob {
@@ -503,8 +540,16 @@ export interface MemoryPatch {
   occurred?: string | null;
 }
 
-export const saveImport = (archive: string, job: string, memories: MemoryPatch[]) =>
-  apiFetch<ImportOutcome>('POST', `/archives/${archive}/ingest/${job}/save`, { memories });
+export const saveImport = (
+  archive: string,
+  job: string,
+  memories: MemoryPatch[],
+  graph?: GraphPatch,
+) =>
+  apiFetch<ImportOutcome>('POST', `/archives/${archive}/ingest/${job}/save`, {
+    memories,
+    ...(graph ? { graph } : {}),
+  });
 
 /** One import already in the archive; `source` is null once it is undone or its notes are gone. */
 export interface ImportRun {

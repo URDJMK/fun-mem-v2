@@ -335,7 +335,11 @@ export async function writeStories(
         });
         groups.set(part, list);
       }
-      const all: GraphProposal = { entities: [], relationships: [] };
+      const all: GraphProposal = {
+        entities: [],
+        relationships: [],
+        stats: { calls: 0, proposed: 0, dropped: 0, left: [] },
+      };
       try {
         for (const list of groups.values()) {
           const p = await graphStep({
@@ -349,6 +353,10 @@ export async function writeStories(
             lookup: graph.lookup,
             signal,
           });
+          all.stats!.calls += p.stats?.calls ?? 0;
+          all.stats!.proposed += p.stats?.proposed ?? 0;
+          all.stats!.dropped += p.stats?.dropped ?? 0;
+          all.stats!.left!.push(...(p.stats?.left ?? []));
           // refs stay unique across parts
           const shift = all.entities.length;
           const ref = (r: string) => `e${Number(r.slice(1)) + shift}`;
