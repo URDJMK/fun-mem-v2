@@ -28,7 +28,9 @@ copy where; no value in this file is real.
    ```sh
    for f in supabase/migrations/*.sql; do psql "$SESSION_DB_URL" -v ON_ERROR_STOP=1 -f "$f"; done
    ```
-   (or `supabase link` and `supabase db push`). Never edit a migration that has run.
+   (or `supabase link` and `supabase db push`). Never edit a migration that has run. A project that is
+   already deployed applies each new migration as it arrives, the same way: for the stories import,
+   `supabase/migrations/20261028120000_interviews.sql`.
 4. **Project Settings → API**: copy the **Project URL** (`https://<project-ref>.supabase.co`) and the
    **anon / publishable key**. Both are public; the web app ships them.
 5. **Project Settings → JWT Keys**: the project must sign with an **asymmetric** key (ECC P-256 or
@@ -60,7 +62,7 @@ cd server/api
 npx wrangler queues create funmem-ingest
 npx wrangler secret put FUNMEM_DB_URL         # the transaction pooler string (6543)
 npx wrangler secret put FUNMEM_SUPABASE_URL   # https://<project-ref>.supabase.co
-npx wrangler secret put NVIDIA_API_KEY        # optional: without it imports keep the speaker's own words
+npx wrangler secret put NVIDIA_API_KEY        # optional: without it interviews are kept, their stories wait
 npx wrangler secret put DEEPGRAM_API_KEY      # optional: without it live interviews can't be recorded
 npx wrangler deploy
 ```
@@ -116,9 +118,14 @@ Sign in with Google at the Vercel URL, create an archive, write a note, search f
 it, import a short transcript and save it, then undo the import. A minute after writing, the
 note's chunks have Workers AI vectors (`select count(*) from public.chunk_embeddings`).
 
+Bring in `docs/ingest/samples/grandma-sunja-en.txt` (Who is telling: Sunja). In about a minute and a
+half the review shows about 5 stories ("Mrs. Han's pencil box", "Gravy at the church supper", …), each
+with "Where this comes from". Without `NVIDIA_API_KEY` it says "Stories not written yet", and the
+interview waits under Interviews.
+
 With `DEEPGRAM_API_KEY` set, start an interview from the project's home page (Chrome or Edge;
 allow the microphone): words appear as they are said, the coach suggests a question in the
-pauses (with `NVIDIA_API_KEY`), and "Turn into memories" brings it into the import.
+pauses (with `NVIDIA_API_KEY`), and "Write the stories" brings it into the import.
 
 ## Who sees the data
 
@@ -127,6 +134,7 @@ Vercel (the static site; it forwards `/v1` and sees those requests), Google (sig
 photo), Deepgram when `DEEPGRAM_API_KEY` is set (a live interview's audio, streamed from the
 browser with `mip_opt_out=true`, which opts out of Deepgram's Model Improvement Program: the
 audio is not kept for training or used in it), and NVIDIA
-when `NVIDIA_API_KEY` is set (interview text for the AI step, and the coach's recent lines). NVIDIA's free
+when `NVIDIA_API_KEY` is set (the whole interview transcript and the project notes the AI looks up
+while writing its stories, and the coach's recent lines). NVIDIA's free
 API catalog is a trial: its terms do not allow production use or personal data, so a real
 deployment needs a paid plan or another provider before real interviews go in.

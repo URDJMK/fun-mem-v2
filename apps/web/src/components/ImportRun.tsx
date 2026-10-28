@@ -669,8 +669,14 @@ export function Saved({
     <div className="stack" style={{ gap: 12 }}>
       <h1 className="page-title">Added to the project</h1>
       <p role="status" className="notice notice-sage">
-        {count(saved.length, 'memory was', 'memories were')} saved. Thank you! If something’s not
-        right, you can fix it on its page, or undo the whole interview from Interviews.
+        {count(
+          saved.length,
+          ...((outcome.memories.some((m) => m.method === 'story')
+            ? ['story was', 'stories were']
+            : ['memory was', 'memories were']) as [string, string]),
+        )}{' '}
+        saved. Thank you! If something’s not right, you can fix it on its page, or undo the whole
+        interview from Interviews.
       </p>
       <ul className="list">
         {saved.map((s) => (

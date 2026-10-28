@@ -5,6 +5,12 @@
 
 This governs everything the AI writes: the assistant and interview ingestion. People editing a note by hand in the editor are not restricted.
 
+**Writing new stories from an interview** (stories mode, `server/api/src/stories/`) may paraphrase
+freely: tidy, condense, reorder and summarize what was said. It may not make anything up: every
+sentence cites the lines it comes from, and is checked (PRD D11). The table below is about text that
+is **already in the archive**, and stands until extending and merging notes is built (phase 3 of the
+stories PRD).
+
 ## What the AI can and cannot do to existing text
 
 | | |

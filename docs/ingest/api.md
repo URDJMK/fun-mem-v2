@@ -21,6 +21,40 @@ answered `404` for it, like any stranger).
 An import is a **job**: an hour of speech is tens of model calls, so it is started, polled and its
 outcome fetched, and survives the page being closed. The synchronous form simply waits on the same job.
 
+## Stories mode (the default)
+
+With `FUNMEM_IMPORT_MODE` unset or `stories`, an import writes the interview's **stories**
+(`server/api/src/stories/`; design: `docs/superpowers/specs/2026-10-28-interviews-become-stories-prd.md`):
+
+1. The interview is kept with its transcript as soon as the import starts (`public.interviews`).
+   Bringing the same words in again picks up the interview that is still waiting.
+2. The AI reads the whole interview (up to ~200k tokens a part) and plans its stories, one per period
+   of the narrator's life, looking up the project's notes as it goes (read-only).
+3. Each story is written in the third person; every sentence cites the transcript lines it comes from.
+4. Code checks every name, number, date, place and quotation against the cited lines; an AI judge
+   rules only on whether anything is made up (wording is free). A failing story is written again with
+   the reasons, twice at most; what still fails is left out and listed in the memory's `notes`.
+
+Each outcome memory then has `method: "story"`, plus `tellers`, `until`, `sources` (each sentence with
+its lines `from`/`to`, times and words) and `flags` (sentences more certain than the speaker was).
+Greetings and small talk are in no story: they stay in the interview's transcript.
+
+When the stories cannot be written (no `NVIDIA_API_KEY`, a rejected key, the 12-minute deadline, the
+call budget), the outcome is `previewed` with no memories and `pending: { reason }` (`no_model`,
+`auth`, `unavailable`, `deadline`, `budget`, `bad_plan`); the interview waits with its transcript.
+
+Saved stories carry their metadata: `recorded` (when it was told), `contributors` (who told it),
+`extra.sources`, `extra.interviewId`, `extra.writtenBy`; their revision reason is `import`. Undoing
+the import also deletes its interview.
+
+| Route | |
+|---|---|
+| `GET /v1/archives/:id/interviews` | members: `[{ id, name, recordedAt, status: "pending" \| "written", mine, stories }]`, newest first |
+| `GET /v1/archives/:id/interviews/:interviewId` | members: the same, plus `transcript` (as it arrived), `options` and parsed `turns` |
+
+`FUNMEM_IMPORT_MODE=memories` brings back the earlier import described below, where every spoken line
+becomes a memory.
+
 ## Start
 
 `POST /v1/archives/:archive/ingest`
@@ -136,7 +170,8 @@ arrives decomposed), and an import's file name is scrubbed from the record as so
 
 | Variable | Default | |
 |---|---|---|
-| `NVIDIA_API_KEY` | — | without it imports still work, with no AI polish: every memory is the speaker's own words |
+| `FUNMEM_IMPORT_MODE` | `stories` | `memories` for the earlier import |
+| `NVIDIA_API_KEY` | — | stories mode: without it the interview is kept and its stories wait; memories mode: every memory is the speaker's own words |
 | `NIM_MODEL` | `nvidia/nemotron-3-ultra-550b-a55b` | |
 | `NIM_CONCURRENCY` | 4 | model calls in flight across the whole server |
 | `NIM_HEDGE_MS` | 40000 | a call this slow gets one duplicate beside it; `0`, a negative number or `off` turns it off |
