@@ -36,6 +36,9 @@ suggestions ("AI suggestions unavailable"), the same on every run and with no AP
 
 ## Retake them
 
+Since these were taken, `capture.mjs` sizes the window to the whole page before each shot, so
+fixed bars sit at the end of the page (see [`design-after/`](../design-after/README.md)).
+
 `capture.mjs` drives your installed Google Chrome with `playwright-core`, which is not a project
 dependency:
 
