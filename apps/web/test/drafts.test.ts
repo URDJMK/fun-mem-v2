@@ -43,6 +43,11 @@ describe('the live interview kept in the browser', () => {
     expect(readDraft('a1')?.segments.map((s) => s.text)).toEqual(['We swam below the mill.']);
   });
 
+  it('keeps who the interviewer said each voice is, so a reload does not ask again', () => {
+    writeDraft('a1', { ...draft(['Tell me about the mill.']), voiceAnswers: { S1: 'asker' } });
+    expect(readDraft('a1')?.voiceAnswers).toEqual({ S1: 'asker' });
+  });
+
   it('is let go only when it is discarded, by name', () => {
     writeDraft('a1', draft(['We swam below the mill.']));
     writeDraft('a1', null);

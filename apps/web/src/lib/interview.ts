@@ -58,6 +58,8 @@ export interface Draft {
   respell?: Respelling[];
   /** the segments are the full recording's transcription, not the live one */
   retranscribed?: boolean;
+  /** in the review, who the interviewer said each voice the introductions left open is */
+  voiceAnswers?: Record<string, string>;
   /** set once "Write the stories" has started this job; cleared only once it is saved */
   submittedJobId?: string;
 }

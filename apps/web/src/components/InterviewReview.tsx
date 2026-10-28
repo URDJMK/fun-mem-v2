@@ -66,10 +66,28 @@ export function InterviewReview({
   );
   const passing = useRef<AbortController | null>(null);
   const [fixes, setFixes] = useState<Correction[] | null>(null);
+  // who each voice the introductions didn't settle is, as the interviewer says: a person's id, or
+  // OTHER for someone who isn't one of them. Nothing is chosen for them; kept with the draft.
+  const [answers, setAnswers] = useState<Record<string, string>>(() => draft.voiceAnswers ?? {});
+
+  function keep(segs: Segment[], said: Record<string, string>) {
+    writeDraft(archiveId, {
+      ...draft,
+      segments: segs,
+      retranscribed: retranscribed.current,
+      voiceAnswers: said,
+    });
+  }
 
   function save(next: Segment[]) {
     setSegments(next);
-    writeDraft(archiveId, { ...draft, segments: next, retranscribed: retranscribed.current });
+    keep(next, answers);
+  }
+
+  function answer(voice: string, id: string) {
+    const next = { ...answers, [voice]: id };
+    setAnswers(next);
+    keep(segments, next);
   }
 
   /* ── the whole recording, transcribed once more ───────── */
@@ -131,9 +149,6 @@ export function InterviewReview({
   const labels = speakerLabels(segments, draft.mode, draft.setup, name);
   const speakers = [...new Set(segments.map((s) => s.speaker))];
   const people = draft.setup?.people ?? newSetup(name, 'The interviewer').people;
-  // who each voice the introductions didn't settle is, as the interviewer says: a person's id, or
-  // OTHER for someone who isn't one of them. Nothing is chosen for them.
-  const [answers, setAnswers] = useState<Record<string, string>>({});
   const voices: Record<string, string> = { ...(draft.setup?.voices ?? {}) };
   for (const [sp, id] of Object.entries(answers)) if (id !== OTHER) voices[sp] = id;
   const asked = unsettledVoices(draft.mode, segments, draft.setup?.voices ?? {});
@@ -289,7 +304,7 @@ export function InterviewReview({
                     type="radio"
                     name={`voice-${sp}`}
                     checked={answers[sp] === choice.id}
-                    onChange={() => setAnswers((a) => ({ ...a, [sp]: choice.id }))}
+                    onChange={() => answer(sp, choice.id)}
                   />
                   <span className="row-title">{choice.label}</span>
                 </label>
