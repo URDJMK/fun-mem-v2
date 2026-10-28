@@ -1,0 +1,14 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "framework": "vite",
+  "installCommand": "pnpm install --frozen-lockfile --filter @funmem/web...",
+  "buildCommand": "node scripts/check-api-rewrite.mjs && pnpm build",
+  "outputDirectory": "dist",
+  "rewrites": [
+    {
+      "source": "/v1/:path*",
+      "destination": "https://funmem-api.jongmin2684.workers.dev/v1/:path*"
+    },
+    { "source": "/(.*)", "destination": "/index.html" }
+  ]
+}

@@ -1,4 +1,4 @@
-import { randomUUID } from 'node:crypto';
+import type { PoolClient } from 'pg';
 import { ENTITY_TYPES, canonicalTitle, validateNoteTitle, parseFuzzyDate } from '@funmem/core';
 import type { AppDeps } from './app';
 import {
@@ -27,6 +27,7 @@ import {
   type SavedNote,
 } from './ingest-save';
 import { displayNameOf } from './conflicts';
+import { onLostConnection } from './notes';
 import { formatClock } from './clock';
 import { TranscriptError, parseTranscript, type ParsedTranscript } from './transcript';
 
@@ -38,7 +39,7 @@ import { TranscriptError, parseTranscript, type ParsedTranscript } from './trans
  * the same job, so there is one code path.
  *
  * WHAT A JOB HOLDS, AND FOR HOW LONG. Never the raw transcript after it has been read.
- * The outcome (the memories, which are the family's words) is held in memory only, so a
+ * The outcome (the memories, which are the family's words) is held only so that a
  * person can read, edit and save it, for as long as somebody is looking at it: a job's
  * life is its IDLE time, refreshed whenever its owner reads, saves or cancels it. An
  * unsaved preview lives 60 idle minutes (it is somebody's unfinished work), and never
@@ -48,8 +49,14 @@ import { TranscriptError, parseTranscript, type ParsedTranscript } from './trans
  * hand) is no longer quoted by any job of its archive (`forgetNotes`). A note deleted by hand
  * is otherwise not tracked here: its own words can stay in the outcome of the job that made
  * it until that job expires.
- * A server restart loses every job; the atomic save and the duplicate guard make simply
- * trying again safe.
+ *
+ * WHERE. A job is a row of `public.ingest_jobs`, shared by every instance of the server (the
+ * isolates of a Worker; a Node server and the one that replaces it), so the request that starts
+ * it, the queue consumer that runs it and the requests that poll, cancel and save it need not
+ * meet in one process. What decides a race between them (a cancel against the step into
+ * saving, two saves) is decided in the database. A job whose runner dies goes quiet: after two
+ * minutes it is reported failed, `interrupted`, and the atomic save and the duplicate guard make
+ * simply trying again safe.
  */
 
 export type JobStage = 'reading' | 'organizing' | 'checking' | 'saving' | 'done';
@@ -103,7 +110,8 @@ export interface JobView {
   error?: JobFailure;
 }
 
-interface Job {
+/** A job, as the database holds it. */
+export interface Job {
   id: string;
   archiveId: string;
   userId: string;
@@ -118,14 +126,36 @@ interface Job {
   error?: JobFailure;
   /** the disagreement lines written into the preview, so a save can take one back out */
   markers: MarkerLine[];
-  ac: AbortController;
-  done: Promise<void>;
   /** a save is in flight: refuse a second one, never evict, never cancel */
   saving: boolean;
   /** the hard time limit, not the person, stopped it */
   timedOut: boolean;
-  /** what its outcome holds in memory, roughly (its JSON length) */
+  /** what its outcome holds, roughly (its JSON length) */
   bytes: number;
+}
+
+/**
+ * A job just started. `done` is the job as it finished, when it runs in this instance; when it
+ * was handed to a queue, it is the job as it was handed over.
+ */
+export interface StartedJob extends Job {
+  done: Promise<Job>;
+}
+
+/**
+ * How a deployment runs its jobs. Each one may also come from `deps.ingestJobs`; one given to
+ * the constructor wins.
+ */
+export interface IngestJobsOptions {
+  /** the instances that share jobs, and whose jobs the limits count: one per deployment */
+  scope?: string;
+  /**
+   * Hand a job that nobody is waiting on to a queue, whose consumer calls `runQueued`: a Worker
+   * may not keep working long after its response. Absent: the job runs in this instance.
+   */
+  enqueue?: ((jobId: string) => Promise<void>) | null;
+  /** how often this instance lets go of expired jobs; null when something else calls `sweep` */
+  sweepEveryMs?: number | null;
 }
 
 /** Why an import cannot start right now. `previews`: the archive holds too many unsaved previews. */
@@ -180,13 +210,139 @@ const MAX_TOTAL = 6;
 
 const CANCELLABLE: readonly JobStage[] = ['reading', 'organizing', 'checking'];
 
-const isPreview = (j: Job): boolean =>
-  j.status === 'succeeded' &&
-  (j.outcome?.status === 'previewed' || j.outcome?.status === 'needs_confirmation');
+/** How often a running job says it is alive, writes its progress and looks for a cancel. */
+const HEARTBEAT_MS = 1_000;
+/** A running job silent for this long died with whatever was running it. */
+const STALE_MS = 2 * 60_000;
 
+const COLUMNS = `id, archive_id, user_id, status, stage, progress_done, progress_total, started_at,
+  finished_at, touched_at, outcome, error, markers, saving, timed_out, bytes`;
 /** Finished, and not being saved: the only jobs that may ever be let go. */
-const evictable = (j: Job): boolean =>
-  j.status !== 'running' && j.finishedAt !== undefined && !j.saving && j.stage !== 'saving';
+const EVICTABLE = `status <> 'running' and finished_at is not null and not saving and stage <> 'saving'`;
+const PREVIEW = `(status = 'succeeded' and outcome_status in ('previewed', 'needs_confirmation'))`;
+const ms = (n: number) => `${n} * interval '1 millisecond'`;
+/** Past its idle time, or a preview past its absolute lifetime, at the time in parameter `now`. */
+const expired = (now: string) =>
+  `${EVICTABLE} and (
+     touched_at < ${now}::timestamptz
+                  - (case when ${PREVIEW} then ${PREVIEW_IDLE_MS} else ${DONE_IDLE_MS} end)
+                    * interval '1 millisecond'
+     or (${PREVIEW} and finished_at < ${now}::timestamptz - ${ms(PREVIEW_MAX_MS)}))`;
+const INTERRUPTED: JobFailure = {
+  code: 'interrupted',
+  message: 'the import stopped before it finished; nothing was saved',
+};
+
+interface JobRow {
+  id: string;
+  archive_id: string;
+  user_id: string;
+  status: JobStatus;
+  stage: JobStage;
+  progress_done: number;
+  progress_total: number;
+  started_at: Date;
+  finished_at: Date | null;
+  touched_at: Date;
+  outcome: IngestOutcome | null;
+  error: JobFailure | null;
+  markers: MarkerLine[] | null;
+  saving: boolean;
+  timed_out: boolean;
+  bytes: number;
+}
+
+const jobOf = (r: JobRow): Job => ({
+  id: r.id,
+  archiveId: r.archive_id,
+  userId: r.user_id,
+  status: r.status,
+  stage: r.stage,
+  progress: { done: r.progress_done, total: r.progress_total },
+  startedAt: r.started_at.getTime(),
+  ...(r.finished_at ? { finishedAt: r.finished_at.getTime() } : {}),
+  touchedAt: r.touched_at.getTime(),
+  ...(r.outcome ? { outcome: r.outcome } : {}),
+  ...(r.error ? { error: r.error } : {}),
+  markers: r.markers ?? [],
+  saving: r.saving,
+  timedOut: r.timed_out,
+  bytes: r.bytes,
+});
+
+/** A time for the database: every clock here is Date.now(), so a test can move it. */
+const at = (t: number): Date => new Date(t);
+/** A value for a jsonb parameter. pg would write an array as a Postgres array, not as JSON. */
+const json = (v: unknown): string | null => (v === undefined ? null : JSON.stringify(v));
+
+/** What making room looks at: a finished job, without its words. */
+interface Held {
+  id: string;
+  userId: string;
+  archiveId: string;
+  preview: boolean;
+  touchedAt: number;
+  bytes: number;
+}
+
+/**
+ * Make room when someone starts an import: the ids of the finished jobs to let go. Never a
+ * running job, never one being saved (those are not `Held`).
+ *
+ *   - The person's OWN finished jobs beyond their share (10 jobs, 8 MB) go first: done
+ *     jobs before previews, oldest first.
+ *   - An archive holds at most 20 unsaved previews: ones nobody has looked at for 15
+ *     minutes go, then the person's own oldest there.
+ *   - The server holds at most 500 finished jobs and 256 MB: done jobs go, then previews
+ *     nobody has looked at for 15 minutes.
+ *
+ * Nobody else's activity takes a preview from under a person who is reviewing it; when
+ * only such previews are left, the new import waits instead (see `start`).
+ */
+function evictions(held: Held[], userId: string, archiveId: string, now: number): Set<string> {
+  const dropped = new Set<string>();
+  const live = () => held.filter((j) => !dropped.has(j.id));
+  const unwatched = (j: Held) => now - j.touchedAt > DONE_IDLE_MS;
+  const order = (a: Held, b: Held) =>
+    Number(a.preview) - Number(b.preview) || a.touchedAt - b.touchedAt;
+
+  const mine = live()
+    .filter((j) => j.userId === userId)
+    .sort(order);
+  let count = mine.length;
+  let bytes = mine.reduce((s, j) => s + j.bytes, 0);
+  const userBytes = bytesCap('INGEST_USER_BYTES', USER_BYTES);
+  for (const j of mine) {
+    if (count <= KEEP_PER_USER && bytes <= userBytes) break;
+    dropped.add(j.id);
+    count--;
+    bytes -= j.bytes;
+  }
+
+  const here = live().filter((j) => j.archiveId === archiveId && j.preview);
+  let inArchive = here.length;
+  for (const j of [
+    ...here.filter(unwatched).sort(order),
+    ...here.filter((x) => !unwatched(x) && x.userId === userId).sort(order),
+  ]) {
+    if (inArchive < ARCHIVE_PREVIEWS) break;
+    dropped.add(j.id);
+    inArchive--;
+  }
+
+  // room for the job about to start
+  const all = live();
+  let total = all.length;
+  let size = all.reduce((s, j) => s + j.bytes, 0);
+  const totalBytes = bytesCap('INGEST_TOTAL_BYTES', TOTAL_BYTES);
+  for (const j of all.filter((x) => !x.preview || unwatched(x)).sort(order)) {
+    if (total < KEEP_TOTAL && size <= totalBytes) break;
+    dropped.add(j.id);
+    total--;
+    size -= j.bytes;
+  }
+  return dropped;
+}
 
 const view = (j: Job): JobView => ({
   id: j.id,
@@ -266,155 +422,224 @@ const hintOf = (m: { startSec: number | null }): string | null =>
   m.startSec !== null ? formatClock(m.startSec) : null;
 
 export class IngestJobs {
-  private readonly jobs = new Map<string, Job>();
+  private readonly scope: string;
+  private readonly enqueue: ((jobId: string) => Promise<void>) | null;
+  /** the jobs running in this instance: a cancel that arrives here stops one at once */
+  private readonly local = new Map<string, AbortController>();
 
-  constructor(private readonly deps: AppDeps) {
-    const t = setInterval(() => this.sweep(), 60_000);
-    t.unref?.();
+  constructor(
+    private readonly deps: AppDeps,
+    opts: IngestJobsOptions = {},
+  ) {
+    const from = deps.ingestJobs ?? {};
+    this.scope = opts.scope ?? from.scope ?? 'default';
+    this.enqueue = opts.enqueue !== undefined ? opts.enqueue : (from.enqueue ?? null);
+    const every =
+      opts.sweepEveryMs !== undefined
+        ? opts.sweepEveryMs
+        : from.sweepEveryMs !== undefined
+          ? from.sweepEveryMs
+          : 60_000;
+    if (every) {
+      const t = setInterval(() => {
+        this.sweep().catch((e: unknown) => {
+          console.error(`[ingest] letting go of expired jobs failed: ${describeError(e)}`);
+        });
+      }, every);
+      t.unref?.();
+    }
   }
 
   /**
    * Let go of finished jobs nobody has looked at for their idle time, and of previews older
-   * than their absolute lifetime whoever is looking.
+   * than their absolute lifetime whoever is looking; report a job whose runner died as failed.
+   * A timer calls this on a Node server, a cron on a Worker, and every start does it too.
    */
-  private sweep(now = Date.now()): void {
-    for (const [id, j] of this.jobs) {
-      if (!evictable(j)) continue;
-      const preview = isPreview(j);
-      if (
-        now - j.touchedAt > (preview ? PREVIEW_IDLE_MS : DONE_IDLE_MS) ||
-        (preview && now - j.finishedAt! > PREVIEW_MAX_MS)
-      ) {
-        this.jobs.delete(id);
-      }
-    }
+  async sweep(now = Date.now()): Promise<void> {
+    await this.expire(this.deps.pool, now);
   }
 
-  private finished(): Job[] {
-    return [...this.jobs.values()].filter(evictable);
+  private async expire(db: Pick<PoolClient, 'query'>, now: number): Promise<void> {
+    // a job whose runner went quiet died with it: a restarted server, an isolate let go
+    await db.query(
+      `update public.ingest_jobs
+          set status = 'failed', stage = 'done', finished_at = $2, touched_at = $2,
+              saving = false, error = $3::jsonb, request = null
+        where scope = $1 and status = 'running' and heartbeat_at < $4`,
+      [this.scope, at(now), json(INTERRUPTED), at(now - STALE_MS)],
+    );
+    // a save whose saver went quiet is not in flight any more (its transaction rolled back)
+    await db.query(
+      `update public.ingest_jobs set saving = false
+        where scope = $1 and saving and status <> 'running' and heartbeat_at < $2`,
+      [this.scope, at(now - STALE_MS)],
+    );
+    await db.query(`delete from public.ingest_jobs where scope = $1 and ${expired('$2')}`, [
+      this.scope,
+      at(now),
+    ]);
+  }
+
+  private async transaction<T>(fn: (client: PoolClient) => Promise<T>): Promise<T> {
+    const client = await this.deps.pool.connect();
+    const unguard = onLostConnection(client);
+    try {
+      await client.query('begin');
+      const out = await fn(client);
+      await client.query('commit');
+      return out;
+    } catch (e) {
+      await client.query('rollback').catch(() => undefined);
+      throw e;
+    } finally {
+      unguard();
+      client.release();
+    }
   }
 
   /**
-   * Make room when someone starts an import. Never a running job, never one being saved.
-   *
-   *   - The person's OWN finished jobs beyond their share (10 jobs, 8 MB) go first: done
-   *     jobs before previews, oldest first.
-   *   - An archive holds at most 20 unsaved previews: ones nobody has looked at for 15
-   *     minutes go, then the person's own oldest there.
-   *   - The server holds at most 500 finished jobs and 256 MB: done jobs go, then previews
-   *     nobody has looked at for 15 minutes.
-   *
-   * Nobody else's activity takes a preview from under a person who is reviewing it; when
-   * only such previews are left, the new import waits instead (see `start`).
+   * Start an import. Throws BusyError when this archive already has one running, or when
+   * there is no room. With `wait`, or with no queue, it runs in this instance and `done` is
+   * the job as it finished; otherwise it is handed to the queue.
    */
-  private evict(userId: string, archiveId: string): void {
+  async start(
+    archiveId: string,
+    userId: string,
+    req: IngestRequest,
+    opts: { wait?: boolean } = {},
+  ): Promise<StartedJob> {
     const now = Date.now();
-    this.sweep(now);
-    const unwatched = (j: Job) => now - j.touchedAt > DONE_IDLE_MS;
-    const order = (a: Job, b: Job) =>
-      Number(isPreview(a)) - Number(isPreview(b)) || a.touchedAt - b.touchedAt;
-    const drop = (j: Job) => this.jobs.delete(j.id);
+    const queue = opts.wait ? null : this.enqueue;
+    const job = await this.transaction(async (client) => {
+      // one start at a time for the whole deployment: the rules below read, then insert
+      await client.query('select pg_advisory_xact_lock(hashtext($1)::bigint)', [
+        `ingest_jobs:${this.scope}`,
+      ]);
+      await this.expire(client, now);
+      const held = (
+        await client.query(
+          `select id, user_id, archive_id, ${PREVIEW} as preview, touched_at, bytes
+             from public.ingest_jobs where scope = $1 and ${EVICTABLE}`,
+          [this.scope],
+        )
+      ).rows.map(
+        (r: {
+          id: string;
+          user_id: string;
+          archive_id: string;
+          preview: boolean;
+          touched_at: Date;
+          bytes: number;
+        }): Held => ({
+          id: r.id,
+          userId: r.user_id,
+          archiveId: r.archive_id,
+          preview: r.preview,
+          touchedAt: r.touched_at.getTime(),
+          bytes: r.bytes,
+        }),
+      );
+      const dropped = evictions(held, userId, archiveId, now);
+      if (dropped.size > 0) {
+        await client.query('delete from public.ingest_jobs where id = any($1::uuid[])', [
+          [...dropped],
+        ]);
+      }
+      const finished = held.filter((j) => !dropped.has(j.id));
+      const running = (
+        await client.query(
+          `select id, archive_id, user_id from public.ingest_jobs
+            where scope = $1 and (status = 'running' or saving)`,
+          [this.scope],
+        )
+      ).rows as Array<{ id: string; archive_id: string; user_id: string }>;
+      const here = running.find((j) => j.archive_id === archiveId);
+      // the id is only worth giving to the person who can look at that job
+      if (here) throw new BusyError(here.user_id === userId ? here.id : null, 'archive');
+      if (running.filter((j) => j.user_id === userId).length >= MAX_PER_USER) {
+        throw new BusyError(null, 'user');
+      }
+      if (running.length >= MAX_TOTAL) throw new BusyError(null, 'server');
+      // only previews that people are still reviewing are left: wait rather than take one
+      if (
+        !req.save &&
+        finished.filter((j) => j.archiveId === archiveId && j.preview).length >= ARCHIVE_PREVIEWS
+      ) {
+        throw new BusyError(null, 'previews');
+      }
+      if (
+        finished.length >= KEEP_TOTAL ||
+        finished.reduce((s, j) => s + j.bytes, 0) > bytesCap('INGEST_TOTAL_BYTES', TOTAL_BYTES)
+      ) {
+        throw new BusyError(null, 'server');
+      }
+      const r = await client.query(
+        `insert into public.ingest_jobs
+           (scope, archive_id, user_id, status, stage, started_at, touched_at, heartbeat_at, request)
+         values ($1, $2, $3, 'running', 'reading', $4, $4, $4, $5)
+         returning ${COLUMNS}`,
+        // the transcript waits in the row only for a queue consumer; run here, it never does
+        [this.scope, archiveId, userId, at(now), queue ? JSON.stringify(req) : null],
+      );
+      return jobOf(r.rows[0] as JobRow);
+    });
 
-    const mine = this.finished()
-      .filter((j) => j.userId === userId)
-      .sort(order);
-    let count = mine.length;
-    let bytes = mine.reduce((s, j) => s + j.bytes, 0);
-    const userBytes = bytesCap('INGEST_USER_BYTES', USER_BYTES);
-    for (const j of mine) {
-      if (count <= KEEP_PER_USER && bytes <= userBytes) break;
-      drop(j);
-      count--;
-      bytes -= j.bytes;
+    if (queue) {
+      try {
+        await queue(job.id);
+      } catch (e) {
+        await this.finish(job, 'failed', { error: failureOf(e) });
+        throw e;
+      }
+      return { ...job, done: Promise.resolve(job) };
     }
-
-    const here = this.finished().filter((j) => j.archiveId === archiveId && isPreview(j));
-    let held = here.length;
-    for (const j of [
-      ...here.filter(unwatched).sort(order),
-      ...here.filter((x) => !unwatched(x) && x.userId === userId).sort(order),
-    ]) {
-      if (held < ARCHIVE_PREVIEWS) break;
-      drop(j);
-      held--;
-    }
-
-    // room for the job about to start
-    const all = this.finished();
-    let total = all.length;
-    let size = all.reduce((s, j) => s + j.bytes, 0);
-    const totalBytes = bytesCap('INGEST_TOTAL_BYTES', TOTAL_BYTES);
-    for (const j of all.filter((x) => !isPreview(x) || unwatched(x)).sort(order)) {
-      if (total < KEEP_TOTAL && size <= totalBytes) break;
-      drop(j);
-      total--;
-      size -= j.bytes;
-    }
+    const done = this.run(job, req);
+    // nobody may be waiting on it (an async import): a failure to write its end is logged here
+    done.catch((e: unknown) => console.error(`[ingest] job ${job.id}: ${describeError(e)}`));
+    return { ...job, done };
   }
 
-  private running(): Job[] {
-    return [...this.jobs.values()].filter((j) => j.status === 'running' || j.saving);
-  }
-
-  /** Start an import. Throws BusyError when this archive already has one running. */
-  start(archiveId: string, userId: string, req: IngestRequest): Job {
-    this.evict(userId, archiveId);
-    const running = this.running();
-    const here = running.find((j) => j.archiveId === archiveId);
-    // the id is only worth giving to the person who can look at that job
-    if (here) throw new BusyError(here.userId === userId ? here.id : null, 'archive');
-    if (running.filter((j) => j.userId === userId).length >= MAX_PER_USER) {
-      throw new BusyError(null, 'user');
-    }
-    if (running.length >= MAX_TOTAL) throw new BusyError(null, 'server');
-    const finished = this.finished();
-    // only previews that people are still reviewing are left: wait rather than take one
-    if (
-      !req.save &&
-      finished.filter((j) => j.archiveId === archiveId && isPreview(j)).length >= ARCHIVE_PREVIEWS
-    ) {
-      throw new BusyError(null, 'previews');
-    }
-    if (
-      finished.length >= KEEP_TOTAL ||
-      finished.reduce((s, j) => s + j.bytes, 0) > bytesCap('INGEST_TOTAL_BYTES', TOTAL_BYTES)
-    ) {
-      throw new BusyError(null, 'server');
-    }
-
-    const now = Date.now();
-    const job: Job = {
-      id: randomUUID(),
-      archiveId,
-      userId,
-      status: 'running',
-      stage: 'reading',
-      progress: { done: 0, total: 0 },
-      startedAt: now,
-      touchedAt: now,
-      markers: [],
-      ac: new AbortController(),
-      done: Promise.resolve(),
-      saving: false,
-      timedOut: false,
-      bytes: 0,
-    };
-    this.jobs.set(job.id, job);
-    const limit = setTimeout(() => {
-      job.timedOut = true;
-      job.ac.abort();
-    }, hardLimitMs());
-    limit.unref?.();
-    job.done = this.run(job, req).finally(() => clearTimeout(limit));
-    return job;
+  /**
+   * Run a job that was handed to the queue (the consumer calls this). The first delivery takes
+   * the request out of the row, so the transcript is not kept once it has been read, and a
+   * message delivered twice finds nothing to run.
+   */
+  async runQueued(id: string): Promise<void> {
+    const r = await this.deps.pool.query(
+      `with picked as (
+         select id, request from public.ingest_jobs
+          where id = $1 and scope = $2 and status = 'running' and request is not null
+          for update)
+       update public.ingest_jobs j set request = null, heartbeat_at = $3
+         from picked where j.id = picked.id
+       returning j.*, picked.request as picked`,
+      [id, this.scope, at(Date.now())],
+    );
+    const row = r.rows[0] as (JobRow & { cancel_requested: boolean; picked: string }) | undefined;
+    if (!row) return;
+    await this.run(jobOf(row), JSON.parse(row.picked) as IngestRequest, row.cancel_requested);
   }
 
   /** A job, but only for the person who started it, in this archive. Looking at it keeps it alive. */
-  get(id: string, archiveId: string, userId: string): Job | null {
-    const j = this.jobs.get(id);
-    if (!j || j.archiveId !== archiveId || j.userId !== userId) return null;
-    j.touchedAt = Date.now();
-    return j;
+  async get(id: string, archiveId: string, userId: string): Promise<Job | null> {
+    const now = Date.now();
+    const pool = this.deps.pool;
+    // a job still marked running whose runner died is answered as what it is
+    await pool.query(
+      `update public.ingest_jobs
+          set status = 'failed', stage = 'done', finished_at = $3, touched_at = $3,
+              saving = false, error = $4::jsonb, request = null
+        where id = $1 and scope = $2 and status = 'running' and heartbeat_at < $5`,
+      [id, this.scope, at(now), json(INTERRUPTED), at(now - STALE_MS)],
+    );
+    const r = await pool.query(
+      `update public.ingest_jobs set touched_at = $5
+        where id = $1 and scope = $2 and archive_id = $3 and user_id = $4
+          and not (${expired('$5')})
+        returning ${COLUMNS}`,
+      [id, this.scope, archiveId, userId, at(now)],
+    );
+    return r.rows[0] ? jobOf(r.rows[0] as JobRow) : null;
   }
 
   view(j: Job): JobView {
@@ -425,14 +650,27 @@ export class IngestJobs {
    * `stopping`: it will end as cancelled, nothing saved. `too_late`: it is being written
    * and will finish (it can be undone once saved). `finished`: nothing to stop.
    */
-  cancel(j: Job): 'stopping' | 'too_late' | 'finished' {
+  async cancel(j: Job): Promise<'stopping' | 'too_late' | 'finished'> {
+    const pool = this.deps.pool;
+    // decided in the database, against the runner's own step into saving (see `run`)
+    const r = await pool.query(
+      `update public.ingest_jobs set cancel_requested = true
+        where id = $1 and status = 'running' and not saving and stage = any($2::text[])
+        returning id`,
+      [j.id, CANCELLABLE],
+    );
+    if (r.rowCount) {
+      this.local.get(j.id)?.abort();
+      return 'stopping';
+    }
+    const now = (
+      await pool.query('select status, saving from public.ingest_jobs where id = $1', [j.id])
+    ).rows[0] as { status: JobStatus; saving: boolean } | undefined;
     // a preview being saved is a finished job that is writing: too late, not "finished"
     // (it was answered 200 as if nothing were happening, then saved; round-2 review #9)
-    if (j.saving) return 'too_late';
-    if (j.status !== 'running') return 'finished';
-    if (!CANCELLABLE.includes(j.stage)) return 'too_late';
-    j.ac.abort();
-    return 'stopping';
+    if (now?.saving) return 'too_late';
+    if (!now || now.status !== 'running') return 'finished';
+    return 'too_late';
   }
 
   /**
@@ -440,26 +678,41 @@ export class IngestJobs {
    * and size other jobs hold about it (a duplicate refused because of it, a preview warned
    * about it: round-2 review #8).
    */
-  forgetRun(runId: string): void {
-    for (const j of this.jobs.values()) {
-      const o = j.outcome;
-      if (!o) continue;
-      if (o.runId === runId) {
-        j.outcome = forgotten(o);
-        j.markers = [];
-      } else if (o.duplicateOf?.runId === runId) {
-        if (o.status === 'duplicate') {
+  async forgetRun(runId: string): Promise<void> {
+    await this.transaction(async (client) => {
+      const r = await client.query(
+        `select id, outcome, markers from public.ingest_jobs
+          where scope = $1 and outcome is not null
+            and (outcome->>'runId' = $2 or outcome->'duplicateOf'->>'runId' = $2)
+          for update`,
+        [this.scope, runId],
+      );
+      for (const row of r.rows as Array<{
+        id: string;
+        outcome: IngestOutcome;
+        markers: MarkerLine[];
+      }>) {
+        const o = row.outcome;
+        let next: IngestOutcome;
+        let markers = row.markers;
+        if (o.runId === runId) {
+          next = forgotten(o);
+          markers = [];
+        } else if (o.status === 'duplicate') {
           // the page that was told "already imported" still needs a record to show
-          j.outcome = { ...o, duplicateOf: { ...o.duplicateOf, source: null } };
+          next = { ...o, duplicateOf: { ...o.duplicateOf!, source: null } };
         } else {
           // a preview's warning about an import that is no longer there is not true any more
-          const rest: IngestOutcome = { ...o };
-          delete rest.duplicateOf;
-          j.outcome = rest;
+          next = { ...o };
+          delete next.duplicateOf;
         }
-      } else continue;
-      j.bytes = sizeOf(j.outcome);
-    }
+        await client.query(
+          `update public.ingest_jobs set outcome = $2::jsonb, markers = $3::jsonb, bytes = $4
+            where id = $1`,
+          [row.id, json(next), json(markers), sizeOf(next)],
+        );
+      }
+    });
   }
 
   /**
@@ -467,36 +720,93 @@ export class IngestJobs {
    * quoting them, in a preview's marker lines, its `conflicts` or the sentences shown to the
    * person (round-3 review D2). A save already under way checks again under the lock.
    */
-  forgetNotes(archiveId: string, noteIds: string[]): void {
+  async forgetNotes(archiveId: string, noteIds: string[]): Promise<void> {
     if (noteIds.length === 0) return;
     const gone = new Set(noteIds.map((id) => id.toLowerCase()));
-    const archive = archiveId.toLowerCase();
-    for (const j of this.jobs.values()) {
-      const o = j.outcome;
-      if (j.archiveId !== archive || !o || o.undone) continue;
-      if (!dropQuotesOf(o, j.markers, gone)) continue;
-      j.markers = j.markers.filter((mk) => !gone.has(mk.source));
-      j.bytes = sizeOf(o);
-    }
+    await this.transaction(async (client) => {
+      const r = await client.query(
+        `select id, outcome, markers from public.ingest_jobs
+          where scope = $1 and archive_id = $2 and outcome is not null
+            and coalesce(outcome->>'undone', 'false') <> 'true'
+          for update`,
+        [this.scope, archiveId.toLowerCase()],
+      );
+      for (const row of r.rows as Array<{
+        id: string;
+        outcome: IngestOutcome;
+        markers: MarkerLine[];
+      }>) {
+        const o = row.outcome;
+        const markers = row.markers ?? [];
+        if (!dropQuotesOf(o, markers, gone)) continue;
+        await client.query(
+          `update public.ingest_jobs set outcome = $2::jsonb, markers = $3::jsonb, bytes = $4
+            where id = $1`,
+          [row.id, json(o), json(markers.filter((mk) => !gone.has(mk.source))), sizeOf(o)],
+        );
+      }
+    });
   }
 
-  private finish(job: Job, status: JobStatus, extra: Partial<Job> = {}): void {
-    job.status = status;
-    job.stage = 'done';
-    job.finishedAt = Date.now();
-    job.touchedAt = job.finishedAt;
-    Object.assign(job, extra);
-    const o = job.outcome;
-    job.bytes = sizeOf(o);
+  /**
+   * Write how a job ended. `unlessCancelled`: a cancel that reached the database first wins,
+   * and the job ends cancelled instead (it was answered "stopping").
+   */
+  private async finish(
+    job: Job,
+    status: JobStatus,
+    extra: Partial<Job> = {},
+    unlessCancelled = false,
+  ): Promise<Job> {
+    const now = Date.now();
+    const done: Job = {
+      ...job,
+      ...extra,
+      status,
+      stage: 'done',
+      finishedAt: now,
+      touchedAt: now,
+      saving: false,
+    };
+    done.bytes = sizeOf(done.outcome);
+    const r = await this.deps.pool.query(
+      `update public.ingest_jobs
+          set status = $2, stage = 'done', finished_at = $3, touched_at = $3,
+              outcome = $4::jsonb, outcome_status = $5, error = $6::jsonb, markers = $7::jsonb,
+              bytes = $8, saving = false, timed_out = $9, progress_done = $10,
+              progress_total = $11, request = null
+        where id = $1 ${unlessCancelled ? 'and not cancel_requested' : ''}
+        returning id`,
+      [
+        done.id,
+        status,
+        at(now),
+        json(done.outcome),
+        done.outcome?.status ?? null,
+        json(done.error),
+        json(done.markers),
+        done.bytes,
+        done.timedOut,
+        done.progress.done,
+        done.progress.total,
+      ],
+    );
+    if (unlessCancelled && r.rowCount === 0) {
+      return this.finish({ ...job, markers: [] }, 'cancelled', {
+        outcome: undefined,
+        error: failureOf(new IngestCancelled()),
+      });
+    }
+    const o = done.outcome;
     // content-free: counts and codes, never words
     console.info(
       JSON.stringify({
         evt: 'ingest',
-        job: job.id,
-        archive: job.archiveId,
+        job: done.id,
+        archive: done.archiveId,
         status,
         outcome: o?.status,
-        ms: job.finishedAt - job.startedAt,
+        ms: now - done.startedAt,
         turns: o?.stats.turns,
         windows: o?.stats.windows,
         degraded: o?.degraded.windows,
@@ -504,13 +814,48 @@ export class IngestJobs {
         memories: o?.memories.length,
         saved: o?.saved?.length,
         unchecked: o?.check?.skipped,
-        error: job.error?.code,
+        error: done.error?.code,
       }),
     );
+    return done;
   }
 
-  private async run(job: Job, req: IngestRequest): Promise<void> {
-    const signal = job.ac.signal;
+  /**
+   * Run a job here. Every second it says it is alive, writes its progress, and looks for a
+   * cancel sent to another instance; the hard time limit counts from when the job started.
+   */
+  private async run(job: Job, req: IngestRequest, cancelled = false): Promise<Job> {
+    const pool = this.deps.pool;
+    const ac = new AbortController();
+    if (cancelled) ac.abort();
+    this.local.set(job.id, ac);
+    let timedOut = false;
+    const limit = setTimeout(
+      () => {
+        timedOut = true;
+        ac.abort();
+      },
+      Math.max(0, hardLimitMs() - (Date.now() - job.startedAt)),
+    );
+    limit.unref?.();
+    let beating: Promise<void> = Promise.resolve();
+    const beat = async (): Promise<void> => {
+      const r = await pool.query(
+        `update public.ingest_jobs set heartbeat_at = $2, progress_done = $3, progress_total = $4
+          where id = $1 returning cancel_requested`,
+        [job.id, at(Date.now()), job.progress.done, job.progress.total],
+      );
+      if ((r.rows[0] as { cancel_requested?: boolean } | undefined)?.cancel_requested) ac.abort();
+    };
+    const tick = setInterval(() => {
+      beating = beating.then(beat).catch(() => undefined);
+    }, HEARTBEAT_MS);
+    tick.unref?.();
+    const stage = async (s: JobStage): Promise<void> => {
+      job.stage = s;
+      await pool.query('update public.ingest_jobs set stage = $2 where id = $1', [job.id, s]);
+    };
+    const signal = ac.signal;
     try {
       // 1. read it, and see whether this interview is already in
       let parsed: ParsedTranscript;
@@ -526,24 +871,19 @@ export class IngestJobs {
         );
       }
       const hash = hashTurns(parsed.turns);
-      const duplicate = await findActiveImport(this.deps.pool, job.archiveId, hash);
+      const duplicate = await findActiveImport(pool, job.archiveId, hash);
       if (req.save && duplicate && !req.force) {
         job.outcome = blockedDuplicate(parsed.turns.length, hash, duplicate);
-        this.finish(job, 'succeeded');
-        return;
+        return await this.finish(job, 'succeeded', {}, true);
       }
       if (signal.aborted) throw new IngestCancelled();
 
       // 2. organise it. It may link only to notes every member can read: it is shared with all of them.
-      job.stage = 'organizing';
+      await stage('organizing');
       const result = (await ingestParsed(parsed, req, {
         chat: this.deps.chat ?? null,
         // the titles the interview mentions come first, so short ones ("Mom") are not crowded out
-        titles: await sharedTitles(
-          this.deps.pool,
-          job.archiveId,
-          parsed.turns.map((t) => t.text).join('\n'),
-        ),
+        titles: await sharedTitles(pool, job.archiveId, parsed.turns.map((t) => t.text).join('\n')),
         signal,
         onProgress: (p) => {
           job.progress = { done: p.done, total: p.total };
@@ -553,8 +893,8 @@ export class IngestJobs {
       withIds(result.memories);
 
       // 3. settle titles, and mark what disagrees with what the archive already says (bounded, stoppable)
-      job.stage = 'checking';
-      const who = await displayNameOf(this.deps.pool, job.userId);
+      await stage('checking');
+      const who = await displayNameOf(pool, job.userId);
       const checked = await annotateImport(this.deps, job.archiveId, job.userId, result, who, {
         signal,
       });
@@ -563,13 +903,21 @@ export class IngestJobs {
       if (duplicate) result.duplicateOf = duplicate;
 
       // 4. decide. This is the last moment a cancel (or the time limit) stops it: from the
-      // next line on it is being written, and a cancel is answered "too late".
+      // next step on it is being written, and a cancel is answered "too late".
       if (signal.aborted) throw new IngestCancelled();
       if (!req.save) {
         result.status = 'previewed';
       } else if (result.roles.needsConfirmation && !req.confirm) {
         result.status = 'needs_confirmation';
       } else {
+        // Whether a cancel came first is decided in the database: one that reached it before
+        // this step is answered "stopping", so it stops; after it, cancels are "too late".
+        const writing = await pool.query(
+          `update public.ingest_jobs set stage = 'saving', saving = true, heartbeat_at = $2
+            where id = $1 and not cancel_requested returning id`,
+          [job.id, at(Date.now())],
+        );
+        if (!writing.rowCount) throw new IngestCancelled();
         job.stage = 'saving';
         job.saving = true;
         const out = await persistImport(this.deps, job.archiveId, job.userId, result, {
@@ -580,60 +928,85 @@ export class IngestJobs {
         result.runId = out.runId;
         result.saved = out.saved;
         job.markers = [];
+        job.outcome = result;
+        // written: it stands, whatever arrives now
+        return await this.finish(job, 'succeeded', { timedOut });
       }
       job.outcome = result;
-      this.finish(job, 'succeeded');
+      return await this.finish(job, 'succeeded', { timedOut }, true);
     } catch (e) {
       if (e instanceof DuplicateImport) {
         job.outcome = blockedDuplicate(0, '', e.previous);
-        this.finish(job, 'succeeded');
-      } else if (e instanceof IngestCancelled && job.timedOut) {
-        this.finish(job, 'failed', {
+        return await this.finish(job, 'succeeded', { timedOut });
+      }
+      if (e instanceof IngestCancelled && timedOut) {
+        return await this.finish(job, 'failed', {
+          timedOut,
           error: { code: 'timeout', message: 'the import took too long; nothing was saved' },
         });
-      } else if (e instanceof IngestCancelled || e instanceof ImportNotAllowed) {
-        this.finish(job, e instanceof IngestCancelled ? 'cancelled' : 'failed', {
+      }
+      if (e instanceof IngestCancelled || e instanceof ImportNotAllowed) {
+        return await this.finish(job, e instanceof IngestCancelled ? 'cancelled' : 'failed', {
           error: failureOf(e),
         });
-      } else {
-        if (!(e instanceof TranscriptError)) {
-          console.error(`[ingest] job ${job.id} failed: ${describeError(e)}`);
-        }
-        this.finish(job, 'failed', { error: failureOf(e) });
       }
+      if (!(e instanceof TranscriptError)) {
+        console.error(`[ingest] job ${job.id} failed: ${describeError(e)}`);
+      }
+      return await this.finish(job, 'failed', { error: failureOf(e) });
     } finally {
-      job.saving = false;
+      clearTimeout(limit);
+      clearInterval(tick);
+      await beating;
+      this.local.delete(job.id);
     }
   }
 
   /**
    * Save the preview a finished job is holding, optionally with the person's edits.
-   * Writes atomically; a second attempt (or a double-click) is refused.
+   * Writes atomically; a second attempt (or a double-click, or the same click arriving at
+   * two instances) is refused.
    */
   async save(job: Job, patches: MemoryPatch[] = [], force = false): Promise<IngestOutcome> {
-    const o = job.outcome;
-    if (
-      job.status !== 'succeeded' ||
-      !o ||
-      (o.status !== 'previewed' && o.status !== 'needs_confirmation')
-    ) {
+    const pool = this.deps.pool;
+    const claim = await pool.query(
+      `update public.ingest_jobs set saving = true, heartbeat_at = $2
+        where id = $1 and status = 'succeeded' and not saving
+          and outcome_status in ('previewed', 'needs_confirmation')
+        returning outcome, markers`,
+      [job.id, at(Date.now())],
+    );
+    const held = claim.rows[0] as { outcome: IngestOutcome; markers: MarkerLine[] } | undefined;
+    if (!held) {
+      const now = (
+        await pool.query(
+          'select status, saving, outcome_status from public.ingest_jobs where id = $1',
+          [job.id],
+        )
+      ).rows[0] as
+        { status: JobStatus; saving: boolean; outcome_status: string | null } | undefined;
+      const preview =
+        now?.status === 'succeeded' &&
+        (now.outcome_status === 'previewed' || now.outcome_status === 'needs_confirmation');
+      if (preview && now.saving) {
+        throw new SaveError('already saving', 409, { reason: 'already_saving' });
+      }
       throw new SaveError('there is nothing to save', 409, { reason: 'nothing_to_save' });
     }
-    if (job.saving) throw new SaveError('already saving', 409, { reason: 'already_saving' });
-    job.saving = true;
+    let saved: IngestOutcome | null = null;
     try {
-      const { outcome: edited, wanted, skipped } = applyPatches(o, patches);
+      const { outcome: edited, wanted, skipped } = applyPatches(held.outcome, patches);
       if (edited.memories.length === 0)
         throw new SaveError('nothing is selected to save', 400, { reason: 'nothing_selected' });
       // a memory left out takes the markers that named it with it
-      const markers = job.markers;
+      const markers = held.markers ?? [];
       dropMarkers(edited.memories, markers, skipped);
       // edits may have changed titles, and the archive may have gained notes since the
       // preview: settle again, and every link to an old title follows it
       retitle(
         edited.memories,
         await resolveTitles(
-          this.deps.pool,
+          pool,
           job.archiveId,
           edited.memories.map((m, i) => ({ title: wanted[i]!, hint: hintOf(m) })),
         ),
@@ -645,13 +1018,18 @@ export class IngestJobs {
       edited.status = 'saved';
       edited.runId = out.runId;
       edited.saved = out.saved;
-      job.outcome = edited;
-      job.markers = [];
-      job.bytes = sizeOf(edited);
+      saved = edited;
       return edited;
     } finally {
-      job.saving = false;
-      job.touchedAt = Date.now();
+      await pool.query(
+        saved
+          ? `update public.ingest_jobs
+                set saving = false, touched_at = $2, outcome = $3::jsonb, outcome_status = 'saved',
+                    markers = '[]', bytes = $4
+              where id = $1`
+          : 'update public.ingest_jobs set saving = false, touched_at = $2 where id = $1',
+        saved ? [job.id, at(Date.now()), json(saved), sizeOf(saved)] : [job.id, at(Date.now())],
+      );
     }
   }
 }

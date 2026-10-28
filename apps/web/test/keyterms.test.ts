@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { keytermsFor } from '../src/lib/keyterms';
+import { callName, keytermsFor, withPeople } from '../src/lib/keyterms';
 import type { NoteSummary } from '../src/lib/api';
 
 const note = (title: string, type: string, revised = '2026-01-01'): NoteSummary => ({
@@ -39,5 +39,33 @@ describe('keytermsFor', () => {
     const terms = keytermsFor('Nell', many);
     expect(terms.length).toBeLessThanOrEqual(50);
     expect(terms.join('').length).toBeLessThanOrEqual(1200);
+  });
+});
+
+describe('callName', () => {
+  it('calls someone by their given name, not their surname', () => {
+    expect(callName('Nell Marsh')).toBe('Nell');
+    expect(callName('Carol')).toBe('Carol');
+  });
+
+  it('looks past a family word to the name, and keeps a title with the name it goes with', () => {
+    expect(callName('Grandma Nell')).toBe('Nell');
+    expect(callName('Aunt Carol Marsh')).toBe('Carol');
+    expect(callName('Grandma')).toBe('Grandma');
+    expect(callName('Mrs. Harju')).toBe('Mrs. Harju');
+  });
+});
+
+describe('withPeople', () => {
+  it('listens first for the people in the room, and never for a family word on its own', () => {
+    const base = Array.from({ length: 50 }, (_, i) => `Place ${i}`);
+    const terms = withPeople(base, ['Grandma Nell', 'Theo Marsh']);
+    expect(terms.slice(0, 5)).toEqual(['Grandma Nell', 'Nell', 'Theo Marsh', 'Theo', 'Marsh']);
+    expect(terms).not.toContain('Grandma');
+    expect(terms).toHaveLength(50);
+  });
+
+  it('names nobody twice, whatever their case', () => {
+    expect(withPeople(['Nell', 'Duluth'], ['nell'])).toEqual(['nell', 'Duluth']);
   });
 });

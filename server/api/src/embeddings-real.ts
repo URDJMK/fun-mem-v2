@@ -1,6 +1,7 @@
 import { createRequire } from 'node:module';
 import { Worker } from 'node:worker_threads';
 import type { EmbeddingProvider } from '@funmem/core';
+import { EmbeddingContentError, EmbeddingWorkerError } from './embedding-errors';
 
 /**
  * Real embedding provider (FM-022, D-30): BAAI/bge-m3 dense embeddings via the
@@ -69,24 +70,9 @@ function modelHost(): string | undefined {
   return process.env.HF_ENDPOINT || undefined;
 }
 
-/**
- * FM-035 error taxonomy. FM-046's `reason_code` needs to tell "this chunk is
- * bad" from "the worker is down" — classified by TYPE, never by message text.
- */
-export class EmbeddingWorkerError extends Error {
-  readonly retryable = true as const;
-  constructor(message: string) {
-    super(message);
-    this.name = 'EmbeddingWorkerError';
-  }
-}
-export class EmbeddingContentError extends Error {
-  readonly retryable = false as const;
-  constructor(message: string) {
-    super(message);
-    this.name = 'EmbeddingContentError';
-  }
-}
+// The error taxonomy lives apart (embedding-errors.ts), so the drain and the Workers AI provider
+// can use it without importing this file's worker_threads; re-exported for existing importers.
+export { EmbeddingContentError, EmbeddingWorkerError } from './embedding-errors';
 
 /** How long one embed request may go unanswered before the worker is replaced. */
 export const EMBED_TIMEOUT_MS = 120_000;

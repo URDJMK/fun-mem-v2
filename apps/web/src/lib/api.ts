@@ -1,11 +1,18 @@
 import { SKIP_LOGIN } from './demo';
 import { supabase } from './supabase';
 
-/** An answer from the API that was not a success: its status, and its stable `code` if it sent one. */
+/**
+ * An answer from the API that was not a success: its status, its stable `code` if it sent one,
+ * on a 429 how many seconds to wait before asking again, and (code `busy`) which import is in
+ * the way and why, when the server named one.
+ */
 export class ApiError extends Error {
   constructor(
     readonly status: number,
     readonly code: string | null,
+    readonly retryAfter: number | null = null,
+    readonly jobId: string | null = null,
+    readonly reason: string | null = null,
   ) {
     super(`api ${status}${code ? ` ${code}` : ''}`);
   }
@@ -40,8 +47,23 @@ async function apiFetch<T>(
     signal,
   });
   if (!res.ok) {
-    const payload = (await res.json().catch(() => null)) as { code?: unknown } | null;
-    throw new ApiError(res.status, typeof payload?.code === 'string' ? payload.code : null);
+    const payload = (await res.json().catch(() => null)) as {
+      code?: unknown;
+      retryAfter?: unknown;
+      jobId?: unknown;
+      reason?: unknown;
+    } | null;
+    const wait =
+      typeof payload?.retryAfter === 'number'
+        ? payload.retryAfter
+        : Number(res.headers.get('retry-after') ?? NaN);
+    throw new ApiError(
+      res.status,
+      typeof payload?.code === 'string' ? payload.code : null,
+      Number.isFinite(wait) ? wait : null,
+      typeof payload?.jobId === 'string' ? payload.jobId : null,
+      typeof payload?.reason === 'string' ? payload.reason : null,
+    );
   }
   return (await res.json()) as T;
 }

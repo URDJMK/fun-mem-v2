@@ -1,0 +1,70 @@
+# The API as a Cloudflare Worker (src/worker.ts). How to deploy it: docs/deploy.md.
+# The Node server (src/main.ts, `just api`) is unchanged and still what local development runs.
+name = "funmem-api"
+main = "src/worker.ts"
+compatibility_date = "2026-10-01"
+# pg (node-postgres) reaches Postgres over Cloudflare's TCP sockets through the Node APIs
+compatibility_flags = ["nodejs_compat"]
+
+# An optional package a dependency imports only if it is installed (src/stubs/absent-optional.ts)
+[alias]
+"@opentelemetry/api" = "./src/stubs/absent-optional.ts"
+
+# Run next to the database rather than next to each visitor: nearly every request is several
+# round trips to Postgres, which lives in one Supabase region.
+[placement]
+mode = "smart"
+
+# Every minute: embed what is waiting for a vector, and let go of expired import jobs.
+[triggers]
+crons = ["* * * * *"]
+
+# An import nobody waits on runs in the queue consumer, which may take up to 15 minutes: the
+# import's own hard limit. One message per invocation, so each import gets that time.
+[[queues.producers]]
+queue = "funmem-ingest"
+binding = "INGEST_QUEUE"
+
+[[queues.consumers]]
+queue = "funmem-ingest"
+max_batch_size = 1
+max_retries = 2
+
+# Workers AI: bge-m3 embeddings for the vector search (src/embeddings-workers-ai.ts).
+[ai]
+binding = "AI"
+
+# Logs carry no family words by design (codes and counts only); keep them for debugging.
+[observability]
+enabled = true
+
+# Secrets: never in this file. `wrangler secret put <NAME>` for each:
+#   FUNMEM_DB_URL        Supabase's transaction pooler connection string (port 6543)
+#   FUNMEM_SUPABASE_URL  the project URL, https://<project-ref>.supabase.co
+#   NVIDIA_API_KEY       optional: without it an import keeps the speaker's own words, and the
+#                        assistant and the interview coach answer 503
+#   DEEPGRAM_API_KEY     optional: without it live interviews can't be recorded (a recorded
+#                        transcript can still be brought in)
+# Optional, not secret: INTERVIEW_MODEL, the coach's NVIDIA model (src/interview-coach.ts has the
+# default); set it under [vars] or with `wrangler secret put`.
+# For `wrangler dev`, the same names go in server/api/.dev.vars (git-ignored).
+
+# Workers Paid only: the Free plan allows 10 ms of CPU per request, which an import's reading
+# and checking can exceed. On a paid plan, uncomment to allow up to 5 minutes.
+# [limits]
+# cpu_ms = 300000
+
+# `wrangler dev --env local`: the same Worker without Workers AI, whose binding needs a Cloudflare
+# login even in development. Embeddings come from the deterministic test provider instead.
+# Bindings are not inherited by an environment, so the queue is declared again.
+[env.local]
+vars = { FUNMEM_EMBEDDING_PROVIDER = "deterministic" }
+
+[[env.local.queues.producers]]
+queue = "funmem-ingest"
+binding = "INGEST_QUEUE"
+
+[[env.local.queues.consumers]]
+queue = "funmem-ingest"
+max_batch_size = 1
+max_retries = 2

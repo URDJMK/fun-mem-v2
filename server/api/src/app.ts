@@ -11,6 +11,8 @@ import { registerAskRoutes } from './ask';
 import { registerDraftRoutes } from './drafts';
 import { registerAgentRoutes, type AgentModelConfig } from './agent';
 import { registerIngestRoutes, type ChatModel } from './ingest';
+import type { IngestJobsOptions } from './ingest-jobs';
+import { registerInternalRoutes } from './internal';
 import { registerTranscriptionRoutes } from './transcription';
 import { registerCoachRoutes } from './interview-coach';
 import { registerInviteRoutes } from './invites';
@@ -36,6 +38,17 @@ export interface AppDeps {
   chat?: ChatModel | null;
   /** Model for the archive assistant (Mastra Agent). Absent = POST /agent answers 503. */
   agentModel?: AgentModelConfig | null;
+  /**
+   * How interview imports run (ingest-jobs.ts). Absent: in this process, swept every minute,
+   * sharing jobs with every instance that uses the default scope (the Node server).
+   */
+  ingestJobs?: IngestJobsOptions;
+  /**
+   * Turns on the /internal routes (internal.ts) and is what a request to them must carry: the
+   * Worker's cron and queue handlers reach the drain and the import runner through them.
+   * Absent (the Node server, which runs those on its own timers): there are no such routes.
+   */
+  internalSecret?: string | null;
   /**
    * Deepgram API key for live interview transcription. Absent = the token route answers 503
    * `not_configured`; everything else, importing a transcript included, works as before.
@@ -112,12 +125,13 @@ export function createApp(deps: AppDeps): App {
   registerSearchRoutes(app, deps);
   registerAskRoutes(app, deps);
   registerDraftRoutes(app, deps);
-  registerIngestRoutes(app, deps);
+  const jobs = registerIngestRoutes(app, deps);
   registerAgentRoutes(app, deps);
   registerTranscriptionRoutes(app, deps);
   registerCoachRoutes(app, deps);
   registerInviteRoutes(app, deps);
   registerProjectSettingsRoutes(app, deps);
+  registerInternalRoutes(app, deps, jobs);
 
   return app;
 }

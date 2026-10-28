@@ -37,7 +37,8 @@ export interface Source {
 
 export type LiveStatus = 'connecting' | 'live' | 'paused' | 'reconnecting' | 'stopping' | 'stopped';
 
-export type LiveFailure = 'not_configured' | 'token' | 'connection' | 'unsupported';
+export type LiveFailure =
+  'not_configured' | 'rate_limited' | 'token' | 'connection' | 'unsupported';
 
 interface Callbacks {
   /** words were added or the in-progress line changed */
@@ -48,6 +49,28 @@ interface Callbacks {
 }
 
 const LISTEN = 'wss://api.deepgram.com/v1/listen';
+
+/**
+ * The stream's address: nova-3, the names to spell the archive's way, and, when one stream
+ * carries several voices, who spoke when. `mip_opt_out`: Deepgram keeps neither the audio nor
+ * the transcript once the stream is done, and trains on neither (its Model Improvement Program
+ * is otherwise on by default). These are families' voices.
+ */
+export function listenUrl(keyterms: readonly string[], diarize: boolean): string {
+  const params = new URLSearchParams({
+    model: 'nova-3',
+    language: 'en',
+    smart_format: 'true',
+    punctuate: 'true',
+    interim_results: 'true',
+    endpointing: '300',
+    mip_opt_out: 'true',
+  });
+  // `diarize` is deprecated; setting both it and `diarize_model` is refused
+  if (diarize) params.set('diarize_model', 'latest');
+  for (const term of keyterms) params.append('keyterm', term);
+  return `${LISTEN}?${params}`;
+}
 const MIME = ['audio/webm;codecs=opus', 'audio/webm', 'audio/ogg;codecs=opus', 'audio/mp4'];
 const MAX_RETRIES = 4;
 
@@ -175,7 +198,13 @@ export class LiveTranscriber {
       return await this.getToken();
     } catch (e) {
       const code = (e as { code?: unknown }).code;
-      this.fail(code === 'not_configured' ? 'not_configured' : 'token');
+      this.fail(
+        code === 'not_configured'
+          ? 'not_configured'
+          : code === 'rate_limited'
+            ? 'rate_limited'
+            : 'token',
+      );
       return null;
     }
   }
@@ -290,19 +319,11 @@ class Channel {
   ) {}
 
   connect(token: string): Promise<void> {
-    const params = new URLSearchParams({
-      model: 'nova-3',
-      language: 'en',
-      smart_format: 'true',
-      punctuate: 'true',
-      interim_results: 'true',
-      endpointing: '300',
-    });
-    // `diarize` is deprecated; setting both it and `diarize_model` is refused
-    if (this.source.speaker === null) params.set('diarize_model', 'latest');
-    for (const term of this.live.keyterms) params.append('keyterm', term);
     this.base = this.live.elapsed();
-    const ws = new WebSocket(`${LISTEN}?${params}`, ['bearer', token]);
+    const ws = new WebSocket(listenUrl(this.live.keyterms, this.source.speaker === null), [
+      'bearer',
+      token,
+    ]);
     this.ws = ws;
 
     return new Promise((resolve) => {

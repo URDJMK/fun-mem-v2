@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { listNotes, transcriptionToken } from './api';
-import { keytermsFor } from './keyterms';
+import { keytermsFor, withPeople } from './keyterms';
 import { openSources, type Mode, type StartFailure } from './interview';
 import { LiveTranscriber, liveSupported, type LiveStatus } from './live';
 import { SIMULATE, SimulatedRecorder, type Recorder } from './live-sim';
@@ -20,6 +20,10 @@ export function useRecording(opts: {
   const rec = useRef<Recorder | null>(null);
   const streams = useRef<MediaStream[]>([]);
   const baseTerms = useRef<string[]>([]);
+  /** the people in the room, as named so far: may come before the recording has started */
+  const people = useRef<string[]>([]);
+  // the names and acronyms in the interviewer's notes, kept like the people
+  const noteWords = useRef<string[]>([]);
   const [, redraw] = useState(0);
   const [status, setStatus] = useState<LiveStatus>('connecting');
   const [mic, setMic] = useState<MediaStream | null>(null);
@@ -62,7 +66,7 @@ export function useRecording(opts: {
                 { stream: s[1]!, speaker: 'call' },
               ],
           { onChange: changed, onStatus: setStatus, onFail: (f) => cb.current.onFail(f) },
-          baseTerms.current,
+          withPeople([...noteWords.current, ...baseTerms.current], people.current),
         );
         rec.current = t;
         void t.start();
@@ -92,15 +96,14 @@ export function useRecording(opts: {
     callEnded,
     /**
      * The people in the room, and the words in the interviewer's notes (`terms`, kept whole),
-     * added to the archive's names Deepgram listens for. The notes come first: they are what
-     * this interview is about, and the list has a limit.
+     * added to the archive's names Deepgram listens for. The notes' words come before the
+     * archive's: they are what this interview is about, and the list has a limit.
      */
     addNames(names: string[], terms: string[] = []) {
-      const extra = names.flatMap((n) => [n, ...n.split(/\s+/)]).filter((n) => n.length > 1);
-      const all = [...new Set([...terms, ...extra, ...baseTerms.current])];
-      // Deepgram refuses more than 500 tokens: about four characters a token, well under
-      let chars = 0;
-      rec.current?.setKeyterms(all.filter((t, i) => i < 50 && (chars += t.length) <= 1400));
+      // kept for the recording yet to start, and given to the one running
+      people.current = names;
+      noteWords.current = terms;
+      rec.current?.setKeyterms(withPeople([...terms, ...baseTerms.current], names));
     },
     /** Stops, and hands back each source's whole recording (none in a simulation). */
     async finish(): Promise<Blob[]> {

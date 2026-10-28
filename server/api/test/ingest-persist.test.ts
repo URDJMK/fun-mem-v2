@@ -473,53 +473,53 @@ describe('#2 a preview is kept while somebody is reviewing it, whatever anyone e
     ],
   });
   const preview = async (jobs: IngestJobs, user: string, tag: string) => {
-    const j = jobs.start(randomUUID(), user, { transcript: tiny(tag) });
-    await j.done;
+    const j = await (await jobs.start(randomUUID(), user, { transcript: tiny(tag) })).done;
     expect(jobs.view(j).outcome?.status).toBe('previewed');
     return j;
   };
   const failed = async (jobs: IngestJobs, user: string) => {
-    const j = jobs.start(randomUUID(), user, { transcript: '   ' });
-    await j.done;
+    const j = await (await jobs.start(randomUUID(), user, { transcript: '   ' })).done;
     expect(jobs.view(j).status).toBe('failed');
     return j;
   };
-  const has = (jobs: IngestJobs, j: { id: string; archiveId: string; userId: string }) =>
-    jobs.get(j.id, j.archiveId, j.userId) !== null;
+  const has = async (jobs: IngestJobs, j: { id: string; archiveId: string; userId: string }) =>
+    (await jobs.get(j.id, j.archiveId, j.userId)) !== null;
+  /** a job store of its own, as each server process used to have: limits count only its jobs */
+  const newJobs = () => new IngestJobs(ctx.deps, { scope: randomUUID(), sweepEveryMs: null });
 
   it('an unsaved preview lives 60 idle minutes, and every look at it starts the hour again; a finished job lives 15', async () => {
-    const jobs = new IngestJobs(ctx.deps);
+    const jobs = newJobs();
     const user = randomUUID();
     const p = await preview(jobs, user, 'one');
     const f = await failed(jobs, user);
     offset = 50 * 60_000;
-    expect(has(jobs, p)).toBe(true); // looked at after 50 minutes
+    expect(await has(jobs, p)).toBe(true); // looked at after 50 minutes
     await preview(jobs, randomUUID(), 'tick'); // any start lets go of what has expired
-    expect(has(jobs, f)).toBe(false); // a failed job: 50 idle minutes is past its 15
+    expect(await has(jobs, f)).toBe(false); // a failed job: 50 idle minutes is past its 15
     offset = (50 + 59) * 60_000;
     await preview(jobs, randomUUID(), 'tick2');
-    expect(has(jobs, p)).toBe(true); // 59 idle minutes
+    expect(await has(jobs, p)).toBe(true); // 59 idle minutes
     offset = (50 + 59 + 61) * 60_000;
     await preview(jobs, randomUUID(), 'tick3');
-    expect(has(jobs, p)).toBe(false); // 61 idle minutes
+    expect(await has(jobs, p)).toBe(false); // 61 idle minutes
   });
 
   it("a person's own finished jobs go before their previews when they are over their share", async () => {
-    const jobs = new IngestJobs(ctx.deps);
+    const jobs = newJobs();
     const user = randomUUID();
     const first = await preview(jobs, user, 'first');
     for (let i = 0; i < 9; i++) await preview(jobs, user, `more ${i}`);
     const f = await failed(jobs, user);
     await preview(jobs, user, 'twelfth');
-    expect(has(jobs, f)).toBe(false);
-    expect(has(jobs, first)).toBe(true);
+    expect(await has(jobs, f)).toBe(false);
+    expect(await has(jobs, first)).toBe(true);
   });
 
   it(
     'the server-wide cap lets go of finished jobs first, and never of a preview somebody looked at in the last 15 minutes',
     { timeout: 120_000 },
     async () => {
-      const jobs = new IngestJobs(ctx.deps);
+      const jobs = newJobs();
       const victim = randomUUID();
       const v = await preview(jobs, victim, 'the one being reviewed');
       const doer = randomUUID();
@@ -530,17 +530,17 @@ describe('#2 a preview is kept while somebody is reviewing it, whatever anyone e
       }
       // 500 held: each new start makes room by letting a FINISHED job go, never a preview
       for (let i = 0; i < 9; i++) await preview(jobs, randomUUID(), `fill ${i}`);
-      expect(has(jobs, v)).toBe(true);
+      expect(await has(jobs, v)).toBe(true);
       // now all 500 are fresh previews: a new import waits rather than take anybody's
-      expect(() =>
+      await expect(
         jobs.start(randomUUID(), randomUUID(), { transcript: tiny('too many') }),
-      ).toThrow(BusyError);
-      expect(has(jobs, v)).toBe(true);
+      ).rejects.toThrow(BusyError);
+      expect(await has(jobs, v)).toBe(true);
       // 16 minutes on, the reviewer is still looking; previews nobody looked at may now go
       offset = 16 * 60_000;
-      expect(has(jobs, v)).toBe(true);
+      expect(await has(jobs, v)).toBe(true);
       await preview(jobs, randomUUID(), 'late');
-      expect(has(jobs, v)).toBe(true);
+      expect(await has(jobs, v)).toBe(true);
     },
   );
 });

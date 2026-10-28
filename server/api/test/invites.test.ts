@@ -14,8 +14,10 @@ const json = async (r: Response) => (await r.json()) as Record<string, unknown>;
 type Found = { userId: string; name: string; email: string; member: boolean; invited: boolean };
 type Mine = { id: string; projectName: string; role: string; invitedBy: string };
 
+/** someone who signed in with Google (the app's only sign-in), under a name of their own */
 async function named(email: string, name: string) {
   const s = await ctx.realSession(email);
+  await ctx.signInWithGoogle(s, email);
   await ctx.pool.query(
     `update auth.users set raw_user_meta_data = raw_user_meta_data || jsonb_build_object('full_name', $2::text) where id = $1`,
     [s.userId, name],
@@ -170,6 +172,7 @@ describe('invites', () => {
     expect(pending[0]).toMatchObject({ inviteeEmail: email, hasAccount: false });
 
     const later = await ctx.realSession(email);
+    await ctx.signInWithGoogle(later, email);
     const mine = (await (await ctx.api(later.token, 'GET', '/v1/invites')).json()) as Mine[];
     expect(mine).toHaveLength(1);
     expect((await ctx.api(later.token, 'POST', `/v1/invites/${mine[0]!.id}/accept`)).status).toBe(
@@ -247,6 +250,108 @@ describe('invites', () => {
     const vid = (await json(v)).id;
     await ctx.api(guest.token, 'POST', `/v1/invites/${vid}/accept`);
     expect((await invite(guest.token, 'viewer', owner.userId)).status).toBe(403);
+  });
+});
+
+describe('an email address is trusted only once Google has verified it', () => {
+  // Supabase's email sign-up (on unless turned off, and unconfirmed when confirmations are off)
+  // lets anyone open an account under any address: it must not be handed what was sent there.
+  it('an invitation to an address is not given to an account that never proved it', async () => {
+    const owner = await ctx.realSession(`pr-owner-${RUN}@test.local`);
+    const archive = await ctx.provisionArchive(owner, `Proof ${RUN}`);
+    const email = `pr-aunt-${RUN}@test.local`;
+    const made = await ctx.api(owner.token, 'POST', `/v1/archives/${archive}/invites`, {
+      role: 'steward',
+      email,
+    });
+    expect(made.status).toBe(201);
+    const { id } = (await json(made)) as { id: string };
+
+    const stranger = await ctx.unprovenSession(email);
+    expect(await (await ctx.api(stranger.token, 'GET', '/v1/invites')).json()).toEqual([]);
+    expect((await ctx.api(stranger.token, 'POST', `/v1/invites/${id}/accept`)).status).toBe(404);
+    expect(await (await ctx.api(stranger.token, 'GET', '/v1/archives')).json()).toEqual([]);
+
+    // whoever does sign in with Google under that address finds it waiting
+    await ctx.signInWithGoogle(stranger, email);
+    const mine = (await (await ctx.api(stranger.token, 'GET', '/v1/invites')).json()) as Mine[];
+    expect(mine.map((m) => m.id)).toEqual([id]);
+  });
+
+  it('inviting an address whose only account never proved it waits for the address', async () => {
+    const owner = await ctx.realSession(`pr2-owner-${RUN}@test.local`);
+    const archive = await ctx.provisionArchive(owner, `Proof two ${RUN}`);
+    const email = `pr2-uncle-${RUN}@test.local`;
+    await ctx.unprovenSession(email);
+    const made = await ctx.api(owner.token, 'POST', `/v1/archives/${archive}/invites`, {
+      role: 'viewer',
+      email,
+    });
+    expect(made.status).toBe(201);
+    expect((await json(made)).hasAccount).toBe(false);
+  });
+
+  it('search offers only people Google has verified', async () => {
+    const owner = await ctx.realSession(`pr3-owner-${RUN}@test.local`);
+    const archive = await ctx.provisionArchive(owner, `Proof three ${RUN}`);
+    const email = `zelda-${RUN}@test.local`;
+    const claimant = await ctx.unprovenSession(email);
+    const search = async () =>
+      (await (
+        await ctx.api(
+          owner.token,
+          'GET',
+          `/v1/archives/${archive}/people-search?q=${encodeURIComponent(email)}`,
+        )
+      ).json()) as Found[];
+    expect(await search()).toEqual([]);
+    await ctx.signInWithGoogle(claimant, email);
+    expect((await search()).map((f) => f.userId)).toEqual([claimant.userId]);
+  });
+});
+
+describe('one person, one invitation', () => {
+  it('search shows someone invited by address as invited, and accepting one invitation withdraws the rest', async () => {
+    const owner = await ctx.realSession(`one-owner-${RUN}@test.local`);
+    const archive = await ctx.provisionArchive(owner, `One ${RUN}`);
+    const email = `one-carol-${RUN}@test.local`;
+    const byAddress = (await json(
+      await ctx.api(owner.token, 'POST', `/v1/archives/${archive}/invites`, {
+        role: 'viewer',
+        email,
+      }),
+    )) as { id: string };
+    const carol = await named(email, `Carol One${RUN}`);
+    const found = (await (
+      await ctx.api(
+        owner.token,
+        'GET',
+        `/v1/archives/${archive}/people-search?q=${encodeURIComponent(email)}`,
+      )
+    ).json()) as Found[];
+    expect(found).toEqual([expect.objectContaining({ userId: carol.userId, invited: true })]);
+
+    // a second invitation, to the account, can still be made (the API does not refuse it)
+    const byAccount = (await json(
+      await ctx.api(owner.token, 'POST', `/v1/archives/${archive}/invites`, {
+        role: 'contributor',
+        userId: carol.userId,
+      }),
+    )) as { id: string };
+    const mine = (await (await ctx.api(carol.token, 'GET', '/v1/invites')).json()) as Mine[];
+    expect(mine.map((m) => m.id).sort()).toEqual([byAddress.id, byAccount.id].sort());
+
+    expect((await ctx.api(carol.token, 'POST', `/v1/invites/${byAddress.id}/accept`)).status).toBe(
+      200,
+    );
+    expect(await (await ctx.api(carol.token, 'GET', '/v1/invites')).json()).toEqual([]);
+    expect((await ctx.api(carol.token, 'POST', `/v1/invites/${byAccount.id}/accept`)).status).toBe(
+      404,
+    );
+    const pending = (await (
+      await ctx.api(owner.token, 'GET', `/v1/archives/${archive}/invites`)
+    ).json()) as unknown[];
+    expect(pending).toEqual([]);
   });
 });
 

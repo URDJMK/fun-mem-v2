@@ -11,3 +11,10 @@ reports/
 supabase/.temp/
 supabase/.branches/
 .gstack/
+
+# Vercel and Wrangler local state; .dev.vars holds the Worker's local secrets
+.vercel/
+.wrangler/
+.dev.vars
+.vercel
+.env*

@@ -64,29 +64,32 @@ export function ArchiveLayout({
         </Link>
 
         <nav aria-label="Project" className="side-nav">
-          {archive.writer && (
-            <NavLink to={inArchive(archive.id, '/interviews/new')} data-testid="nav-import">
-              <span
-                aria-hidden="true"
-                className="avatar"
-                style={{
-                  width: 24,
-                  height: 24,
-                  background: 'var(--sage)',
-                  color: 'var(--on-sage)',
-                }}
-              >
-                <Icon name="plus" size={13} stroke={3} />
-              </span>
-              Add an interview
-            </NavLink>
+          {NAV.map((n) =>
+            n.path === '/interviews' ? (
+              <div key={n.path} className="side-nav-row">
+                <NavLink to={inArchive(archive.id, n.path)} end={n.end ?? false}>
+                  <Icon name={n.icon} stroke={1.8} />
+                  {n.label}
+                </NavLink>
+                {archive.writer && (
+                  <Link
+                    to={inArchive(archive.id, '/interviews/new')}
+                    className="side-nav-plus"
+                    aria-label="Add an interview manually"
+                    title="Add an interview manually"
+                    data-testid="nav-import"
+                  >
+                    <Icon name="plus" size={13} stroke={3} />
+                  </Link>
+                )}
+              </div>
+            ) : (
+              <NavLink key={n.path} to={inArchive(archive.id, n.path)} end={n.end ?? false}>
+                <Icon name={n.icon} stroke={1.8} />
+                {n.label}
+              </NavLink>
+            ),
           )}
-          {NAV.map((n) => (
-            <NavLink key={n.path} to={inArchive(archive.id, n.path)} end={n.end ?? false}>
-              <Icon name={n.icon} stroke={1.8} />
-              {n.label}
-            </NavLink>
-          ))}
         </nav>
 
         {recent.length > 0 && (

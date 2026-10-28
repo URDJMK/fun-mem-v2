@@ -2,7 +2,13 @@ import { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { Link } from 'react-router';
 import { Flip } from 'gsap/Flip';
-import { createNote, listPeople, type PersonSummary } from '../lib/api';
+import {
+  cancelImport,
+  createNote,
+  listPeople,
+  type ImportRequest,
+  type PersonSummary,
+} from '../lib/api';
 import { inArchive, useArchive } from '../lib/archive';
 import {
   FAILURE,
@@ -16,6 +22,7 @@ import {
 import { liveSupported } from '../lib/live';
 import { ArchiveLayout } from '../components/ArchiveLayout';
 import { InterviewReview } from '../components/InterviewReview';
+import { Review, Running, Saved, useImportRun, WhoIsTelling } from '../components/ImportRun';
 import { Studio } from '../components/Studio';
 import { Avatar, Failed, Icon, useAccountName } from '../components/ui';
 
@@ -30,7 +37,9 @@ type Phase =
       flip: Flip.FlipState | null;
     }
   /** `audio`: the whole recording, held in memory for the second transcription; gone on reload */
-  | { kind: 'review'; narrator: string; draft: Draft; audio?: Blob[] };
+  | { kind: 'review'; narrator: string; draft: Draft; audio?: Blob[] }
+  /** "Turn into memories" is running right here: leaving and coming back resumes the same job. */
+  | { kind: 'processing'; narrator: string; draft: Draft };
 
 const flipFrom = (el: Element | null) =>
   el ? Flip.getState(el, { props: 'borderRadius,backgroundColor' }) : null;
@@ -51,12 +60,46 @@ export function Home() {
   const family = archive.kind === 'family';
   const account = useAccountName();
   const interviewer = account.includes('@') ? '' : (account.split(' ')[0] ?? '');
-  const [phase, setPhase] = useState<Phase>({ kind: 'idle' });
+  const [left, setLeft] = useState(() => readDraft(archive.id));
+  const [phase, setPhase] = useState<Phase>(() =>
+    left?.submittedJobId
+      ? { kind: 'processing', narrator: narratorOf(left, name), draft: left }
+      : { kind: 'idle' },
+  );
   const [mode, setMode] = useState<Mode>('room');
   const [error, setError] = useState<string | null>(null);
-  const [left, setLeft] = useState(() => readDraft(archive.id));
   const [choosing, setChoosing] = useState(false);
   const start = useRef<HTMLButtonElement>(null);
+  // which draft the running job belongs to, read fresh (never stale) when the job starts
+  const activeDraft = useRef<Draft | null>(left?.submittedJobId ? left : null);
+  const resumed = useRef(false);
+
+  const importRun = useImportRun(archive.id, {
+    onStarted: (jobId) => {
+      if (activeDraft.current)
+        writeDraft(archive.id, { ...activeDraft.current, submittedJobId: jobId });
+    },
+    onSaved: () => {
+      writeDraft(archive.id, null);
+      setLeft(null);
+    },
+  });
+
+  useEffect(() => {
+    if (resumed.current) return;
+    resumed.current = true;
+    if (phase.kind === 'processing' && phase.draft.submittedJobId) {
+      void importRun.resume(phase.draft.submittedJobId);
+    }
+    // mount only: a draft already marked submitted is resumed once, never restarted
+  }, []);
+
+  function onSubmit(request: ImportRequest) {
+    if (phase.kind !== 'review') return;
+    activeDraft.current = phase.draft;
+    setPhase({ kind: 'processing', narrator: phase.narrator, draft: phase.draft });
+    void importRun.run(request);
+  }
 
   function begin(narrator: string, from: Element | null) {
     setError(null);
@@ -77,6 +120,7 @@ export function Home() {
           (looks.css). Rendered into <body> so it sits behind everything, sidebar included.
           During the interview it stays, quieter, and the embers rest. */}
       {phase.kind !== 'review' &&
+        phase.kind !== 'processing' &&
         createPortal(
           <div className={studio ? 'home-aura home-aura-quiet' : 'home-aura'} aria-hidden="true">
             {!studio &&
@@ -140,7 +184,10 @@ export function Home() {
                   className="btn btn-primary home-start-btn"
                   data-flip-id="start"
                   data-testid="start-interview"
-                  disabled={!liveSupported()}
+                  // one unfinished interview is kept per project: pick it up or discard it first,
+                  // so a new one never takes its place unasked
+                  disabled={!liveSupported() || left !== null}
+                  title={left ? 'Pick up or discard the unfinished interview first' : undefined}
                   onClick={() => (family ? setChoosing(true) : begin(name, start.current))}
                 >
                   <Icon name="mic" size={20} />
@@ -206,7 +253,121 @@ export function Home() {
             setLeft(null);
             setPhase({ kind: 'idle' });
           }}
+          onSubmit={onSubmit}
         />
+      )}
+
+      {phase.kind === 'processing' && importRun.step && (
+        <div className="page" style={{ maxWidth: 640 }}>
+          {(() => {
+            const runStep = importRun.step;
+            if (!runStep) return null;
+            if (runStep.kind === 'running')
+              return (
+                <Running
+                  job={runStep.job}
+                  onCancel={async () => {
+                    try {
+                      await cancelImport(archive.id, runStep.job.id);
+                    } catch {
+                      /* too late to stop: it finishes, and can be undone */
+                    }
+                  }}
+                />
+              );
+            if (runStep.kind === 'failed')
+              return (
+                <div className="stack" style={{ gap: 6 }}>
+                  <h1 className="page-title">That didn’t work</h1>
+                  <Failed>{runStep.text}</Failed>
+                  <div className="row">
+                    <button
+                      type="button"
+                      className="btn btn-primary"
+                      onClick={() => {
+                        // the transcript isn't lost: drop only the job id, so it goes back to
+                        // "wasn't finished" and can be picked up and sent again
+                        if (activeDraft.current) {
+                          const rest: Draft = { ...activeDraft.current };
+                          delete rest.submittedJobId;
+                          writeDraft(archive.id, rest);
+                          setLeft(rest);
+                        }
+                        setPhase({ kind: 'idle' });
+                      }}
+                    >
+                      Back home
+                    </button>
+                  </div>
+                </div>
+              );
+            if (runStep.kind === 'confirm')
+              return (
+                <WhoIsTelling
+                  outcome={runStep.outcome}
+                  onChoose={(ids) =>
+                    void importRun.run({ ...importRun.req!, interviewees: ids, confirm: true })
+                  }
+                  onBack={() => {
+                    const d = activeDraft.current;
+                    setPhase(
+                      d
+                        ? { kind: 'review', narrator: narratorOf(d, name), draft: d }
+                        : { kind: 'idle' },
+                    );
+                  }}
+                />
+              );
+            if (runStep.kind === 'duplicate')
+              return (
+                <div className="stack" style={{ gap: 6 }}>
+                  <h1 className="page-title">This interview is already here</h1>
+                  <p className="notice notice-wonder">
+                    The same words were brought in
+                    {runStep.outcome.duplicateOf
+                      ? ` on ${new Date(runStep.outcome.duplicateOf.createdAt).toLocaleDateString()}`
+                      : ' before'}
+                    {runStep.outcome.duplicateOf?.source
+                      ? `, as “${runStep.outcome.duplicateOf.source}”`
+                      : ''}
+                    . Bringing it in again makes a second copy of every memory.
+                  </p>
+                  <div className="row">
+                    <Link to={inArchive(archive.id, '/interviews')} className="btn btn-primary">
+                      See the interviews
+                    </Link>
+                    <button
+                      type="button"
+                      className="btn"
+                      onClick={() => void importRun.run({ ...importRun.req!, force: true })}
+                    >
+                      Bring it in again anyway
+                    </button>
+                  </div>
+                </div>
+              );
+            if (runStep.kind === 'review')
+              return (
+                <Review
+                  archiveId={archive.id}
+                  jobId={runStep.jobId}
+                  outcome={runStep.outcome}
+                  name={name}
+                  onSaved={importRun.saved}
+                />
+              );
+            return (
+              <Saved
+                archiveId={archive.id}
+                outcome={runStep.outcome}
+                onRestart={() => {
+                  importRun.reset();
+                  setPhase({ kind: 'idle' });
+                }}
+              />
+            );
+          })()}
+        </div>
       )}
     </ArchiveLayout>
   );

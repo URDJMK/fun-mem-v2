@@ -1,5 +1,5 @@
 import type { Pool } from 'pg';
-import { EmbeddingContentError, EmbeddingWorkerError } from './embeddings-real';
+import { EmbeddingContentError, EmbeddingWorkerError } from './embedding-errors';
 import type { EmbeddingProvider } from '@funmem/core';
 
 /**

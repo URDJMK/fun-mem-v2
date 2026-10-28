@@ -1,4 +1,5 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { callName } from '../lib/keyterms';
 import { gsap } from 'gsap';
 import { Flip } from 'gsap/Flip';
 import {
@@ -232,7 +233,8 @@ export function Studio({
 
   const since = segments.slice(phaseFrom);
   const teller = setup.people.find((p) => p.role === 'teller')!;
-  const call = teller.call ?? (teller.name.split(' ').at(-1) || teller.name);
+  // what the coach calls them: their given name, never the surname alone
+  const call = teller.call ?? callName(teller.name);
 
   /* ── hello: learn who is here from what they say ──────── */
   useEffect(() => {

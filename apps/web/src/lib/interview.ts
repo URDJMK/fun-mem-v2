@@ -58,6 +58,8 @@ export interface Draft {
   respell?: Respelling[];
   /** the segments are the full recording's transcription, not the live one */
   retranscribed?: boolean;
+  /** set once "Turn into memories" has started this job; cleared only once it is saved */
+  submittedJobId?: string;
 }
 
 const draftKey = (archiveId: string) => `firepit-live-draft:${archiveId}`;
@@ -72,13 +74,32 @@ export function readDraft(archiveId: string): Draft | null {
   }
 }
 
+/**
+ * Keep the interview `d`, or with `null` let go of the one kept for this project. One with no
+ * words yet changes nothing: an interview that has only just started must not erase the
+ * unfinished one waiting to be picked up (its words exist nowhere else).
+ */
 export function writeDraft(archiveId: string, d: Draft | null): void {
   try {
-    if (d && d.segments.length > 0)
+    if (d === null) window.localStorage.removeItem(draftKey(archiveId));
+    else if (d.segments.length > 0)
       window.localStorage.setItem(draftKey(archiveId), JSON.stringify(d));
-    else window.localStorage.removeItem(draftKey(archiveId));
   } catch {
     /* storage refused: the interview is still on the page */
+  }
+}
+
+/** Signing out: no unfinished interview stays in this browser for whoever uses it next. */
+export function clearDrafts(): void {
+  try {
+    const keys: string[] = [];
+    for (let i = 0; i < window.localStorage.length; i++) {
+      const k = window.localStorage.key(i);
+      if (k?.startsWith(draftKey(''))) keys.push(k);
+    }
+    for (const k of keys) window.localStorage.removeItem(k);
+  } catch {
+    /* storage refused: there is nothing kept to let go of */
   }
 }
 
@@ -387,7 +408,8 @@ export type StartFailure = LiveFailure | 'mic' | 'no_call_audio';
 
 export const FAILURE: Record<StartFailure, string> = {
   not_configured:
-    'Live transcription isn’t set up on this server yet: it needs a DEEPGRAM_API_KEY in the .env file.',
+    'Live transcription isn’t available here yet. You can still bring in a recorded transcript.',
+  rate_limited: 'Too many recordings were started just now. Wait a minute, then try again.',
   token: 'Couldn’t start transcribing. Check your connection and try again.',
   connection: 'The connection to the transcription service was lost. What was said so far is kept.',
   unsupported: 'This browser can’t record audio for transcription. Try Chrome or Edge.',

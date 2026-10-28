@@ -34,13 +34,19 @@ just web               # the web app on http://127.0.0.1:3000
 Open http://127.0.0.1:3000, not `localhost`: the browser keeps the sign-in per address. `just`
 lists every recipe; `just check` runs what CI runs.
 
+## Deploy it
+
+The web app goes to Vercel as a static site, the API to Cloudflare as a Worker
+(`server/api/src/worker.ts`), both on a hosted Supabase project: [docs/deploy.md](docs/deploy.md).
+The Node server above stays the way to develop.
+
 ## Layout
 
 | | |
 |---|---|
 | `packages/core` | the notes model: `[[wikilinks]]`, titles, the rename cascade, dates, chunking |
 | `packages/persona` | grounded answers: evidence, abstention, cleaning text |
-| `server/api` | the Hono API; `src/app.ts` lists every route |
+| `server/api` | the Hono API; `src/app.ts` lists every route; `src/main.ts` runs it on Node, `src/worker.ts` on Cloudflare |
 | `apps/web` | sign-in and the wiki notes, unstyled |
 | `supabase` | the local stack's config and the schema (one migration) |
 | `docs` | the ingestion API, conventions, decisions ([docs/adr](docs/adr)) |

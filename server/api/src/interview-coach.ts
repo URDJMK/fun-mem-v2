@@ -18,7 +18,7 @@
 import { bodyLimit } from 'hono/body-limit';
 import type { App, AppDeps } from './app';
 import { memberRole, WRITE_ROLES } from './membership';
-import type { ChatModel } from './nim';
+import { asModelError, type ChatModel } from './nim';
 
 /**
  * Chosen 2026-10-23 by running the coach on interview moments with each free NVIDIA model:
@@ -195,9 +195,19 @@ export function readSuggestion(text: string): Suggestion | null {
 /** The last words are the narrator's, and they end without a sentence's closing punctuation. */
 export function midSentence(req: CoachRequest): boolean {
   const last = req.transcript.at(-1);
-  if (!last || last.who !== req.narrator) return false;
+  if (!last) return false;
+  // Whoever is not the interviewer is the one answering. The app calls the narrator by a short
+  // name ("Nell") while the transcript labels the voice with the full one ("Nell Marsh"), so the
+  // narrator's name alone would never match.
+  const answering = req.interviewer
+    ? last.who !== req.interviewer
+    : last.who === req.narrator || last.who.split(/\s+/).includes(req.narrator);
+  if (!answering) return false;
   return !/[.!?…]["'”’)]*$/.test(last.text.trim());
 }
+
+/** A failure this quick is worth one more try: the answer still lands inside the pause. */
+const RETRY_WITHIN_MS = 3000;
 
 export class CoachError extends Error {
   constructor(readonly code: 'not_configured' | 'unavailable' | 'unreadable') {
@@ -225,8 +235,10 @@ export async function suggest(
     };
   }
   if (!model) throw new CoachError('not_configured');
-  // one more try when the answer breaks the rules: an answer takes about a second, so a second
-  // attempt still lands inside the pause, and beats falling back to a generic question
+  // One more try when the answer breaks the rules, or the service failed at once: an answer
+  // takes about a second, so a second attempt still lands inside the pause, and beats falling
+  // back to a generic question.
+  const started = Date.now();
   let s: Suggestion | null = null;
   for (let attempt = 0; attempt < 2 && !s; attempt++) {
     let text: string;
@@ -237,13 +249,28 @@ export async function suggest(
         priority: 'high',
         timeoutMs: 9000,
       });
-    } catch {
+    } catch (e) {
+      const m = asModelError(e);
+      // what failed, for whoever runs this; never the words, which are the family's
+      console.error(`[coach] the model failed: ${m.kind}${m.status ? ` ${m.status}` : ''}`);
+      // NVIDIA's free tier answers 500 now and then, in a fifth of a second: worth once more.
+      // A refusal (a bad key) or a slow failure would only fail again, later.
+      if (
+        attempt === 0 &&
+        m.retryable &&
+        !signal?.aborted &&
+        Date.now() - started < RETRY_WITHIN_MS
+      )
+        continue;
       throw new CoachError('unavailable');
     }
-    s = readSuggestion(text);
+    const read = readSuggestion(text);
+    // Another move than the one the interviewer chose is not passed off as it: a "wait" is an
+    // aside to the interviewer, and a follow-up is no closing question. Ask again; failing that,
+    // the app's own question bank has one of the chosen kind.
+    s = read && (!req.want || read.move === req.want) ? read : null;
   }
   if (!s) throw new CoachError('unreadable');
-  if (req.want && s.move !== req.want) s.move = req.want;
   return s;
 }
 
@@ -487,8 +514,14 @@ export function registerCoachRoutes(app: App, deps: AppDeps): void {
         }
         const key = `${userId}:${action}`;
         const now = Date.now();
-        if (now - (last.get(key) ?? 0) < MIN_GAP_MS) {
-          return c.json({ error: 'one at a time', code: 'busy' }, 429);
+        const since = now - (last.get(key) ?? 0);
+        if (since < MIN_GAP_MS) {
+          // when to come back: a page that waits that long gets its answer, and need not take
+          // the refusal for the model being down
+          const retryAfter = Math.max(1, Math.ceil((MIN_GAP_MS - since) / 1000));
+          return c.json({ error: 'one at a time', code: 'busy', retryAfter }, 429, {
+            'retry-after': String(retryAfter),
+          });
         }
         last.set(key, now);
         const raw = await c.req.json().catch(() => null);

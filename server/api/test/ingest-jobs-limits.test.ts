@@ -26,6 +26,9 @@ afterEach(() => {
   delete process.env.INGEST_TOTAL_BYTES;
 });
 
+/** a job store of its own, as each server process used to have: limits count only its jobs */
+const newJobs = () => new IngestJobs(ctx.deps, { scope: randomUUID(), sweepEveryMs: null });
+
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 const seg = (i: number, speaker: string, text: string) => ({
   start: i * 10,
@@ -56,31 +59,30 @@ describe('#7 previews are bounded in time and in bytes, and nobody else takes on
     Date.now = realNow;
   });
   const preview = async (jobs: IngestJobs, user: string, tag: string, archive = randomUUID()) => {
-    const j = jobs.start(archive, user, { transcript: interview(tag) });
-    await j.done;
+    const j = await (await jobs.start(archive, user, { transcript: interview(tag) })).done;
     expect(jobs.view(j).outcome?.status).toBe('previewed');
     return j;
   };
-  const has = (jobs: IngestJobs, j: { id: string; archiveId: string; userId: string }) =>
-    jobs.get(j.id, j.archiveId, j.userId) !== null;
+  const has = async (jobs: IngestJobs, j: { id: string; archiveId: string; userId: string }) =>
+    (await jobs.get(j.id, j.archiveId, j.userId)) !== null;
   const sizeOf = (jobs: IngestJobs, j: Parameters<IngestJobs['view']>[0]) =>
     JSON.stringify(jobs.view(j).outcome).length;
 
   it('a preview goes 3 hours after it was made, however often it is looked at', async () => {
-    const jobs = new IngestJobs(ctx.deps);
+    const jobs = newJobs();
     const p = await preview(jobs, randomUUID(), 'kept alive by polling');
     for (const minutes of [50, 100, 150, 175]) {
       offset = minutes * 60_000;
       await preview(jobs, randomUUID(), `tick ${minutes}`); // any start sweeps
-      expect(has(jobs, p), `at ${minutes} min`).toBe(true); // looked at: idle time starts again
+      expect(await has(jobs, p), `at ${minutes} min`).toBe(true); // looked at: idle time starts again
     }
     offset = 185 * 60_000;
     await preview(jobs, randomUUID(), 'tick 185');
-    expect(has(jobs, p)).toBe(false);
+    expect(await has(jobs, p)).toBe(false);
   });
 
   it("one person's jobs are capped in bytes: past it their own oldest go, nobody else's", async () => {
-    const jobs = new IngestJobs(ctx.deps);
+    const jobs = newJobs();
     const user = randomUUID();
     const other = await preview(jobs, randomUUID(), 'somebody else');
     const first = await preview(jobs, user, 'mine 1');
@@ -88,20 +90,20 @@ describe('#7 previews are bounded in time and in bytes, and nobody else takes on
     const second = await preview(jobs, user, 'mine 2');
     const third = await preview(jobs, user, 'mine 3');
     await preview(jobs, user, 'mine 4'); // three held is over 2.5 previews' worth: HIS oldest goes
-    expect(has(jobs, first)).toBe(false);
-    expect(has(jobs, second)).toBe(true);
-    expect(has(jobs, third)).toBe(true);
-    expect(has(jobs, other)).toBe(true);
+    expect(await has(jobs, first)).toBe(false);
+    expect(await has(jobs, second)).toBe(true);
+    expect(await has(jobs, third)).toBe(true);
+    expect(await has(jobs, other)).toBe(true);
   });
 
   it("an archive holds at most 20 unsaved previews: a 21st waits, unless one is unwatched or the starter's own", async () => {
-    const jobs = new IngestJobs(ctx.deps);
+    const jobs = newJobs();
     const archive = randomUUID();
     const held: Array<Awaited<ReturnType<typeof preview>>> = [];
     for (let i = 0; i < 20; i++) held.push(await preview(jobs, randomUUID(), `p${i}`, archive));
     let refused: unknown;
     try {
-      jobs.start(archive, randomUUID(), { transcript: interview('one too many') });
+      await jobs.start(archive, randomUUID(), { transcript: interview('one too many') });
     } catch (e) {
       refused = e;
     }
@@ -109,31 +111,31 @@ describe('#7 previews are bounded in time and in bytes, and nobody else takes on
     expect((refused as BusyError).why).toBe('previews');
     // somebody who already holds one there makes room with their own
     const own = await preview(jobs, held[3]!.userId, 'mine instead', archive);
-    expect(has(jobs, held[3]!)).toBe(false);
-    expect(has(jobs, own)).toBe(true);
+    expect(await has(jobs, held[3]!)).toBe(false);
+    expect(await has(jobs, own)).toBe(true);
     // a quarter of an hour on, previews nobody is looking at may go; one still watched stays
     offset = 16 * 60_000;
-    expect(has(jobs, held[0]!)).toBe(true); // looked at: watched again
+    expect(await has(jobs, held[0]!)).toBe(true); // looked at: watched again
     await preview(jobs, randomUUID(), 'after a while', archive);
-    expect(has(jobs, held[0]!)).toBe(true);
-    expect(has(jobs, held[1]!)).toBe(false);
+    expect(await has(jobs, held[0]!)).toBe(true);
+    expect(await has(jobs, held[1]!)).toBe(false);
   });
 
   it('the whole server is capped in bytes: finished work goes first, a preview being reviewed never', async () => {
-    const jobs = new IngestJobs(ctx.deps);
+    const jobs = newJobs();
     const victim = await preview(jobs, randomUUID(), 'being reviewed');
     process.env.INGEST_TOTAL_BYTES = String(Math.floor(sizeOf(jobs, victim) * 3.5));
     await preview(jobs, randomUUID(), 'b');
     await preview(jobs, randomUUID(), 'c');
     await preview(jobs, randomUUID(), 'd'); // four held: over 3.5 previews' worth
-    expect(() => jobs.start(randomUUID(), randomUUID(), { transcript: interview('e') })).toThrow(
-      BusyError,
-    );
-    expect(has(jobs, victim)).toBe(true);
+    await expect(
+      jobs.start(randomUUID(), randomUUID(), { transcript: interview('e') }),
+    ).rejects.toThrow(BusyError);
+    expect(await has(jobs, victim)).toBe(true);
     offset = 16 * 60_000;
-    expect(has(jobs, victim)).toBe(true); // still being reviewed
+    expect(await has(jobs, victim)).toBe(true); // still being reviewed
     await preview(jobs, randomUUID(), 'room now'); // an unwatched one goes, not the victim
-    expect(has(jobs, victim)).toBe(true);
+    expect(await has(jobs, victim)).toBe(true);
   });
 });
 

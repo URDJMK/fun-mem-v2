@@ -164,10 +164,16 @@ const NOT_FOUND = { error: 'not found' } as const;
 const roleRefused = (c: Context, message: string) =>
   c.json({ error: message, code: 'forbidden', reason: 'role' }, 403);
 
-export function registerIngestRoutes(app: App, deps: AppDeps): void {
+/** Registers the routes, and returns the job store they use (the /internal routes run it too). */
+export function registerIngestRoutes(app: App, deps: AppDeps): IngestJobs {
   const jobs = new IngestJobs(deps);
   // a note deleted by hand takes with it what any preview of this archive still quotes of it
-  onNotesErased(deps, (archiveId, noteIds) => jobs.forgetNotes(archiveId, noteIds));
+  onNotesErased(deps, (archiveId, noteIds) =>
+    jobs.forgetNotes(archiveId, noteIds).catch((e: unknown) => {
+      // the note is gone either way; what a preview quotes of it goes when the preview does
+      console.error(`[ingest] forgetting erased notes failed: ${describeError(e)}`);
+    }),
+  );
 
   /**
    * Every id is lower-cased ONCE, here: an upper-case spelling of the same archive must not
@@ -179,9 +185,9 @@ export function registerIngestRoutes(app: App, deps: AppDeps): void {
   const roleIn = async (archiveId: string, userId: string): Promise<string | null> =>
     UUID_RE.test(archiveId) ? roleOf(deps.pool, archiveId, userId) : null;
 
-  const jobOf = (c: Context, archiveId: string, userId: string) => {
+  const jobOf = async (c: Context, archiveId: string, userId: string) => {
     const jobId = idOf(c, 'jobId');
-    return UUID_RE.test(jobId) ? jobs.get(jobId, archiveId, userId) : null;
+    return UUID_RE.test(jobId) ? await jobs.get(jobId, archiveId, userId) : null;
   };
 
   app.post(
@@ -208,7 +214,8 @@ export function registerIngestRoutes(app: App, deps: AppDeps): void {
 
       let job;
       try {
-        job = jobs.start(archiveId, userId, req);
+        // a request that waits for the outcome runs it here; one that does not may hand it on
+        job = await jobs.start(archiveId, userId, req, { wait: raw.async !== true });
       } catch (e) {
         if (e instanceof BusyError) {
           return c.json(
@@ -227,8 +234,7 @@ export function registerIngestRoutes(app: App, deps: AppDeps): void {
       }
       if (raw.async === true) return c.json(jobs.view(job), 202);
 
-      await job.done;
-      const v = jobs.view(job);
+      const v = jobs.view(await job.done);
       if (v.status === 'failed' || v.status === 'cancelled') {
         const f = v.error!;
         // no longer a member: answered like any stranger
@@ -258,7 +264,7 @@ export function registerIngestRoutes(app: App, deps: AppDeps): void {
     const archiveId = idOf(c, 'archiveId');
     const userId = c.get('userId');
     if ((await roleIn(archiveId, userId)) === null) return c.json(NOT_FOUND, 404);
-    const job = jobOf(c, archiveId, userId);
+    const job = await jobOf(c, archiveId, userId);
     if (!job) return c.json(NOT_FOUND, 404);
     return c.json(jobs.view(job));
   });
@@ -267,9 +273,9 @@ export function registerIngestRoutes(app: App, deps: AppDeps): void {
     const archiveId = idOf(c, 'archiveId');
     const userId = c.get('userId');
     if ((await roleIn(archiveId, userId)) === null) return c.json(NOT_FOUND, 404);
-    const job = jobOf(c, archiveId, userId);
+    const job = await jobOf(c, archiveId, userId);
     if (!job) return c.json(NOT_FOUND, 404);
-    if (jobs.cancel(job) === 'too_late') {
+    if ((await jobs.cancel(job)) === 'too_late') {
       return c.json(
         {
           error:
@@ -297,7 +303,7 @@ export function registerIngestRoutes(app: App, deps: AppDeps): void {
       if (!IMPORT_ROLES.includes(role)) {
         return roleRefused(c, 'only an owner, steward or contributor can save an import');
       }
-      const job = jobOf(c, archiveId, userId);
+      const job = await jobOf(c, archiveId, userId);
       if (!job) return c.json(NOT_FOUND, 404);
 
       // no body is "save it as it is"; a body that is not an object is a mistake, not a default
@@ -380,8 +386,8 @@ export function registerIngestRoutes(app: App, deps: AppDeps): void {
       if (!out) return c.json(NOT_FOUND, 404);
       const { erasedIds, ...answer } = out;
       // whatever the job that made it still holds goes with it, and what other jobs quote of it
-      jobs.forgetRun(runId);
-      jobs.forgetNotes(archiveId, erasedIds);
+      await jobs.forgetRun(runId);
+      await jobs.forgetNotes(archiveId, erasedIds);
       return c.json(answer);
     } catch (e) {
       if (e instanceof ImportNotAllowed) {
@@ -392,4 +398,5 @@ export function registerIngestRoutes(app: App, deps: AppDeps): void {
       return c.json({ error: 'something went wrong; nothing was changed', code: 'internal' }, 500);
     }
   });
+  return jobs;
 }

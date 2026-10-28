@@ -1,12 +1,10 @@
 import { useEffect, useRef, useState } from 'react';
-import { useNavigate } from 'react-router';
 import {
   interviewCorrections,
   transcribeRecording,
   type Correction,
   type ImportRequest,
 } from '../lib/api';
-import { inArchive } from '../lib/archive';
 import {
   alignRecorded,
   applyCorrections,
@@ -32,7 +30,8 @@ type Pass = 'working' | 'done' | 'failed' | 'none';
  * fewer misheard words), and the interviewer's notes are checked against what was heard near
  * them, for words the transcript got wrong. Then: confirm whose words are the memories, put any
  * voice or turn right, name it, and hand it to the import, where every memory is read before it
- * is kept.
+ * is kept. The import itself runs right here on the home page (onSubmit), not on a separate "add
+ * a transcript" page: that one is for a transcript that wasn't made here.
  */
 export function InterviewReview({
   archiveId,
@@ -40,6 +39,7 @@ export function InterviewReview({
   draft,
   audio,
   onDiscard,
+  onSubmit,
 }: {
   archiveId: string;
   name: string;
@@ -47,8 +47,8 @@ export function InterviewReview({
   /** each source's whole recording, held in memory; none after a reload */
   audio?: Blob[];
   onDiscard: () => void;
+  onSubmit: (request: ImportRequest) => void;
 }) {
-  const navigate = useNavigate();
   const notes = draft.notes ?? [];
   // the mishearings the notes showed while recording are made right in whichever transcript
   const fixed = (segs: Segment[]) =>
@@ -167,9 +167,7 @@ export function InterviewReview({
       })),
     });
     const request: ImportRequest = { transcript, teller: name, source: source.trim() || undefined };
-    // the words are handed to the import; the draft goes once they are read and saved there
-    writeDraft(archiveId, null);
-    void navigate(inArchive(archiveId, '/interviews/new'), { state: { request } });
+    onSubmit(request);
   }
 
   function download() {

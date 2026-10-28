@@ -560,6 +560,23 @@ textarea {
   color: var(--ink);
   font-weight: 600;
 }
+.side-nav-row {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+.side-nav-row > a:first-child {
+  flex: 1;
+  min-width: 0;
+}
+.side-nav .side-nav-plus {
+  flex: 0 0 auto;
+  min-height: 24px;
+  width: 24px;
+  padding: 0;
+  justify-content: center;
+  border-radius: 6px;
+}
 .side-heading {
   margin: 16px 0 0;
   padding: 0 8px 4px;
@@ -1011,6 +1028,30 @@ a.when-card:hover {
   background: var(--sage);
   border-radius: 999px;
   transition: width 0.3s;
+}
+.loading {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.spinner {
+  width: 15px;
+  height: 15px;
+  flex: 0 0 auto;
+  border-radius: 50%;
+  border: 2px solid var(--line);
+  border-top-color: var(--sage);
+  animation: spin 0.8s linear infinite;
+}
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .spinner {
+    animation-duration: 2.4s;
+  }
 }
 
 /* ── the start screen's drifting light ───────────────── */

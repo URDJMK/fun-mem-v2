@@ -4,6 +4,7 @@ import { ApiError, deleteProject, listMembers, removeMember, updateProject } fro
 import { canManage, inArchive, useArchive } from '../lib/archive';
 import { ArchiveLayout } from '../components/ArchiveLayout';
 import { countryName } from '../components/CountryPicker';
+import { writeDraft } from '../lib/interview';
 import { Failed } from '../components/ui';
 
 /**
@@ -244,6 +245,8 @@ function DeleteProject() {
           setFailed(null);
           try {
             await deleteProject(archive.id, typed.trim());
+            // everything of it is erased, the unfinished interview in this browser too
+            writeDraft(archive.id, null);
             void navigate('/', { replace: true });
           } catch (err) {
             setFailed(

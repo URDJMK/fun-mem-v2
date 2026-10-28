@@ -26,7 +26,14 @@ export function browserCountry(): string | null {
   return null;
 }
 
-export const countryName = (code: string) => NAMES.of(code) ?? code;
+/** The country's name; a value that is not a region code (older projects stored any text) as it is. */
+export const countryName = (code: string): string => {
+  try {
+    return NAMES.of(code) ?? code;
+  } catch {
+    return code;
+  }
+};
 
 /** Matches by name or by code; names that start with what was typed come first. */
 function search(q: string): Country[] {

@@ -2,6 +2,7 @@ import { useEffect, useState, type ReactNode } from 'react';
 import { Link, useNavigate } from 'react-router';
 import { supabase } from '../lib/supabase';
 import { DEMO_NAME, setDemoSignedIn, SKIP_LOGIN } from '../lib/demo';
+import { clearDrafts } from '../lib/interview';
 
 /** Line icons from the handoff, drawn in the current text colour. */
 const PATHS = {
@@ -193,6 +194,8 @@ export function Account({ withName = false }: { withName?: boolean }) {
     // to the front page FIRST: a page that loses its session on its own address says
     // "you were signed out" and offers to come back, which is not what a sign-out means
     void navigate('/', { replace: true });
+    // an unfinished interview is the family's words: none stays for whoever uses this browser next
+    clearDrafts();
     if (SKIP_LOGIN) return setDemoSignedIn(false);
     await supabase.auth.signOut();
   }
@@ -239,7 +242,8 @@ export function TopBar({ left }: { left?: ReactNode }) {
 /** Loading, failure and nothing-there, said the same way everywhere. */
 export function Loading({ what }: { what: string }) {
   return (
-    <p className="muted" role="status">
+    <p className="muted loading" role="status">
+      <span className="spinner" aria-hidden="true" />
       {what}
     </p>
   );

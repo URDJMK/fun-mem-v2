@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import { createClient, type SupabaseClient } from '@supabase/supabase-js';
 import { Pool } from 'pg';
 import { DeterministicEmbeddingProvider, type EmbeddingProvider } from '@funmem/core';
@@ -61,6 +62,13 @@ export interface TestContext {
   app: App;
   embeddings: EmbeddingProvider;
   realSession: (email: string) => Promise<RealSession>;
+  /**
+   * What a Google sign-in records: a `google` identity whose address Google verified. The app
+   * signs in with Google only, and trusts an email address on nothing less (invites.ts).
+   */
+  signInWithGoogle: (s: RealSession, email: string) => Promise<void>;
+  /** An account made by Supabase's public email sign-up: the address claimed, never proved. */
+  unprovenSession: (email: string) => Promise<RealSession>;
   api: (token: string, method: string, path: string, body?: unknown) => Promise<Response>;
   provisionArchive: (s: RealSession, name: string) => Promise<string>;
   /** Call from afterAll. */
@@ -83,6 +91,10 @@ export function testContext(overrides?: { embeddings?: TestContext['embeddings']
       jwksUrl: `${SUPABASE_URL}/auth/v1/.well-known/jwks.json`,
       issuer: `${SUPABASE_URL}/auth/v1`,
     },
+    // import jobs live in the database: each test file's app gets jobs (and limits) of its own,
+    // as each in-memory store used to be, rather than sharing them with every file running
+    // (and no sweep timer, which would outlive the pool a file closes)
+    ingestJobs: { scope: randomUUID(), sweepEveryMs: null },
   };
   const app = createApp(deps);
 
@@ -110,6 +122,36 @@ export function testContext(overrides?: { embeddings?: TestContext['embeddings']
     const user = verified.data.user;
     if (!session || !user) throw new Error('verifyOtp returned no session');
     return { token: session.access_token, userId: user.id };
+  }
+
+  async function signInWithGoogle(s: RealSession, email: string): Promise<void> {
+    await pool.query(
+      `insert into auth.identities
+         (provider_id, user_id, identity_data, provider, last_sign_in_at, created_at, updated_at)
+       values ($1, $2, jsonb_build_object('sub', $1::text, 'email', $3::text, 'email_verified', true),
+               'google', now(), now(), now())
+       on conflict do nothing`,
+      [`google-${s.userId}`, s.userId, email.toLowerCase()],
+    );
+  }
+
+  async function unprovenSession(email: string): Promise<RealSession> {
+    const password = 'unproven-pass-123';
+    const headers = { apikey: ANON_KEY, 'content-type': 'application/json' };
+    const up = await retryFetch(`${SUPABASE_URL}/auth/v1/signup`, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({ email, password }),
+    });
+    if (!up.ok) throw new Error(`sign-up failed: ${up.status}`);
+    const t = await retryFetch(`${SUPABASE_URL}/auth/v1/token?grant_type=password`, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({ email, password }),
+    });
+    const body = (await t.json()) as { access_token?: string; user?: { id: string } };
+    if (!body.access_token || !body.user) throw new Error(`no session for ${email}: ${t.status}`);
+    return { token: body.access_token, userId: body.user.id };
   }
 
   async function api(
@@ -145,6 +187,8 @@ export function testContext(overrides?: { embeddings?: TestContext['embeddings']
     app,
     embeddings,
     realSession,
+    signInWithGoogle,
+    unprovenSession,
     api,
     provisionArchive,
     close: () => pool.end(),
