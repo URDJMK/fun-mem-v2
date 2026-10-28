@@ -17,6 +17,7 @@ import { registerTranscriptionRoutes } from './transcription';
 import { registerCoachRoutes } from './interview-coach';
 import { registerInviteRoutes } from './invites';
 import { registerProjectSettingsRoutes } from './project-settings';
+import { registerInterviewRoutes } from './stories/interviews';
 import type { EmbeddingProvider } from '@funmem/core';
 
 export interface AppDeps {
@@ -60,6 +61,13 @@ export interface AppDeps {
    * answers 503 and the app suggests from its own question bank.
    */
   interviewChat?: ChatModel | null;
+  /**
+   * How an imported interview becomes notes (ingest-jobs.ts). 'stories': the story workflow
+   * (stories/workflow.ts) writes whole stories from it and its transcript is kept with the
+   * interview. 'memories': the earlier import, which turns every spoken line into a memory.
+   * Absent = 'memories' (selected at the composition root from FUNMEM_IMPORT_MODE).
+   */
+  importMode?: 'stories' | 'memories';
 }
 
 export type App = Hono<{ Variables: AuthVariables }>;
@@ -131,6 +139,7 @@ export function createApp(deps: AppDeps): App {
   registerCoachRoutes(app, deps);
   registerInviteRoutes(app, deps);
   registerProjectSettingsRoutes(app, deps);
+  registerInterviewRoutes(app, deps);
   registerInternalRoutes(app, deps, jobs);
 
   return app;

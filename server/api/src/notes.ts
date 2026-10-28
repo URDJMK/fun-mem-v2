@@ -825,6 +825,12 @@ export interface NewNoteInput {
   type: string;
   body: string;
   occurred?: string | null;
+  /** when it was told (an interview's date); null when unknown */
+  recorded?: string | null;
+  /** the names of the people who told it */
+  contributors?: string[];
+  /** what else is known about it: its sources, how it was written (stories/workflow.ts) */
+  extra?: Record<string, unknown>;
 }
 
 export interface BatchHooks {
@@ -868,7 +874,15 @@ export async function createNotesBatch(
       const titleError = validateNoteTitle(title);
       if (titleError) throw new ApiError(titleError, 400);
       checkBody(input.body ?? '');
-      return { title, type: input.type, body: input.body ?? '', occurred: input.occurred ?? null };
+      return {
+        title,
+        type: input.type,
+        body: input.body ?? '',
+        occurred: input.occurred ?? null,
+        recorded: input.recorded ?? null,
+        contributors: input.contributors ?? [],
+        extra: input.extra ?? {},
+      };
     });
   // known inputs are checked before any connection is taken
   const early = Array.isArray(inputs) ? prepare(inputs) : null;
@@ -879,9 +893,20 @@ export async function createNotesBatch(
     const notes: NoteRow[] = [];
     for (const n of prepared) {
       const inserted = await client.query(
-        `insert into public.notes (archive_id, title, type, body, occurred, created_by)
-         values ($1, $2, $3, $4, $5, $6) returning *`,
-        [archiveId, n.title, n.type, n.body, n.occurred, userId],
+        `insert into public.notes
+           (archive_id, title, type, body, occurred, created_by, recorded, contributors, extra)
+         values ($1, $2, $3, $4, $5, $6, $7, $8, $9::jsonb) returning *`,
+        [
+          archiveId,
+          n.title,
+          n.type,
+          n.body,
+          n.occurred,
+          userId,
+          n.recorded,
+          n.contributors,
+          JSON.stringify(n.extra),
+        ],
       );
       const note = inserted.rows[0] as NoteRow;
       const createRev = await appendRevision(

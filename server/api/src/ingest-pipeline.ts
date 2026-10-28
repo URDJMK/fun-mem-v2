@@ -224,12 +224,7 @@ export interface StorySource {
 
 /** Why the stories of an interview could not be written yet; its transcript is kept. */
 export type StoriesPendingReason =
-  | 'no_model'
-  | 'auth'
-  | 'unavailable'
-  | 'deadline'
-  | 'budget'
-  | 'bad_plan';
+  'no_model' | 'auth' | 'unavailable' | 'deadline' | 'budget' | 'bad_plan';
 
 export type ExitReason = 'converged' | 'round_budget' | 'no_model';
 

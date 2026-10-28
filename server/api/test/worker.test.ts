@@ -32,6 +32,8 @@ const env = {
   FUNMEM_DB_URL: process.env.FUNMEM_POOLER_URL ?? DB_URL,
   FUNMEM_SUPABASE_URL: SUPABASE_URL,
   FUNMEM_EMBEDDING_PROVIDER: 'deterministic',
+  // these tests follow an import across isolates, not what it writes (stories-jobs.test.ts)
+  FUNMEM_IMPORT_MODE: 'memories',
   INGEST_QUEUE: {
     send: async (body: { jobId: string }) => {
       sent.push(body);

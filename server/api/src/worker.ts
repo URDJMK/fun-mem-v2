@@ -35,6 +35,8 @@ export interface Env {
   DEEPGRAM_API_KEY?: string;
   /** the interview coach's model; absent: INTERVIEW_MODEL_DEFAULT */
   INTERVIEW_MODEL?: string;
+  /** `stories` (default) or `memories`: how an imported interview becomes notes */
+  FUNMEM_IMPORT_MODE?: string;
   /** `workers-ai` (default), `deterministic` (tests, wrangler dev) or `none` (keyword search only) */
   FUNMEM_EMBEDDING_PROVIDER?: string;
   INGEST_QUEUE?: { send(body: IngestMessage): Promise<unknown> };
@@ -80,6 +82,8 @@ function build(env: Env): Built {
     chat: createNimChat(),
     agentModel: createNimAgentModel(),
     transcriptionKey: process.env.DEEPGRAM_API_KEY || null,
+    // interviews become stories (stories/workflow.ts); `memories` brings back the earlier import
+    importMode: process.env.FUNMEM_IMPORT_MODE === 'memories' ? 'memories' : 'stories',
     // the interview coach answers within a pause: a fast model, one attempt, a short deadline
     // (as in main.ts)
     interviewChat: createNimChat({

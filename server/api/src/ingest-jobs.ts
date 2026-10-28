@@ -30,6 +30,14 @@ import { displayNameOf } from './conflicts';
 import { onLostConnection } from './notes';
 import { formatClock } from './clock';
 import { TranscriptError, parseTranscript, type ParsedTranscript } from './transcript';
+import {
+  archiveLookup,
+  defaultInterviewName,
+  openInterview,
+  renameInterview,
+  type InterviewOptions,
+} from './stories/interviews';
+import { writeStories } from './stories/workflow';
 
 /**
  * Interviews are LONG: an hour of speech is tens of model calls, so a request that
@@ -824,6 +832,58 @@ export class IngestJobs {
    * Run a job here. Every second it says it is alive, writes its progress, and looks for a
    * cancel sent to another instance; the hard time limit counts from when the job started.
    */
+  /**
+   * Stories mode (AppDeps.importMode): keep the interview with its transcript, then write its
+   * stories (stories/workflow.ts). The interview is kept even when they cannot be written yet.
+   */
+  private async writeStoriesOf(
+    job: Job,
+    req: IngestRequest,
+    parsed: ParsedTranscript,
+    hash: string,
+    titles: string[],
+    signal: AbortSignal,
+    onProgress: (p: { done: number; total: number }) => void,
+  ): Promise<IngestResult> {
+    const pool = this.deps.pool;
+    const named = typeof req.source === 'string' && req.source.trim() ? req.source.trim() : null;
+    const options: InterviewOptions = {};
+    if (typeof req.teller === 'string') options.teller = req.teller;
+    if (typeof req.interviewee === 'string') options.interviewee = req.interviewee;
+    if (Array.isArray(req.interviewees)) options.interviewees = req.interviewees;
+    if (req.speakerNames && typeof req.speakerNames === 'object')
+      options.speakerNames = req.speakerNames;
+    const interviewId = await openInterview(pool, {
+      archiveId: job.archiveId,
+      userId: job.userId,
+      hash,
+      name: named ?? defaultInterviewName(),
+      transcript:
+        typeof req.transcript === 'string' ? req.transcript : JSON.stringify(req.transcript),
+      options,
+    });
+    // a personal project is about one person: an unnamed narrator ("SPEAKER_00") is them
+    const project = await pool.query(
+      `select subject_name, kind::text as kind from public.archives where id = $1`,
+      [job.archiveId],
+    );
+    const p = project.rows[0] as { subject_name: string; kind: string } | undefined;
+    const result = await writeStories(parsed, req, {
+      chat: this.deps.chat ?? null,
+      judge: this.deps.chat ?? null,
+      lookup: archiveLookup(this.deps, job.archiveId, job.userId),
+      titles,
+      signal,
+      onProgress,
+      interviewName: named,
+      subject: p?.kind === 'personal' ? p.subject_name : null,
+    });
+    result.interviewId = interviewId;
+    if (!named && result.interviewName)
+      await renameInterview(pool, interviewId, result.interviewName);
+    return result;
+  }
+
   private async run(job: Job, req: IngestRequest, cancelled = false): Promise<Job> {
     const pool = this.deps.pool;
     const ac = new AbortController();
@@ -880,15 +940,25 @@ export class IngestJobs {
 
       // 2. organise it. It may link only to notes every member can read: it is shared with all of them.
       await stage('organizing');
-      const result = (await ingestParsed(parsed, req, {
-        chat: this.deps.chat ?? null,
-        // the titles the interview mentions come first, so short ones ("Mom") are not crowded out
-        titles: await sharedTitles(pool, job.archiveId, parsed.turns.map((t) => t.text).join('\n')),
-        signal,
-        onProgress: (p) => {
-          job.progress = { done: p.done, total: p.total };
-        },
-      })) as IngestOutcome;
+      // the titles the interview mentions come first, so short ones ("Mom") are not crowded out
+      const titles = await sharedTitles(
+        pool,
+        job.archiveId,
+        parsed.turns.map((t) => t.text).join('\n'),
+      );
+      const onProgress = (p: { done: number; total: number }) => {
+        job.progress = { done: p.done, total: p.total };
+      };
+      const result = (
+        this.deps.importMode === 'stories'
+          ? await this.writeStoriesOf(job, req, parsed, hash, titles, signal, onProgress)
+          : await ingestParsed(parsed, req, {
+              chat: this.deps.chat ?? null,
+              titles,
+              signal,
+              onProgress,
+            })
+      ) as IngestOutcome;
       if (signal.aborted) throw new IngestCancelled();
       withIds(result.memories);
 
@@ -905,7 +975,8 @@ export class IngestJobs {
       // 4. decide. This is the last moment a cancel (or the time limit) stops it: from the
       // next step on it is being written, and a cancel is answered "too late".
       if (signal.aborted) throw new IngestCancelled();
-      if (!req.save) {
+      // stories that could not be written yet: nothing to save, the interview keeps the words
+      if (!req.save || result.pending) {
         result.status = 'previewed';
       } else if (result.roles.needsConfirmation && !req.confirm) {
         result.status = 'needs_confirmation';
