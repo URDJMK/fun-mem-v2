@@ -187,8 +187,8 @@ export function InterviewReview({
       <div className="stack" style={{ gap: 4 }}>
         <h1 className="page-title">Interview with {name}</h1>
         <p className="muted">
-          {clock(segments[segments.length - 1]?.end ?? 0)} recorded. Next, Firepit
-          writes its stories for you to read over.
+          {clock(segments[segments.length - 1]?.end ?? 0)} recorded. Next, Firepit writes its
+          stories for you to read over.
         </p>
       </div>
 
