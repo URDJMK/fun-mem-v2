@@ -346,7 +346,7 @@ const escapeEmphasis = (s: string): string => s.replace(/[_*]/g, '\\$&');
  * line, so no line of it reads as a source line ("> Told by").
  */
 export const paragraphText = (interviewName: string, said: readonly DescriptionSentence[]) =>
-  `_From “${escapeEmphasis(oneLine(interviewName))}”:_ ${asParagraph(said)}`;
+  `_From “${escapeEmphasis(oneLine(interviewName).replace(/\[\[|\]\]/g, ''))}”:_ ${asParagraph(said)}`;
 
 /**
  * The stories' links to people, places and things, pointed at their notes' final titles (`made`,

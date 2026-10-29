@@ -732,6 +732,12 @@ describe('the notes of an import’s people, places and things, as text', () => 
     expect(text.split('\n')).toHaveLength(1);
   });
 
+  it('an interview’s name, and its emphasis marks, never write a link or emphasis into the note', () => {
+    expect(paragraphText('[[Mina Kim]] birthday_1*', [said('She came.')])).toBe(
+      '_From “Mina Kim birthday\\_1\\*”:_ She came.',
+    );
+  });
+
   it('one note for refs that ended with the same name and type', () => {
     const one: NoteChoice = { kind: 'make', entityId: null, name: 'Tommy Lee', type: 'person' };
     const p: GraphProposal = {
@@ -939,6 +945,44 @@ describe('saving an import’s notes, links, mentions and relationships', () => 
       kept: [],
       alreadyUndone: true,
     });
+  });
+
+  it('undoing two imports that both added to one note, newest first, takes both paragraphs back', async () => {
+    const { note, notes, save, undo } = await project('undo-newest-first');
+    const before = 'Mina Kim, who cooked.';
+    const mina = await note('Mina Kim', 'person', before);
+    const proposal = () => ({ entities: [NOTED('e1', 'Mina Kim', 'm1')], relationships: [] });
+    const a = await save([story('m1', 'A visit', '[[Mina Kim]] came by.')], proposal());
+    const b = await save([story('m1', 'Another visit', '[[Mina Kim]] stayed.')], proposal());
+    expect((await notes()).find((n) => n.id === mina)!.body).toContain('Mina Kim came.');
+
+    expect(await undo(b.runId!)).toMatchObject({ restored: 1, kept: [] });
+    expect(await undo(a.runId!)).toMatchObject({ restored: 1, kept: [] });
+    const after = (await notes()).find((n) => n.id === mina)!;
+    expect(after.body).toBe(before);
+    expect((after.extra as { paragraphs?: unknown[] } | null)?.paragraphs ?? []).toEqual([]);
+  });
+
+  it('a note one import made and a later import added to is erased once both are undone', async () => {
+    const { notes, entityOf, save, undo } = await project('undo-made-then-appended');
+    const a = await save([story('m1', 'Gravy', '[[Minho]] cooked.')], {
+      entities: [NOTED('e1', 'Minho', 'm1')],
+      relationships: [],
+    });
+    const minho = (await notes()).find((n) => n.title === 'Minho')!;
+    const b = await save([story('m1', 'Later', '[[Minho]] returned.')], {
+      entities: [
+        {
+          ...NOTED('e1', 'Minho', 'm1'),
+          match: { kind: 'existing', entityId: await entityOf(minho.id), name: 'Minho' },
+          note: { kind: 'existing', noteId: minho.id, title: 'Minho' },
+        },
+      ],
+      relationships: [],
+    });
+    expect(await undo(b.runId!)).toMatchObject({ kept: [] });
+    expect(await undo(a.runId!)).toMatchObject({ kept: [] });
+    expect((await notes()).some((n) => n.title === 'Minho')).toBe(false);
   });
 
   it('an appended-to note never keeps a run alive after its only new story is deleted', async () => {

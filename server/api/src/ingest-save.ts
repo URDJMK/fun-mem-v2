@@ -1148,6 +1148,16 @@ export interface UndoOutcome {
 }
 
 /**
+ * A revision the machine wrote and took back: one from an import that has since been undone, or
+ * the restore an import's undo wrote. Neither is a person's later work on the note.
+ */
+const machineRevisionSql = (rev: string, archive: string): string =>
+  `exists (select 1 from public.ingest_runs mu
+            where mu.archive_id = ${archive}
+              and (mu.undo_change_id = ${rev}.change_id
+                   or (mu.undone_at is not null and mu.change_id = ${rev}.change_id)))`;
+
+/**
  * Take an import back as a unit: erase exactly the notes it made, but never one somebody
  * has worked on since, because that would destroy their work. A note the run only added a
  * paragraph to (entity design 5.2) is never erased — it is put back to the revision before
@@ -1223,8 +1233,10 @@ export async function undoImport(
     // added a paragraph to a note someone else made, and undo takes only that paragraph back.
     const changed = await client.query(
       `select n.id, n.title, n.extra,
-              (select v.change_id from public.revisions v where v.note_id = n.id
-                order by v.seq desc limit 1) = $2 as ours_last,
+              not exists (select 1 from public.revisions v where v.note_id = n.id
+                           and v.seq > (select max(w.seq) from public.revisions w
+                                         where w.note_id = n.id and w.change_id = $2)
+                           and not ${machineRevisionSql('v', '$1')}) as ours_last,
               (select v.body from public.revisions v where v.note_id = n.id
                  and v.seq < (select min(w.seq) from public.revisions w
                                where w.note_id = n.id and w.change_id = $2)
@@ -1288,7 +1300,8 @@ export async function undoImport(
               select i.id from imp i
                where exists (select 1 from public.revisions v
                               where v.note_id = i.id and v.change_id is distinct from $2
-                                and v.reason::text not in ('rename-cascade', 'erasure-cascade')))
+                                and v.reason::text not in ('rename-cascade', 'erasure-cascade')
+                                and not ${machineRevisionSql('v', '$1')}))
        select n.id, n.title,
               n.id in (select id from edited) as edited,
               exists (select 1 from public.links l
