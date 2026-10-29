@@ -409,11 +409,11 @@ async function entityFor(
   const made = o.notes?.made.get(e.ref);
   if (c?.kind === 'existing') return c.entityId;
   if (c?.kind === 'make' && made && c.entityId) {
-    // `where note_id is null` guards a race with another save; if it loses, the note we just
-    // made would otherwise be silently left with no entity of its own
+    // Refs that share one choice attach the same note more than once. A different note means
+    // another writer won: fail rather than leaving the new note without its entity.
     const r = await client.query(
       `update public.graph_entities set note_id = $2, updated_at = now()
-        where id = $1 and note_id is null
+        where id = $1 and (note_id is null or note_id = $2)
         returning note_id`,
       [c.entityId, made],
     );
@@ -430,12 +430,16 @@ async function entityFor(
      values ($1, $2, $3, $4, $5, $6, $7)
      on conflict (archive_id, type, match_key) do update
         set note_id = coalesce(public.graph_entities.note_id, excluded.note_id), updated_at = now()
-     returning id`,
+     returning id, note_id`,
     make
       ? [o.archiveId, make.type, make.name, matchKey(make.name), made, o.userId, o.runId]
       : [o.archiveId, e.type, e.name, key, null, o.userId, o.runId],
   );
-  return (r.rows[0] as { id: string }).id;
+  const row = r.rows[0] as { id: string; note_id: string | null };
+  if (make && row.note_id !== made) {
+    throw new Error(`entityFor: entity ${row.id} already has a note; cannot attach ${made}`);
+  }
+  return row.id;
 }
 
 /**
