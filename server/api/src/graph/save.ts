@@ -1,11 +1,22 @@
 import { matchKey, normalizeTitle } from '@funmem/core';
 import type { PoolClient } from 'pg';
 import { UUID_RE } from '../membership';
+import { appendParagraph, type NewNoteInput } from '../notes';
+import { visibleSql } from '../views';
 import { relink } from './marks';
 import { addAliases } from './note-entity';
 import { NOT_IN_TITLE } from './shared';
 import { entityVisibleSql } from './store';
-import type { GraphPatch, GraphProposal, GraphSource, ProposedEntity } from './types';
+import {
+  NOTE_TYPE,
+  type DescriptionSentence,
+  type EntityType,
+  type GraphPatch,
+  type GraphProposal,
+  type GraphSource,
+  type NoteRef,
+  type ProposedEntity,
+} from './types';
 
 /**
  * Saving an import's graph as the reviewer chose, in the same transaction as its stories, and
@@ -126,10 +137,282 @@ export const storiesOf = (p: GraphProposal): string[] => [
 const withInterview = (sources: GraphSource[], interviewId: string | null): GraphSource[] =>
   sources.map((s) => ('interviewId' in s && s.interviewId === null ? { ...s, interviewId } : s));
 
+/** one entity per name: of this type and key, or the one this is an alias of */
+async function entityIdByName(
+  client: PoolClient,
+  archiveId: string,
+  type: EntityType,
+  key: string,
+): Promise<string | null> {
+  const r = await client.query(
+    `select id from public.graph_entities
+      where archive_id = $1 and type = $2 and match_key = $3
+     union all
+     select g.entity_id from public.graph_aliases g
+      where g.archive_id = $1 and g.match_key = $3
+     limit 1`,
+    [archiveId, type, key],
+  );
+  return (r.rows[0] as { id: string } | undefined)?.id ?? null;
+}
+
+/**
+ * The entity a proposed one is: the one chosen or matched, when the member can see it; else one
+ * of the same name or alias, made since the preview.
+ */
+async function entityIdOf(
+  client: PoolClient,
+  o: { archiveId: string; userId: string },
+  e: ProposedEntity,
+  key: string,
+): Promise<string | null> {
+  if (e.match.kind === 'existing') {
+    const r = await client.query(
+      `select e.id from public.graph_entities e
+        where e.id = $1 and e.archive_id = $2 and ${entityVisibleSql('e', '$3')}`,
+      [e.match.entityId, o.archiveId, o.userId],
+    );
+    const id = (r.rows[0] as { id: string } | undefined)?.id;
+    if (id) return id;
+  }
+  return entityIdByName(client, o.archiveId, e.type, key);
+}
+
+/** a note to make, with the entity it is for (when there is one) and its name and type */
+export type MakeNote = { kind: 'make'; entityId: string | null; name: string; type: EntityType };
+
+/**
+ * What each of an import's entities gets at save, decided again now: the project may have changed
+ * since the preview (entity design 7.2). A note to make; the note it has, for a paragraph and the
+ * links; or none, for the protagonist and for an entity whose note the importer cannot see.
+ */
+export type NoteChoice =
+  MakeNote | ({ kind: 'existing'; entityId: string } & NoteRef) | { kind: 'none' };
+
+const NONE: NoteChoice = { kind: 'none' };
+
+/**
+ * Each import entity's note, read from the project as it is now (the preview's `note` may be
+ * stale, and is null for a note the member cannot see). Refs that end as one entity, or with one
+ * name and type, share one choice: they get one note. The button's entities (no `note`) get none.
+ */
+export async function notePlan(
+  client: PoolClient,
+  archiveId: string,
+  userId: string,
+  p: GraphProposal | undefined,
+): Promise<Map<string, NoteChoice>> {
+  const out = new Map<string, NoteChoice>();
+  if (!p || p.pending) return out;
+  const shared = new Map<string, NoteChoice>();
+  const once = (k: string, c: NoteChoice): NoteChoice => {
+    if (!shared.has(k)) shared.set(k, c);
+    return shared.get(k)!;
+  };
+  for (const e of p.entities) {
+    if (!e.note) continue;
+    const key = matchKey(e.name);
+    if (e.subject || !key) {
+      out.set(e.ref, NONE);
+      continue;
+    }
+    const id = await entityIdOf(client, { archiveId, userId }, e, key);
+    const r = id
+      ? await client.query(
+          `select e.name, e.type::text as type, e.note_id, n.title,
+                  coalesce(e.note_id = a.subject_note_id, false) as subject,
+                  (n.id is not null and ${visibleSql('n', '$3')}) as seen
+             from public.graph_entities e
+             join public.archives a on a.id = e.archive_id
+             left join public.notes n on n.id = e.note_id
+            where e.id = $1 and e.archive_id = $2`,
+          [id, archiveId, userId],
+        )
+      : null;
+    const row = r?.rows[0] as
+      | {
+          name: string;
+          type: EntityType;
+          note_id: string | null;
+          title: string | null;
+          subject: boolean;
+          seen: boolean;
+        }
+      | undefined;
+    // found by an alias of something of another type: not it
+    const chosen = e.match.kind === 'existing' && e.match.entityId === id;
+    if (!row || (row.type !== e.type && !chosen)) {
+      const make: MakeNote = { kind: 'make', entityId: null, name: e.name, type: e.type };
+      out.set(e.ref, once(`${e.type}:${key}`, make));
+    } else if (row.subject) {
+      out.set(e.ref, NONE);
+    } else if (!row.note_id) {
+      // its note is called by the entity's name, which `same` may have made another
+      const make: MakeNote = { kind: 'make', entityId: id, name: row.name, type: row.type };
+      out.set(e.ref, once(`id:${id}`, make));
+    } else if (row.seen) {
+      out.set(e.ref, { kind: 'existing', entityId: id!, noteId: row.note_id, title: row.title! });
+    } else {
+      out.set(e.ref, NONE); // a note the importer cannot see: no link to it, no second note
+    }
+  }
+  return out;
+}
+
+/** a sentence as part of a paragraph: one line */
+const oneLine = (s: string): string => s.replace(/\s+/g, ' ').trim();
+
+/** sentences as one paragraph, which never reads as a source line ("> Told by") */
+const asParagraph = (said: readonly DescriptionSentence[]): string =>
+  said
+    .map((s) => oneLine(s.text))
+    .join(' ')
+    .replace(/^(?:>\s*)+/, '');
+
+/** sentences with words, each once */
+const sentencesOf = (all: readonly DescriptionSentence[]): DescriptionSentence[] => {
+  const seen = new Set<string>();
+  return all.filter((s) => {
+    const k = oneLine(s.text);
+    if (!k || seen.has(k)) return false;
+    seen.add(k);
+    return true;
+  });
+};
+
+/** where each sentence comes from, as a note's `extra.sources` holds it */
+const sourcesFor = (said: readonly DescriptionSentence[], interviewId: string | null) =>
+  said.map((s) => ({ sentence: oneLine(s.text), sources: withInterview(s.sources, interviewId) }));
+
+/**
+ * The notes to make with the stories (entity design 5.1): one per choice, its text the
+ * description as one paragraph. `refs` are the entities it is for; `hint` tells it from a note of
+ * the same title ("Busan (place)").
+ */
+export function entityNoteInputs(
+  p: GraphProposal,
+  plan: ReadonlyMap<string, NoteChoice>,
+  interviewId: string | null,
+): Array<{ refs: string[]; hint: string; input: NewNoteInput }> {
+  const notes = new Map<MakeNote, { refs: string[]; said: DescriptionSentence[] }>();
+  for (const e of p.entities) {
+    const c = plan.get(e.ref);
+    if (c?.kind !== 'make') continue;
+    const x = notes.get(c) ?? { refs: [], said: [] };
+    x.refs.push(e.ref);
+    x.said.push(...(e.description ?? []));
+    notes.set(c, x);
+  }
+  return [...notes].map(([c, x]) => {
+    const said = sentencesOf(x.said);
+    return {
+      refs: x.refs,
+      hint: c.type,
+      input: {
+        title: cleanName(c.name),
+        type: NOTE_TYPE[c.type],
+        body: asParagraph(said),
+        entity: false,
+        extra: { sources: sourcesFor(said, interviewId) },
+      },
+    };
+  });
+}
+
+/**
+ * A paragraph for a note already here (entity design 5.2): the interview, then what it says. One
+ * line, so no line of it reads as a source line ("> Told by").
+ */
+export const paragraphText = (interviewName: string, said: readonly DescriptionSentence[]) =>
+  `_From “${oneLine(interviewName)}”:_ ${asParagraph(said)}`;
+
+/**
+ * The stories' links to people, places and things, pointed at their notes' final titles (`made`,
+ * by ref, for the notes made with them); a link to one with no note the importer can see becomes
+ * its words. The protagonist's are left as they are. `linked` holds the title each name's links
+ * carry now, so a save tried again moves them again.
+ */
+export function linkStories(
+  memories: Array<{ body: string }>,
+  p: GraphProposal | undefined,
+  plan: ReadonlyMap<string, NoteChoice>,
+  made: ReadonlyMap<string, string>,
+  linked: Map<string, string>,
+): void {
+  const unlink = new Set<string>();
+  const to = new Map<string, string>();
+  const moved = new Map<string, string>();
+  for (const e of p?.entities ?? []) {
+    const c = plan.get(e.ref);
+    if (!c || e.subject) continue;
+    const name = normalizeTitle(e.name);
+    const now = normalizeTitle(linked.get(name) ?? e.name);
+    const title = c.kind === 'existing' ? c.title : c.kind === 'make' ? made.get(e.ref) : undefined;
+    if (c.kind === 'none') unlink.add(now);
+    else if (title !== undefined) {
+      to.set(now, title);
+      moved.set(name, title);
+    }
+  }
+  for (const k of to.keys()) unlink.delete(k);
+  if (unlink.size === 0 && to.size === 0) return;
+  for (const m of memories) m.body = relink(m.body, unlink, to);
+  for (const [name, title] of moved) linked.set(name, title);
+}
+
+/** an import's notes for its people, places and things (persistImport) */
+export interface EntityNotes {
+  plan: ReadonlyMap<string, NoteChoice>;
+  /** an entity ref → the note made for it with the stories */
+  made: ReadonlyMap<string, string>;
+  /** what a paragraph says it is from */
+  interviewName: string;
+  changeId: string;
+}
+
+/**
+ * The entity a proposed one is saved as: for an import's, the one its note was planned with (made
+ * now, or given the note made for it); else the one chosen, matched or of the same name, or made
+ * new with this run's id.
+ */
+async function entityFor(
+  client: PoolClient,
+  o: { archiveId: string; userId: string; runId: string; notes?: EntityNotes },
+  e: ProposedEntity,
+  key: string,
+): Promise<string> {
+  const c = o.notes?.plan.get(e.ref);
+  const made = o.notes?.made.get(e.ref);
+  if (c?.kind === 'existing') return c.entityId;
+  if (c?.kind === 'make' && made && c.entityId) {
+    await client.query(
+      `update public.graph_entities set note_id = $2, updated_at = now()
+        where id = $1 and note_id is null`,
+      [c.entityId, made],
+    );
+    return c.entityId;
+  }
+  const make = c?.kind === 'make' && made ? c : null;
+  const id = make ? null : await entityIdOf(client, o, e, key);
+  if (id) return id;
+  const r = await client.query(
+    `insert into public.graph_entities (archive_id, type, name, match_key, note_id, created_by, run_id)
+     values ($1, $2, $3, $4, $5, $6, $7)
+     on conflict (archive_id, type, match_key) do update
+        set note_id = coalesce(public.graph_entities.note_id, excluded.note_id), updated_at = now()
+     returning id`,
+    make
+      ? [o.archiveId, make.type, make.name, matchKey(make.name), made, o.userId, o.runId]
+      : [o.archiveId, e.type, e.name, key, null, o.userId, o.runId],
+  );
+  return (r.rows[0] as { id: string }).id;
+}
+
 /**
  * Write a proposal: each entity resolved to one already here (chosen, matched, or of the same
- * name or alias by now) or made new with this run's id; then its mentions on the saved stories,
- * the relationships between them, and the descriptions of every entity touched.
+ * name or alias by now) or made new with this run's id, and an import's tied to its note; the
+ * paragraphs for notes already here; then its mentions on the saved stories, the relationships
+ * between them, and the descriptions of every entity touched.
  */
 export async function saveGraph(
   client: PoolClient,
@@ -141,51 +424,31 @@ export async function saveGraph(
     /** a memory id ("m1") or note id → the saved story's note id */
     storyNote: ReadonlyMap<string, string>;
     interviewId: string | null;
+    /** an import's: what each entity gets, and the notes made for them; the button's have none */
+    notes?: EntityNotes;
   },
 ): Promise<{ entities: number; relationships: number }> {
   const p = o.proposal;
   if (!p || p.pending || p.entities.length === 0) return { entities: 0, relationships: 0 };
   const idOf = new Map<string, string>();
+  /** an entity ref → its note: what a relationship no story tells hangs on */
+  const noteOf = new Map<string, string>();
+  /** a note already here → what this interview adds to it */
+  const paragraphs = new Map<string, DescriptionSentence[]>();
   const touched = new Set<string>();
   for (const e of p.entities) {
     const key = matchKey(e.name);
     if (!key) continue;
-    let id: string | null = null;
-    if (e.match.kind === 'existing') {
-      const r = await client.query(
-        `select e.id from public.graph_entities e
-          where e.id = $1 and e.archive_id = $2 and ${entityVisibleSql('e', '$3')}`,
-        [e.match.entityId, o.archiveId, o.userId],
-      );
-      id = (r.rows[0] as { id: string } | undefined)?.id ?? null;
-    }
-    // one name, one entity: a name or alias of the same key, made since the preview, is it
-    id ??=
-      (
-        (
-          await client.query(
-            `select id from public.graph_entities
-              where archive_id = $1 and type = $2 and match_key = $3
-             union all
-             select g.entity_id from public.graph_aliases g
-              where g.archive_id = $1 and g.match_key = $3
-             limit 1`,
-            [o.archiveId, e.type, key],
-          )
-        ).rows[0] as { id: string } | undefined
-      )?.id ?? null;
-    if (!id) {
-      const made = await client.query(
-        `insert into public.graph_entities (archive_id, type, name, match_key, created_by, run_id)
-         values ($1, $2, $3, $4, $5, $6)
-         on conflict (archive_id, type, match_key) do update set updated_at = now()
-         returning id`,
-        [o.archiveId, e.type, e.name, key, o.userId, o.runId],
-      );
-      id = (made.rows[0] as { id: string }).id;
-    }
+    const id = await entityFor(client, o, e, key);
     idOf.set(e.ref, id);
     touched.add(id);
+    const c = o.notes?.plan.get(e.ref);
+    const made = o.notes?.made.get(e.ref);
+    if (made) noteOf.set(e.ref, made);
+    else if (c?.kind === 'existing') {
+      noteOf.set(e.ref, c.noteId);
+      paragraphs.set(c.noteId, [...(paragraphs.get(c.noteId) ?? []), ...(e.description ?? [])]);
+    }
     // the name it was proposed by, and a name it had before the reviewer renamed it
     await addAliases(client, o.archiveId, id, [e.name, ...(e.aliases ?? [])]);
     for (const m of e.mentions) {
@@ -207,12 +470,28 @@ export async function saveGraph(
       );
     }
   }
+  // one paragraph per note, in note order: the order every writer locks notes in
+  if (o.notes) {
+    for (const noteId of [...paragraphs.keys()].sort()) {
+      const said = sentencesOf(paragraphs.get(noteId)!);
+      if (said.length === 0) continue;
+      await appendParagraph(client, {
+        archiveId: o.archiveId,
+        noteId,
+        userId: o.userId,
+        text: paragraphText(o.notes.interviewName, said),
+        sources: sourcesFor(said, o.interviewId),
+        runId: o.runId,
+        changeId: o.notes.changeId,
+      });
+    }
+  }
   let relationships = 0;
   for (const r of p.relationships) {
     const a = idOf.get(r.a);
     const b = idOf.get(r.b);
-    // a relationship no story tells has no story note to hang on (yet)
-    const note = r.story === null ? undefined : o.storyNote.get(r.story);
+    // told in a story, it hangs on that story; told in none, on its first entity's note
+    const note = r.story === null ? (noteOf.get(r.a) ?? noteOf.get(r.b)) : o.storyNote.get(r.story);
     if (!a || !b || a === b || !note) continue;
     const made = await client.query(
       `insert into public.graph_relationships

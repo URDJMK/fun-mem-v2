@@ -1,4 +1,12 @@
-import { saveGraph, storiesOf, undoGraph } from './graph/save';
+import {
+  entityNoteInputs,
+  linkStories,
+  notePlan,
+  saveGraph,
+  storiesOf,
+  undoGraph,
+  type NoteChoice,
+} from './graph/save';
 import type { GraphProposal } from './graph/types';
 import { randomUUID } from 'node:crypto';
 import type { Pool, PoolClient } from 'pg';
@@ -907,8 +915,14 @@ export async function persistImport(
   // a quick refusal before any work; the transaction checks again, holding the membership
   await requireImporter(deps.pool, archiveId, userId);
 
+  /** the title each entity's links in the stories carry now: a retried save moves them on */
+  const linked = new Map<string, string>();
   for (let attempt = 0; attempt < 4; attempt++) {
     let runId: string | null = null;
+    // what each person, place and thing gets, and the notes made for them after the stories:
+    // decided again on each attempt
+    let plan = new Map<string, NoteChoice>();
+    let entityNotes: Array<{ refs: string[]; title: string }> = [];
     try {
       const { notes } = await createNotesBatch(
         deps,
@@ -926,17 +940,33 @@ export async function persistImport(
             opts.markers ?? [],
             await unquotable(client, memories, opts.markers ?? [], archiveId),
           );
-          retitle(
+          // each person, place and thing's note, as the project is now (entity design 7.2)
+          plan = await notePlan(client, archiveId, userId, result.graph);
+          const extra = result.graph
+            ? entityNoteInputs(result.graph, plan, result.interviewId ?? null)
+            : [];
+          // the stories' titles and the new notes' together: a new note whose title is taken
+          // gets its type ("Busan (place)")
+          const settled = await resolveTitles(client, archiveId, [
+            ...memories.map((m) => ({ title: m.title, hint: hintOf(m) })),
+            ...extra.map((x) => ({ title: x.input.title, hint: x.hint })),
+          ]);
+          entityNotes = extra.map((x, i) => ({
+            refs: x.refs,
+            title: settled[memories.length + i]!,
+          }));
+          // the stories' links to them follow the final titles, or become their words
+          linkStories(
             memories,
-            await resolveTitles(
-              client,
-              archiveId,
-              memories.map((m) => ({ title: m.title, hint: hintOf(m) })),
-            ),
+            result.graph,
+            plan,
+            new Map(entityNotes.flatMap((x) => x.refs.map((ref) => [ref, x.title]))),
+            linked,
           );
+          retitle(memories, settled.slice(0, memories.length));
           // a story carries its metadata (PRD 7.3): when it was told, by whom, from which lines
           const told = result.interviewId ? await recordedAt(client, result.interviewId) : null;
-          return memories.map((m) =>
+          const stories = memories.map((m) =>
             m.method === 'story'
               ? {
                   title: m.title,
@@ -957,6 +987,10 @@ export async function persistImport(
                 }
               : { title: m.title, type: m.type, body: m.body, occurred: m.occurred },
           );
+          return [
+            ...stories,
+            ...extra.map((x, i) => ({ ...x.input, title: entityNotes[i]!.title })),
+          ];
         },
         memories.some((m) => m.method === 'story') ? 'import' : 'ai-suggestion',
         {
@@ -989,12 +1023,14 @@ export async function persistImport(
                 result.sourceHash,
                 result.source ? result.source.slice(0, 120) : null,
                 ctx.changeId,
-                ctx.notes.length,
+                // the stories: what the interview's page counts
+                memories.length,
               ],
             );
             runId = (run.rows[0] as { id: string }).id;
             if (result.interviewId) await markWritten(client, result.interviewId, runId);
-            // the people, places and things in these stories (graph design 5.2)
+            // the people, places and things in these stories, each tied to its note (graph
+            // design 5.2, entity design 7.2); the notes made for them come after the stories
             await saveGraph(client, {
               archiveId,
               userId,
@@ -1002,11 +1038,21 @@ export async function persistImport(
               proposal: result.graph,
               storyNote: new Map(memories.map((m, i) => [m.id, ctx.notes[i]!.id])),
               interviewId: result.interviewId ?? null,
+              notes: {
+                plan,
+                made: new Map(
+                  entityNotes.flatMap((x, i) =>
+                    x.refs.map((ref) => [ref, ctx.notes[memories.length + i]!.id]),
+                  ),
+                ),
+                interviewName: result.interviewName || result.source || 'an interview',
+                changeId: ctx.changeId,
+              },
             });
           },
         },
       );
-      const saved = notes.map((n, index) => ({
+      const saved = notes.slice(0, memories.length).map((n, index) => ({
         id: n.id,
         title: n.title,
         method: memories[index]!.method,

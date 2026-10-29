@@ -1,10 +1,20 @@
 import { randomUUID } from 'node:crypto';
-import { extractWikilinks } from '@funmem/core';
+import { extractWikilinks, matchKey } from '@funmem/core';
 import { afterAll, describe, expect, it } from 'vitest';
 import { createApp } from '../src/app';
 import { FIND_SYSTEM } from '../src/graph/find';
-import { applyGraphPatch, relinkMemories, storiesOf } from '../src/graph/save';
+import {
+  applyGraphPatch,
+  entityNoteInputs,
+  linkStories,
+  paragraphText,
+  relinkMemories,
+  storiesOf,
+  type NoteChoice,
+} from '../src/graph/save';
 import type { GraphProposal, ProposedEntity } from '../src/graph/types';
+import type { IngestResult } from '../src/ingest-pipeline';
+import { persistImport } from '../src/ingest-save';
 import type { ChatModel } from '../src/nim';
 import { JUDGE_SYSTEM } from '../src/stories/judge';
 import { PLAN_SYSTEM } from '../src/stories/plan';
@@ -249,6 +259,12 @@ describe('an import’s graph', () => {
       'Every birthday [[Mina Kim|his mother]] made seaweed soup, the way they did in Korea.',
     );
     expect(await body(SOUP.title)).toContain('They went to [[Busan]].');
+    // the same as Tommy Lee: the link is to his note, and what she said of Tom is a paragraph there
+    expect(await body(SCHOOL.title)).toContain('[[Tommy Lee|Tom]]');
+    expect(await body('Tommy Lee')).toMatch(/^_From “[^”]+”:_ Tom is Sarah’s brother\.$/);
+    expect(await body('Busan')).toBe('');
+    // her note is new, made with the stories
+    expect(await body('Mina Kim')).toBe('She always made seaweed soup.');
     const got = await entities();
     expect(got.map((e) => e.name)).toEqual(
       expect.arrayContaining(['Busan', 'Mina Kim', `Noah Kim save ${RUN}`, 'Sarah', 'Tommy Lee']),
@@ -314,10 +330,11 @@ describe('an import’s graph', () => {
       [archive],
     );
     expect(mentions.rows[0]).toEqual({ n: 0 });
-    // the relationship the story left out told has no story now: it waits for its note
-    expect((await relationships()).map((r) => r.story)).toEqual([
-      'The new boy at school',
-      'The new boy at school',
+    // the relationship the story left out told has no story now: it is tied to her note
+    expect((await relationships()).map((r) => [r.description, r.story])).toEqual([
+      ['Noah Kim’s mother — his mother', 'Noah Kim’s mother'],
+      ['Sarah — Noah’s friend from school', 'The new boy at school'],
+      ['Tom — Sarah’s brother', 'The new boy at school'],
     ]);
   });
 
@@ -597,5 +614,407 @@ describe('the reviewer’s choices on an import’s people, places and things', 
     };
     relinkMemories(memories, before, applyGraphPatch(before, { leave: ['e2'] }, new Set(['m1'])));
     expect(memories[0]!.body).toBe('She met [[Tom]] and [[Busan|the city]].');
+  });
+});
+
+describe('the notes of an import’s people, places and things, as text', () => {
+  const said = (text: string) => ({ text, sources: [{ interviewId: null, from: 3, to: 3 }] });
+
+  it('a paragraph is one line, from the interview, that never reads as a source line', () => {
+    const text = paragraphText('Sunja on\nBusan', [
+      said('She said:\n> go home.'),
+      said('Then she  left.'),
+    ]);
+    expect(text).toBe('_From “Sunja on Busan”:_ She said: > go home. Then she left.');
+    expect(text.split('\n')).toHaveLength(1);
+  });
+
+  it('one note for refs that ended with the same name and type', () => {
+    const one: NoteChoice = { kind: 'make', entityId: null, name: 'Tommy Lee', type: 'person' };
+    const p: GraphProposal = {
+      entities: [
+        { ...NOTED('e1', 'Tommy Lee'), description: [said('Tom came.')] },
+        { ...NOTED('e2', 'Tommy Lee'), description: [said('Tommy stayed.'), said('Tom came.')] },
+        { ...NOTED('e3', 'Busan'), type: 'place', description: [said('>\n> By the sea.')] },
+      ],
+      relationships: [],
+    };
+    const plan = new Map<string, NoteChoice>([
+      ['e1', one],
+      ['e2', one],
+      ['e3', { kind: 'make', entityId: null, name: 'Busan', type: 'place' }],
+    ]);
+    const out = entityNoteInputs(p, plan, 'i1');
+    expect(out.map((x) => [x.refs, x.input.title, x.input.type, x.input.body, x.hint])).toEqual([
+      [['e1', 'e2'], 'Tommy Lee', 'person', 'Tom came. Tommy stayed.', 'person'],
+      [['e3'], 'Busan', 'place', 'By the sea.', 'place'],
+    ]);
+    expect(out[0]!.input).toMatchObject({
+      entity: false,
+      extra: {
+        sources: [
+          { sentence: 'Tom came.', sources: [{ interviewId: 'i1', from: 3, to: 3 }] },
+          { sentence: 'Tommy stayed.', sources: [{ interviewId: 'i1', from: 3, to: 3 }] },
+        ],
+      },
+    });
+  });
+
+  it('the stories link to the final titles, again when a save is tried again', () => {
+    const memories = [{ body: 'In [[Busan]], [[Mina|her aunt]] met [[Sam]] and [[Sunja]].' }];
+    const p: GraphProposal = {
+      entities: [
+        { ...NOTED('e1', 'Busan'), type: 'place' },
+        NOTED('e2', 'Mina'),
+        NOTED('e3', 'Sam'),
+        { ...NOTED('e4', 'Sunja'), subject: true },
+      ],
+      relationships: [],
+    };
+    const plan = new Map<string, NoteChoice>([
+      ['e1', { kind: 'make', entityId: null, name: 'Busan', type: 'place' }],
+      ['e2', { kind: 'existing', entityId: 'x', noteId: 'n', title: 'Mina Kim' }],
+      ['e3', { kind: 'none' }],
+      ['e4', { kind: 'none' }],
+    ]);
+    const linked = new Map<string, string>();
+    linkStories(memories, p, plan, new Map([['e1', 'Busan (place)']]), linked);
+    expect(memories[0]!.body).toBe(
+      'In [[Busan (place)|Busan]], [[Mina Kim|her aunt]] met Sam and [[Sunja]].',
+    );
+    // the first try's title was taken meanwhile: the second moves the links on
+    linkStories(memories, p, plan, new Map([['e1', 'Busan (2)']]), linked);
+    expect(memories[0]!.body).toBe(
+      'In [[Busan (2)|Busan]], [[Mina Kim|her aunt]] met Sam and [[Sunja]].',
+    );
+  });
+});
+
+describe('saving an import’s notes, links, mentions and relationships', () => {
+  const INTERVIEW = 'Sunja on Busan and Minho';
+  const story = (id: string, title: string, body: string) => ({
+    id,
+    title,
+    type: 'event',
+    occurred: null,
+    body,
+    notes: [],
+    turns: [0],
+    startSec: null,
+    endSec: null,
+    method: 'story',
+    speaker: 'A',
+    anchor: '',
+    tellers: ['Sunja'],
+    sources: [],
+  });
+  const line = (n: number) => [{ interviewId: null, from: n, to: n }];
+  const said = (text: string, n: number) => ({ text, sources: line(n) });
+  const mention = (story: string, words: string[], at: string, n: number) => ({
+    story,
+    words,
+    line: at,
+    sources: line(n),
+  });
+
+  async function project(label: string) {
+    const owner = await ctx.realSession(`graph-save-notes-${label}-${RUN}@test.local`);
+    const archive = await ctx.provisionArchive(owner, `Sunja ${label} ${RUN}`);
+    const note = async (title: string, type: string, body = '') => {
+      const res = await ctx.api(owner.token, 'POST', `/v1/archives/${archive}/notes`, {
+        title,
+        type,
+        body,
+      });
+      expect(res.status).toBe(201);
+      return ((await res.json()) as { id: string }).id;
+    };
+    const entityOf = async (noteId: string) =>
+      (
+        (await ctx.pool.query(`select id from public.graph_entities where note_id = $1`, [noteId]))
+          .rows[0] as { id: string }
+      ).id;
+    const notes = async () =>
+      (
+        await ctx.pool.query(
+          `select id, title, type::text as type, body, extra from public.notes
+            where archive_id = $1 order by title`,
+          [archive],
+        )
+      ).rows as Array<{
+        id: string;
+        title: string;
+        type: string;
+        body: string;
+        extra: Record<string, unknown>;
+      }>;
+    const save = (memories: unknown[], graph: GraphProposal) =>
+      persistImport(ctx.deps, archive, owner.userId, {
+        sourceHash: randomUUID(),
+        interviewName: INTERVIEW,
+        memories,
+        graph,
+      } as unknown as IngestResult);
+    return { owner, archive, note, entityOf, notes, save };
+  }
+
+  it('makes the notes, adds the paragraphs, and points every link at its note', async () => {
+    const { owner, archive, note, entityOf, notes, save } = await project('all');
+    const subject = (
+      await ctx.pool.query(
+        `select e.id, n.id as note_id, n.title, n.body from public.graph_entities e
+           join public.archives a on a.subject_note_id = e.note_id
+           join public.notes n on n.id = e.note_id where a.id = $1`,
+        [archive],
+      )
+    ).rows[0] as { id: string; note_id: string; title: string; body: string };
+    // a story already called "Busan": the place's note is "Busan (place)"
+    await note('Busan', 'event', 'A story about Busan.');
+    const mina = await note('Mina Kim', 'person', 'Mina is Sunja’s aunt.');
+    const jun = await note('Jun Park', 'person', 'Jun Park.');
+    // in the graph without a note, named by a story already here
+    const hyun = (
+      await ctx.pool.query(
+        `insert into public.graph_entities (archive_id, type, name, match_key, created_by)
+         values ($1, 'person', 'Hyun', $2, $3) returning id`,
+        [archive, matchKey('Hyun'), owner.userId],
+      )
+    ).rows[0].id as string;
+    await ctx.pool.query(
+      `insert into public.graph_mentions (archive_id, entity_id, note_id, words, line)
+       values ($1, $2, $3, '{Hyun}', 'Hyun came to stay.')`,
+      [archive, hyun, await note('Cousins', 'event', 'Hyun came to stay.')],
+    );
+    const revisions = async (noteId: string) =>
+      (
+        await ctx.pool.query(`select count(*)::int as n from public.revisions where note_id = $1`, [
+          noteId,
+        ])
+      ).rows[0].n as number;
+    const subjectRevisions = await revisions(subject.note_id);
+
+    const harbour = story(
+      'm1',
+      'Harbour days',
+      'Sunja grew up by the harbour in [[Busan]]. [[Mina Kim|Her aunt]] sold fish there.',
+    );
+    const gravy = story(
+      'm2',
+      'The gravy',
+      '[[Minho]] made gravy for [[Jun Park|Jun]]. [[Cousin Hyun|Hyun]] ate it all.',
+    );
+    const existing = (ref: string, name: string, entityId: string, noteId: string) => ({
+      ...NOTED(ref, name),
+      match: { kind: 'existing' as const, entityId, name },
+      note: { kind: 'existing' as const, noteId, title: name },
+    });
+    const graph: GraphProposal = {
+      entities: [
+        {
+          ...existing('e1', 'Sunja', subject.id, subject.note_id),
+          subject: true,
+          description: [said('Sunja grew up in Busan.', 1)],
+          mentions: [mention('m1', ['Sunja'], 'Sunja grew up by the harbour in Busan.', 1)],
+        },
+        {
+          ...NOTED('e2', 'Minho'),
+          description: [said('Minho cooked for the family.', 5)],
+          mentions: [mention('m2', ['Minho'], 'Minho made gravy for Jun.', 5)],
+        },
+        {
+          ...NOTED('e3', 'Busan'),
+          type: 'place',
+          description: [said('Busan is a harbour city.', 1)],
+          mentions: [mention('m1', ['Busan'], 'Sunja grew up by the harbour in Busan.', 1)],
+        },
+        {
+          ...existing('e4', 'Mina Kim', await entityOf(mina), mina),
+          description: [said('Mina sold fish at the harbour.', 2)],
+          mentions: [mention('m1', ['Her aunt'], 'Her aunt sold fish there.', 2)],
+        },
+        {
+          ...existing('e5', 'Jun Park', await entityOf(jun), jun),
+          description: [],
+          mentions: [mention('m2', ['Jun'], 'Minho made gravy for Jun.', 5)],
+        },
+        {
+          // the same as Hyun, who has no note: the note is his, by his name
+          ...NOTED('e6', 'Cousin Hyun'),
+          match: { kind: 'existing', entityId: hyun, name: '' },
+          description: [said('Hyun was Sunja’s cousin.', 6)],
+          mentions: [mention('m2', ['Hyun'], 'Hyun ate it all.', 6)],
+        },
+      ],
+      relationships: [
+        {
+          ref: 'r1',
+          a: 'e2',
+          b: 'e1',
+          description: 'Minho — Sunja’s brother',
+          story: 'm2',
+          sources: line(5),
+        },
+        {
+          ref: 'r2',
+          a: 'e6',
+          b: 'e2',
+          description: 'Hyun — Minho’s friend',
+          story: null,
+          sources: line(6),
+        },
+      ],
+    };
+
+    const out = await save([harbour, gravy], graph);
+    // the stories only: the notes of the people, places and things are not in it
+    expect(out.saved.map((s) => s.title)).toEqual(['Harbour days', 'The gravy']);
+
+    const all = await notes();
+    const byTitle = (t: string) => all.find((n) => n.title === t);
+    const minho = byTitle('Minho')!;
+    expect(minho).toMatchObject({
+      type: 'person',
+      body: 'Minho cooked for the family.',
+      extra: {
+        sources: [{ sentence: 'Minho cooked for the family.', sources: line(5) }],
+      },
+    });
+    const minhoEntity = (
+      await ctx.pool.query(`select name, run_id from public.graph_entities where note_id = $1`, [
+        minho.id,
+      ])
+    ).rows;
+    expect(minhoEntity).toEqual([{ name: 'Minho', run_id: out.runId }]);
+
+    // the title was taken by a story: the type tells them apart, and the link follows
+    const place = byTitle('Busan (place)')!;
+    expect(place).toMatchObject({ type: 'place', body: 'Busan is a harbour city.' });
+    expect(byTitle('Harbour days')!.body).toBe(
+      'Sunja grew up by the harbour in [[Busan (place)|Busan]]. [[Mina Kim|Her aunt]] sold fish there.',
+    );
+    const resolved = await ctx.pool.query(
+      `select l.target, l.resolved_id from public.links l
+        where l.source_id = $1 order by l.start_pos`,
+      [byTitle('Harbour days')!.id],
+    );
+    expect(resolved.rows).toEqual([
+      { target: 'Busan (place)', resolved_id: place.id },
+      { target: 'Mina Kim', resolved_id: mina },
+    ]);
+
+    // the protagonist: no paragraph, no new revision
+    expect(byTitle(subject.title)!.body).toBe(subject.body);
+    expect(await revisions(subject.note_id)).toBe(subjectRevisions);
+
+    // a note already here gets a paragraph, and no second note is made
+    expect(byTitle('Mina Kim')!.body).toBe(
+      `Mina is Sunja’s aunt.\n\n_From “${INTERVIEW}”:_ Mina sold fish at the harbour.`,
+    );
+    expect(all.filter((n) => n.title.startsWith('Mina Kim'))).toHaveLength(1);
+    // with nothing to add, it is left as it was; the story still links to it
+    expect(byTitle('Jun Park')!.body).toBe('Jun Park.');
+    expect(await revisions(jun)).toBe(1);
+    expect(byTitle('The gravy')!.body).toBe(
+      '[[Minho]] made gravy for [[Jun Park|Jun]]. [[Hyun]] ate it all.',
+    );
+
+    // in the graph without a note: the note is made for that entity, by its name
+    const hyunNote = byTitle('Hyun')!;
+    expect(hyunNote.body).toBe('Hyun was Sunja’s cousin.');
+    const hyuns = (
+      await ctx.pool.query(
+        `select id, note_id from public.graph_entities where archive_id = $1 and match_key = 'hyun'`,
+        [archive],
+      )
+    ).rows;
+    expect(hyuns).toEqual([{ id: hyun, note_id: hyunNote.id }]);
+    expect(all.map((n) => n.title)).not.toContain('Cousin Hyun');
+
+    // each story's mentions, with its words
+    const mentions = await ctx.pool.query(
+      `select e.name, s.title as story, m.words from public.graph_mentions m
+         join public.graph_entities e on e.id = m.entity_id
+         join public.notes s on s.id = m.note_id
+        where m.run_id = $1 order by s.title, e.name`,
+      [out.runId],
+    );
+    expect(mentions.rows).toEqual([
+      { name: 'Busan', story: 'Harbour days', words: ['Busan'] },
+      { name: 'Mina Kim', story: 'Harbour days', words: ['Her aunt'] },
+      { name: subject.title, story: 'Harbour days', words: ['Sunja'] },
+      { name: 'Hyun', story: 'The gravy', words: ['Hyun'] },
+      { name: 'Jun Park', story: 'The gravy', words: ['Jun'] },
+      { name: 'Minho', story: 'The gravy', words: ['Minho'] },
+    ]);
+    // a relationship no story tells is tied to its first entity's note
+    const told = await ctx.pool.query(
+      `select r.description, n.title from public.graph_relationships r
+         join public.notes n on n.id = r.note_id
+        where r.archive_id = $1 order by r.description`,
+      [archive],
+    );
+    expect(told.rows).toEqual([
+      { description: 'Hyun — Minho’s friend', title: 'Hyun' },
+      { description: 'Minho — Sunja’s brother', title: 'The gravy' },
+    ]);
+
+    // Minho's page shows the story that links to him
+    const res = await ctx.api(
+      owner.token,
+      'GET',
+      `/v1/archives/${archive}/notes/${minho.id}/backlinks`,
+    );
+    expect(res.status).toBe(200);
+    const back = (await res.json()) as { occurrences: Array<{ sourceTitle: string }> };
+    expect(back.occurrences.map((o) => o.sourceTitle)).toEqual(['The gravy']);
+  });
+
+  it('one note for two that ended with the same name; none for one whose note is private', async () => {
+    const { archive, note, notes, save } = await project('one');
+    // someone else's private note: the importer may not see it, nor link to it
+    const other = await ctx.realSession(`graph-save-notes-other-${RUN}@test.local`);
+    await ctx.pool.query(
+      `insert into public.memberships (archive_id, user_id, role) values ($1, $2, 'contributor')`,
+      [archive, other.userId],
+    );
+    const res = await ctx.api(other.token, 'POST', `/v1/archives/${archive}/notes`, {
+      title: 'Secret Sam',
+      type: 'person',
+      body: 'Private.',
+    });
+    const sam = ((await res.json()) as { id: string }).id;
+    await ctx.pool.query(
+      `insert into public.audiences (archive_id, note_id, kind) values ($1, $2, 'private-to-author')`,
+      [archive, sam],
+    );
+    await note('Unrelated', 'event');
+    const memory = story(
+      'm1',
+      'Old friends',
+      '[[Tommy Lee|Tom]] and [[Tommy Lee]] met [[Secret Sam|Sam]].',
+    );
+    const graph: GraphProposal = {
+      entities: [
+        { ...NOTED('e1', 'Tommy Lee', 'm1'), aliases: ['Tom'] },
+        NOTED('e2', 'Tommy Lee', 'm1'),
+        NOTED('e3', 'Secret Sam', 'm1'),
+      ],
+      relationships: [],
+    };
+    await save([memory], graph);
+    const all = await notes();
+    expect(all.filter((n) => n.title.startsWith('Tommy Lee')).map((n) => n.title)).toEqual([
+      'Tommy Lee',
+    ]);
+    expect(all.find((n) => n.title === 'Tommy Lee')!.body).toBe('Tommy Lee came.');
+    expect(all.find((n) => n.title === 'Old friends')!.body).toBe(
+      '[[Tommy Lee|Tom]] and [[Tommy Lee]] met Sam.',
+    );
+    expect(all.filter((n) => n.title.startsWith('Secret Sam')).map((n) => n.id)).toEqual([sam]);
+    const tommy = await ctx.pool.query(
+      `select count(*)::int as n from public.graph_entities where archive_id = $1 and match_key = 'tommy lee'`,
+      [archive],
+    );
+    expect(tommy.rows[0]).toEqual({ n: 1 });
   });
 });
