@@ -16,7 +16,7 @@ section 15 for findings, and `docs/deploy.md` for required hosted migrations and
 | 9 (save notes, links, mentions, relationships) | Restored in `d7d2d80`, reviewed fixes in `f14de6d` and `571e01c`; complete |
 | 10 (undo restores changed notes) | Complete in `1cf7c19`, including both new undo migrations |
 | 11 (web review) | Complete in `f4a4cec` |
-| 12 (eval, docs, full check, browser) | Eval, docs and full check done. The browser click-through was not run in this session (see the completion report) |
+| 12 (eval, docs, full check, browser) | Eval, docs, full check and browser click-through done (2026-10-29) |
 
 The original stop warning is resolved: imports now create the notes their stories link to, and
 undo restores added paragraphs. Hosted use still requires applying the migrations before

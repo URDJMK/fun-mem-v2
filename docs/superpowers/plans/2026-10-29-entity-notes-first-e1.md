@@ -1375,7 +1375,7 @@ expect(patchOf({ ...NO_CHOICES, paragraphOut: new Set(['e4']) })).toEqual({ leav
     - the note `extra.paragraphs`.
   - **The spec's status:** "Built (E1), 2026-10-29".
 - [x] **Step 4: Full check:** `pnpm -r typecheck && pnpm lint && pnpm format && pnpm -r test`. Expected: all pass. The one known slow-container timing test (`grounding-meaning` "each under 1 s") may fail on a loaded machine. Re-run that file alone and report it as it is.
-- [ ] **Step 5: In the browser**, with the real API (`VITE_SKIP_LOGIN=false` and local Supabase URL and anon key; the API with `NODE_USE_ENV_PROXY=1`):
+- [x] **Step 5: In the browser**, with the real API (`VITE_SKIP_LOGIN=false` and local Supabase URL and anon key; the API with `NODE_USE_ENV_PROXY=1`):
   1. import the Noah fixture;
   2. review: the notes group shows "New note" rows with descriptions, and story previews show dashed links;
   3. rename "Noah Kim's mother" to "Mina Kim" and leave out one thing;

@@ -314,6 +314,13 @@ Entity step's 4-minute slice ran out and the stories were saved without links, a
 the eval on an idle machine. The eval uses the installed `vite-node` runner and loads the ignored
 root `.env`; its assertions have pure tests that never call a live model.
 
+Browser click-through (local stack, real API and model): the Noah fixture reviewed after 279 s with
+10 "New note" rows, "Sarah" shown as "Adds to", and 5 dashed story links. Renaming his mother to
+"Mina Kim" and leaving out "seaweed soup" saved links to Mina's note ("In 2 stories") and plain
+words for the soup; Sarah's note gained its paragraph. Undo erased 12 notes, restored 1, and
+Sarah read as before. No page errors. The full suite (1975 server, 80 web, 60 core, 43 persona
+tests), typecheck, eslint and prettier passed.
+
 Review of the finished work fixed: undoing two imports that both added to one note, newest first,
 no longer leaves the older paragraph behind (revisions from an undone import, or from an import's
 undo, are not later work); "Same as" in the review drops a stale paragraph choice; an interview
