@@ -39,6 +39,15 @@ export type EntityMatch =
   | { kind: 'existing'; entityId: string; name: string }
   | { kind: 'ask'; candidates: Array<{ entityId: string; name: string }> };
 
+/** one checked sentence about an entity, with the interview lines it comes from */
+export interface DescriptionSentence {
+  text: string;
+  sources: GraphSource[];
+}
+
+/** the note an entity gets, as the preview saw it; decided again at save (notePlan) */
+export type EntityNote = { kind: 'new' } | { kind: 'existing'; noteId: string; title: string };
+
 export interface ProposedEntity {
   /** "e1", "e2": how relationships and the reviewer's choices name it */
   ref: string;
@@ -48,6 +57,14 @@ export interface ProposedEntity {
   mentions: ProposedMention[];
   /** other names it goes by: the name it had before the reviewer renamed it */
   aliases?: string[];
+  /** how the stories may call it, from the protagonist's side ("his mother", "Mom"); never aliases */
+  ways?: string[];
+  /** checked sentences about it from this interview: a new note's text, or a paragraph */
+  description?: DescriptionSentence[];
+  /** absent on the button's proposals (graph/step.ts): those make no notes */
+  note?: EntityNote;
+  /** the person the project is about: never linked, no paragraph */
+  subject?: boolean;
 }
 
 export interface ProposedRelationship {
@@ -57,7 +74,8 @@ export interface ProposedRelationship {
   a: string;
   b: string;
   description: string;
-  story: string;
+  /** the story whose lines tell it; null when no story uses them (tied to a note at save) */
+  story: string | null;
   sources: GraphSource[];
 }
 
@@ -83,4 +101,6 @@ export interface GraphPatch {
   rename?: Record<string, string>;
   /** entity ref → the existing entity it is */
   same?: Record<string, string>;
+  /** entity refs whose paragraph for an existing note is left out (their links stay) */
+  leaveParagraph?: string[];
 }

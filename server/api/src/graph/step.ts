@@ -4,7 +4,7 @@ import { checkDraft, type ProblemKind } from '../stories/check';
 import { FAILING, judgeStory } from '../stories/judge';
 import { parseCite, renderLines, type Line, type Range } from '../stories/lines';
 import { runWithTools, type Tool } from '../stories/tools';
-import type { EntityLookup } from './store';
+import type { EntityLookup, KnownEntity } from './store';
 import {
   ENTITY_TYPES,
   type EntityMatch,
@@ -35,12 +35,7 @@ export interface StoryForGraph {
   tellers: string[];
 }
 
-export interface KnownEntity {
-  id: string;
-  name: string;
-  type: EntityType;
-  aliases: string[];
-}
+export type { KnownEntity };
 
 export const GRAPH_SYSTEM = `You find the people, places and things in a family's stories, and the relationships the stories tell between them, for the family archive's graph.
 

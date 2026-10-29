@@ -36,7 +36,11 @@ export function applyGraphPatch(
   }
   const live = new Set(entities.map((e) => e.ref));
   const relationships = p.relationships.filter(
-    (r) => !leave.has(r.ref) && live.has(r.a) && live.has(r.b) && keptStories.has(r.story),
+    (r) =>
+      !leave.has(r.ref) &&
+      live.has(r.a) &&
+      live.has(r.b) &&
+      (r.story === null || keptStories.has(r.story)),
   );
   return { ...p, entities, relationships };
 }
@@ -130,7 +134,8 @@ export async function saveGraph(
   for (const r of p.relationships) {
     const a = idOf.get(r.a);
     const b = idOf.get(r.b);
-    const note = o.storyNote.get(r.story);
+    // a relationship no story tells has no story note to hang on (yet)
+    const note = r.story === null ? undefined : o.storyNote.get(r.story);
     if (!a || !b || a === b || !note) continue;
     const made = await client.query(
       `insert into public.graph_relationships

@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { afterAll, describe, expect, it } from 'vitest';
-import { ensureGraph, entityVisibleSql } from '../src/graph/store';
+import { ensureGraph, entityLookup, entityVisibleSql, knownFor } from '../src/graph/store';
 import { testContext } from './helpers';
 
 /**
@@ -57,6 +57,52 @@ describe('entities of hand-written notes', () => {
     const hans = (await entities(archive)).filter((e) => /han$/i.test(e.name));
     expect(hans).toHaveLength(1);
     expect(hans[0]!.note).toBe('Mrs. Han');
+  });
+});
+
+describe('which note an entity has', () => {
+  it('the lookup and the known entities say which note each has', async () => {
+    const s = await ctx.realSession(`graph-has-note-${RUN}@test.local`);
+    const archive = await ctx.provisionArchive(s, `Walt Marsh ${RUN}`);
+    const walt = await note(s.token, archive, { title: 'Grandpa Walt', type: 'person' });
+    const found = await entityLookup(ctx.pool, archive, s.userId).find('grandpa walt');
+    expect(found[0]!.note).toEqual({ noteId: walt.id, title: 'Grandpa Walt' });
+    const known = await knownFor(ctx.pool, archive, s.userId, []);
+    const subject = known.find((k) => k.subject);
+    expect(subject?.note?.noteId).toBeTruthy();
+  });
+
+  it('an entity whose note the member cannot see has none', async () => {
+    const owner = await ctx.realSession(`graph-hidden-note-owner-${RUN}@test.local`);
+    const member = await ctx.realSession(`graph-hidden-note-member-${RUN}@test.local`);
+    const archive = await ctx.provisionArchive(owner, `Hidden ${RUN}`);
+    await ctx.pool.query(
+      `insert into public.memberships (archive_id, user_id, role) values ($1, $2, 'contributor')`,
+      [archive, member.userId],
+    );
+    const aunt = await note(owner.token, archive, { title: 'Aunt Mabel', type: 'person' });
+    await ctx.pool.query(
+      `insert into public.audiences (archive_id, note_id, kind) values ($1, $2, 'private-to-author')`,
+      [archive, aunt.id],
+    );
+    const story = await note(owner.token, archive, {
+      title: 'A visit',
+      type: 'event',
+      body: 'Mabel visited.',
+    });
+    const e = await ctx.pool.query(`select id from public.graph_entities where note_id = $1`, [
+      aunt.id,
+    ]);
+    await ctx.pool.query(
+      `insert into public.graph_mentions (archive_id, entity_id, note_id, words, line)
+       values ($1, $2, $3, '{Mabel}', 'Mabel visited.')`,
+      [archive, e.rows[0].id, story.id],
+    );
+    const seen = await entityLookup(ctx.pool, archive, member.userId).find('Aunt Mabel');
+    expect(seen).toHaveLength(1);
+    expect(seen[0]!.note).toBeNull();
+    const mine = await entityLookup(ctx.pool, archive, owner.userId).find('Aunt Mabel');
+    expect(mine[0]!.note).toEqual({ noteId: aunt.id, title: 'Aunt Mabel' });
   });
 });
 

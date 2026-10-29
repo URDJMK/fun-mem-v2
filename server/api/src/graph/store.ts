@@ -178,6 +178,20 @@ export interface FoundEntity {
   lines: string[];
   /** only a close spelling: a candidate, never a match */
   close?: boolean;
+  /** its note, when the member can see it */
+  note: { noteId: string; title: string } | null;
+}
+
+/** an entity the Graph and Entity steps start from: the protagonist, and each teller found */
+export interface KnownEntity {
+  id: string;
+  name: string;
+  type: EntityType;
+  aliases: string[];
+  /** the person the project is about */
+  subject?: boolean;
+  /** its note, when the member can see it */
+  note?: { noteId: string; title: string } | null;
 }
 
 export interface EntityLookup {
@@ -212,7 +226,9 @@ export function entityLookup(db: Db, archiveId: string, userId: string): EntityL
       const all = await db.query(
         `select e.id, e.name, e.type::text as type, e.match_key,
                 coalesce(array_agg(g.alias order by g.alias) filter (where g.id is not null), '{}') as aliases,
-                coalesce(array_agg(g.match_key) filter (where g.id is not null), '{}') as alias_keys
+                coalesce(array_agg(g.match_key) filter (where g.id is not null), '{}') as alias_keys,
+                (select json_build_object('noteId', n.id, 'title', n.title) from public.notes n
+                  where n.id = e.note_id and ${visibleSql('n', '$2')}) as note
            from public.graph_entities e
            left join public.graph_aliases g on g.entity_id = e.id
           where e.archive_id = $1 and ${visible}
@@ -226,6 +242,7 @@ export function entityLookup(db: Db, archiveId: string, userId: string): EntityL
         match_key: string;
         aliases: string[];
         alias_keys: string[];
+        note: { noteId: string; title: string } | null;
       }>;
       const exact = rows.filter((r) => r.match_key === key || r.alias_keys.includes(key));
       const close =
@@ -250,6 +267,7 @@ export function entityLookup(db: Db, archiveId: string, userId: string): EntityL
         name: r.name,
         type: r.type,
         aliases: r.aliases,
+        note: r.note,
         lines: (lines.rows as Array<{ entity_id: string; line: string }>)
           .filter((l) => l.entity_id === r.id)
           .slice(0, 3)
@@ -295,12 +313,15 @@ export async function knownFor(
   archiveId: string,
   userId: string,
   tellers: readonly string[],
-): Promise<Array<{ id: string; name: string; type: EntityType; aliases: string[] }>> {
+): Promise<KnownEntity[]> {
   const keys = [...new Set(tellers.map(matchKey).filter(Boolean))];
   const r = await db.query(
     `select e.id, e.name, e.type::text as type,
             coalesce((select array_agg(g.alias order by g.alias) from public.graph_aliases g
-                       where g.entity_id = e.id), '{}') as aliases
+                       where g.entity_id = e.id), '{}') as aliases,
+            coalesce(e.note_id = a.subject_note_id, false) as subject,
+            (select json_build_object('noteId', n.id, 'title', n.title) from public.notes n
+              where n.id = e.note_id and ${visibleSql('n', '$2')}) as note
        from public.graph_entities e join public.archives a on a.id = e.archive_id
       where e.archive_id = $1 and ${entityVisibleSql('e', '$2')}
         and (e.note_id = a.subject_note_id
@@ -312,5 +333,5 @@ export async function knownFor(
       limit 12`,
     [archiveId, userId, keys],
   );
-  return r.rows as Array<{ id: string; name: string; type: EntityType; aliases: string[] }>;
+  return r.rows as KnownEntity[];
 }

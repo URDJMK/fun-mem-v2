@@ -1114,7 +1114,7 @@ export class IngestJobs {
           graphPatch,
           new Set([
             ...all.entities.flatMap((e) => e.mentions.map((m) => m.story)),
-            ...all.relationships.map((r) => r.story),
+            ...all.relationships.flatMap((r) => (r.story === null ? [] : [r.story])),
           ]),
         );
         if (graph.entities.length === 0)

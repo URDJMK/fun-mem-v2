@@ -61,7 +61,13 @@ const STORIES: StoryForGraph[] = [
 const NOAH = { id: 'k-noah', name: 'Noah Kim', type: 'person' as const, aliases: ['Noah'] };
 const lookup = (found: Record<string, Array<{ id: string; name: string }>> = {}): EntityLookup => ({
   find: async (name) =>
-    (found[name] ?? []).map((f) => ({ ...f, type: 'person' as const, aliases: [], lines: [] })),
+    (found[name] ?? []).map((f) => ({
+      ...f,
+      type: 'person' as const,
+      aliases: [],
+      lines: [],
+      note: null,
+    })),
   read: async () => null,
 });
 

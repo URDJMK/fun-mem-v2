@@ -1062,7 +1062,7 @@ export async function persistGraphRun(
     const stories = [
       ...new Set([
         ...proposal.entities.flatMap((e) => e.mentions.map((m) => m.story)),
-        ...proposal.relationships.map((r) => r.story),
+        ...proposal.relationships.flatMap((r) => (r.story === null ? [] : [r.story])),
       ]),
     ].filter((id) => UUID_RE.test(id));
     const live = await client.query(
