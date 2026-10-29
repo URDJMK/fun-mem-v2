@@ -1,4 +1,4 @@
-import { saveGraph, undoGraph } from './graph/save';
+import { saveGraph, storiesOf, undoGraph } from './graph/save';
 import type { GraphProposal } from './graph/types';
 import { randomUUID } from 'node:crypto';
 import type { Pool, PoolClient } from 'pg';
@@ -1059,12 +1059,7 @@ export async function persistGraphRun(
       [archiveId, userId, changeId],
     );
     const runId = (run.rows[0] as { id: string }).id;
-    const stories = [
-      ...new Set([
-        ...proposal.entities.flatMap((e) => e.mentions.map((m) => m.story)),
-        ...proposal.relationships.flatMap((r) => (r.story === null ? [] : [r.story])),
-      ]),
-    ].filter((id) => UUID_RE.test(id));
+    const stories = storiesOf(proposal).filter((id) => UUID_RE.test(id));
     const live = await client.query(
       `select n.id from public.notes n
         where n.archive_id = $1 and n.id = any($2::uuid[]) and ${visibleSql('n', '$3')}`,

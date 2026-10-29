@@ -45,6 +45,14 @@ export function applyGraphPatch(
   return { ...p, entities, relationships };
 }
 
+/** the stories a proposal's mentions and relationships name, each once */
+export const storiesOf = (p: GraphProposal): string[] => [
+  ...new Set([
+    ...p.entities.flatMap((e) => e.mentions.map((m) => m.story)),
+    ...p.relationships.flatMap((r) => (r.story === null ? [] : [r.story])),
+  ]),
+];
+
 /** what each line came from, with the interview it was in once that is known */
 const withInterview = (sources: GraphSource[], interviewId: string | null): GraphSource[] =>
   sources.map((s) => ('interviewId' in s && s.interviewId === null ? { ...s, interviewId } : s));

@@ -6,7 +6,7 @@ import { ensureSubjectNote } from '../stories/profile-store';
 import { readProfile } from '../stories/profile';
 import { visibleSql } from '../views';
 import { addAliases, entityForNote } from './note-entity';
-import type { EntityType } from './types';
+import type { EntityType, NoteRef } from './types';
 
 type Db = Pool | PoolClient;
 
@@ -31,6 +31,15 @@ export function entityVisibleSql(alias: string, userParam: string): string {
     or exists (select 1 from public.graph_relationships vr join public.notes vr_n on vr_n.id = vr.note_id
                 where (vr.a_id = ${alias}.id or vr.b_id = ${alias}.id) and ${visibleSql('vr_n', userParam)})
   )`;
+}
+
+/**
+ * The note of entity <alias> as a {noteId, title} column, or null when it has none or $<userParam>
+ * may not see it.
+ */
+export function entityNoteSql(alias: string, userParam: string): string {
+  return `(select json_build_object('noteId', n.id, 'title', n.title) from public.notes n
+            where n.id = ${alias}.note_id and ${visibleSql('n', userParam)})`;
 }
 
 /** A story's words, its [[links]] read as the words they show: "[[Walter|Dad]]" is "Dad". */
@@ -178,11 +187,11 @@ export interface FoundEntity {
   lines: string[];
   /** only a close spelling: a candidate, never a match */
   close?: boolean;
-  /** its note, when the member can see it */
-  note: { noteId: string; title: string } | null;
+  /** its note; null when it has none, or one this member cannot see (saving decides again) */
+  note: NoteRef | null;
 }
 
-/** an entity the Graph and Entity steps start from: the protagonist, and each teller found */
+/** an entity the Graph step starts from: the protagonist, and each teller found */
 export interface KnownEntity {
   id: string;
   name: string;
@@ -190,8 +199,8 @@ export interface KnownEntity {
   aliases: string[];
   /** the person the project is about */
   subject?: boolean;
-  /** its note, when the member can see it */
-  note?: { noteId: string; title: string } | null;
+  /** its note; null when it has none, or one this member cannot see (saving decides again) */
+  note?: NoteRef | null;
 }
 
 export interface EntityLookup {
@@ -227,8 +236,7 @@ export function entityLookup(db: Db, archiveId: string, userId: string): EntityL
         `select e.id, e.name, e.type::text as type, e.match_key,
                 coalesce(array_agg(g.alias order by g.alias) filter (where g.id is not null), '{}') as aliases,
                 coalesce(array_agg(g.match_key) filter (where g.id is not null), '{}') as alias_keys,
-                (select json_build_object('noteId', n.id, 'title', n.title) from public.notes n
-                  where n.id = e.note_id and ${visibleSql('n', '$2')}) as note
+                ${entityNoteSql('e', '$2')} as note
            from public.graph_entities e
            left join public.graph_aliases g on g.entity_id = e.id
           where e.archive_id = $1 and ${visible}
@@ -242,7 +250,7 @@ export function entityLookup(db: Db, archiveId: string, userId: string): EntityL
         match_key: string;
         aliases: string[];
         alias_keys: string[];
-        note: { noteId: string; title: string } | null;
+        note: NoteRef | null;
       }>;
       const exact = rows.filter((r) => r.match_key === key || r.alias_keys.includes(key));
       const close =
@@ -320,8 +328,7 @@ export async function knownFor(
             coalesce((select array_agg(g.alias order by g.alias) from public.graph_aliases g
                        where g.entity_id = e.id), '{}') as aliases,
             coalesce(e.note_id = a.subject_note_id, false) as subject,
-            (select json_build_object('noteId', n.id, 'title', n.title) from public.notes n
-              where n.id = e.note_id and ${visibleSql('n', '$2')}) as note
+            ${entityNoteSql('e', '$2')} as note
        from public.graph_entities e join public.archives a on a.id = e.archive_id
       where e.archive_id = $1 and ${entityVisibleSql('e', '$2')}
         and (e.note_id = a.subject_note_id
@@ -329,7 +336,7 @@ export async function knownFor(
                  and (e.match_key = any($3::text[])
                       or exists (select 1 from public.graph_aliases g
                                   where g.entity_id = e.id and g.match_key = any($3::text[])))))
-      order by (e.note_id = a.subject_note_id) desc nulls last, e.name
+      order by subject desc, e.name
       limit 12`,
     [archiveId, userId, keys],
   );

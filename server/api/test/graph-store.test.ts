@@ -6,7 +6,7 @@ import { testContext } from './helpers';
 /**
  * Where the graph's entities come from before any import proposes one (graph design 3.3, 3.5):
  * hand-written person, place and object notes, the protagonist, and the backfill of a project
- * made before the graph existed. And who may see an entity.
+ * made before the graph existed. Which note each entity has, and who may see an entity.
  */
 const ctx = testContext();
 const RUN = randomUUID().slice(0, 8);
@@ -61,18 +61,66 @@ describe('entities of hand-written notes', () => {
 });
 
 describe('which note an entity has', () => {
-  it('the lookup and the known entities say which note each has', async () => {
+  const subjectNote = async (archiveId: string) =>
+    (await ctx.pool.query(`select subject_note_id from public.archives where id = $1`, [archiveId]))
+      .rows[0].subject_note_id as string;
+
+  it('the lookup says which note an entity has', async () => {
     const s = await ctx.realSession(`graph-has-note-${RUN}@test.local`);
     const archive = await ctx.provisionArchive(s, `Walt Marsh ${RUN}`);
     const walt = await note(s.token, archive, { title: 'Grandpa Walt', type: 'person' });
     const found = await entityLookup(ctx.pool, archive, s.userId).find('grandpa walt');
+    expect(found).toHaveLength(1);
     expect(found[0]!.note).toEqual({ noteId: walt.id, title: 'Grandpa Walt' });
-    const known = await knownFor(ctx.pool, archive, s.userId, []);
-    const subject = known.find((k) => k.subject);
-    expect(subject?.note?.noteId).toBeTruthy();
   });
 
-  it('an entity whose note the member cannot see has none', async () => {
+  it('the known entities say which is the protagonist, and which note each has', async () => {
+    const s = await ctx.realSession(`graph-known-note-${RUN}@test.local`);
+    const archive = await ctx.provisionArchive(s, `Nell Marsh ${RUN}`);
+    const walt = await note(s.token, archive, { title: 'Grandpa Walt', type: 'person' });
+    const known = await knownFor(ctx.pool, archive, s.userId, ['Grandpa Walt']);
+    expect(known).toHaveLength(2);
+    expect(known[0]).toMatchObject({
+      name: `Nell Marsh ${RUN}`,
+      subject: true,
+      note: { noteId: await subjectNote(archive), title: `Nell Marsh ${RUN}` },
+    });
+    expect(known[1]).toMatchObject({
+      name: 'Grandpa Walt',
+      subject: false,
+      note: { noteId: walt.id, title: 'Grandpa Walt' },
+    });
+  });
+
+  it('a person with no note has none', async () => {
+    const s = await ctx.realSession(`graph-no-note-${RUN}@test.local`);
+    const archive = await ctx.provisionArchive(s, `Dot ${RUN}`);
+    const story = await note(s.token, archive, {
+      title: 'A visit',
+      type: 'event',
+      body: 'Sarah came by.',
+    });
+    const e = await ctx.pool.query(
+      `insert into public.graph_entities (archive_id, type, name, match_key, created_by)
+       values ($1, 'person', 'Sarah', 'sarah', $2) returning id`,
+      [archive, s.userId],
+    );
+    await ctx.pool.query(
+      `insert into public.graph_mentions (archive_id, entity_id, note_id, words, line)
+       values ($1, $2, $3, '{Sarah}', 'Sarah came by.')`,
+      [archive, e.rows[0].id, story.id],
+    );
+    const found = await entityLookup(ctx.pool, archive, s.userId).find('Sarah');
+    expect(found).toHaveLength(1);
+    expect(found[0]!.note).toBeNull();
+    const known = await knownFor(ctx.pool, archive, s.userId, ['Sarah']);
+    expect(known.map((k) => [k.name, k.subject, k.note])).toEqual([
+      [`Dot ${RUN}`, true, { noteId: await subjectNote(archive), title: `Dot ${RUN}` }],
+      ['Sarah', false, null],
+    ]);
+  });
+
+  it('a note private to someone else is not the member’s to see, but still the entity’s', async () => {
     const owner = await ctx.realSession(`graph-hidden-note-owner-${RUN}@test.local`);
     const member = await ctx.realSession(`graph-hidden-note-member-${RUN}@test.local`);
     const archive = await ctx.provisionArchive(owner, `Hidden ${RUN}`);
@@ -85,6 +133,7 @@ describe('which note an entity has', () => {
       `insert into public.audiences (archive_id, note_id, kind) values ($1, $2, 'private-to-author')`,
       [archive, aunt.id],
     );
+    // a story everyone can read mentions her, so the entity is seen though its note is not
     const story = await note(owner.token, archive, {
       title: 'A visit',
       type: 'event',
@@ -101,8 +150,19 @@ describe('which note an entity has', () => {
     const seen = await entityLookup(ctx.pool, archive, member.userId).find('Aunt Mabel');
     expect(seen).toHaveLength(1);
     expect(seen[0]!.note).toBeNull();
+    const known = await knownFor(ctx.pool, archive, member.userId, ['Aunt Mabel']);
+    expect(known.map((k) => [k.name, k.subject, k.note])).toEqual([
+      [`Hidden ${RUN}`, true, { noteId: await subjectNote(archive), title: `Hidden ${RUN}` }],
+      ['Aunt Mabel', false, null],
+    ]);
     const mine = await entityLookup(ctx.pool, archive, owner.userId).find('Aunt Mabel');
+    expect(mine).toHaveLength(1);
     expect(mine[0]!.note).toEqual({ noteId: aunt.id, title: 'Aunt Mabel' });
+    const mineKnown = await knownFor(ctx.pool, archive, owner.userId, ['Aunt Mabel']);
+    expect(mineKnown.find((k) => k.name === 'Aunt Mabel')!.note).toEqual({
+      noteId: aunt.id,
+      title: 'Aunt Mabel',
+    });
   });
 });
 

@@ -41,7 +41,7 @@ import {
 import { writeStories } from './stories/workflow';
 import { profilesFor } from './stories/profile-store';
 import { ensureGraph, entityLookup, knownFor } from './graph/store';
-import { applyGraphPatch } from './graph/save';
+import { applyGraphPatch, storiesOf } from './graph/save';
 import { buildGraph } from './graph/build';
 import type { GraphPatch } from './graph/types';
 
@@ -1109,14 +1109,7 @@ export class IngestJobs {
       // the button's run: only the graph, on stories already saved
       if (held.outcome.memories.length === 0 && held.outcome.graph) {
         const all = held.outcome.graph;
-        const graph = applyGraphPatch(
-          all,
-          graphPatch,
-          new Set([
-            ...all.entities.flatMap((e) => e.mentions.map((m) => m.story)),
-            ...all.relationships.flatMap((r) => (r.story === null ? [] : [r.story])),
-          ]),
-        );
+        const graph = applyGraphPatch(all, graphPatch, new Set(storiesOf(all)));
         if (graph.entities.length === 0)
           throw new SaveError('nothing is selected to save', 400, { reason: 'nothing_selected' });
         const { runId } = await persistGraphRun(this.deps, job.archiveId, job.userId, graph);

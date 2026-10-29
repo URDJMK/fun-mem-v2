@@ -45,8 +45,11 @@ export interface DescriptionSentence {
   sources: GraphSource[];
 }
 
+/** a note, as an entity points to it */
+export type NoteRef = { noteId: string; title: string };
+
 /** the note an entity gets, as the preview saw it; decided again at save (notePlan) */
-export type EntityNote = { kind: 'new' } | { kind: 'existing'; noteId: string; title: string };
+export type EntityNote = { kind: 'new' } | ({ kind: 'existing' } & NoteRef);
 
 export interface ProposedEntity {
   /** "e1", "e2": how relationships and the reviewer's choices name it */
