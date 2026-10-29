@@ -7,6 +7,7 @@ import {
   undoGraph,
   type NoteChoice,
 } from './graph/save';
+import { sharedNoteSql } from './graph/store';
 import type { GraphProposal } from './graph/types';
 import { randomUUID } from 'node:crypto';
 import type { Pool, PoolClient } from 'pg';
@@ -169,8 +170,7 @@ export async function sharedTitles(db: Db, archiveId: string, text = ''): Promis
   const rows = await db.query(
     `select n.title from public.notes n
       where n.archive_id = $1
-        and not exists (select 1 from public.audiences a
-                         where a.note_id = n.id and a.kind <> 'archive-members')
+        and ${sharedNoteSql('n')}
       order by char_length(n.title) desc, n.title`,
     [archiveId],
   );

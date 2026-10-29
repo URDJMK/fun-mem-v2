@@ -9,12 +9,14 @@ import {
   linkStories,
   paragraphText,
   relinkMemories,
+  saveGraph,
   storiesOf,
   type NoteChoice,
 } from '../src/graph/save';
 import type { GraphProposal, ProposedEntity } from '../src/graph/types';
 import type { IngestResult } from '../src/ingest-pipeline';
 import { persistImport } from '../src/ingest-save';
+import { inTransaction } from '../src/notes';
 import type { ChatModel } from '../src/nim';
 import { JUDGE_SYSTEM } from '../src/stories/judge';
 import { PLAN_SYSTEM } from '../src/stories/plan';
@@ -615,6 +617,27 @@ describe('the reviewer’s choices on an import’s people, places and things', 
     relinkMemories(memories, before, applyGraphPatch(before, { leave: ['e2'] }, new Set(['m1'])));
     expect(memories[0]!.body).toBe('She met [[Tom]] and [[Busan|the city]].');
   });
+
+  it('relinkMemories leaves a marker line alone while moving the prose link beside it', () => {
+    const memories = [
+      {
+        id: 'm1',
+        body:
+          'They met [[Tom]] in Busan.\n\n' +
+          '> ⚠ May disagree with [[Tom]] · 1946 · Noah Kim: that note says he never visited',
+      },
+    ];
+    const before: GraphProposal = {
+      entities: [NOTED('e1', 'Tom', 'm1')],
+      relationships: [],
+    };
+    const after = applyGraphPatch(before, { rename: { e1: 'Tom Lee' } }, new Set(['m1']));
+    relinkMemories(memories, before, after);
+    expect(memories[0]!.body).toBe(
+      'They met [[Tom Lee|Tom]] in Busan.\n\n' +
+        '> ⚠ May disagree with [[Tom]] · 1946 · Noah Kim: that note says he never visited',
+    );
+  });
 });
 
 describe('the notes of an import’s people, places and things, as text', () => {
@@ -1055,5 +1078,250 @@ describe('saving an import’s notes, links, mentions and relationships', () => 
       [out.runId],
     );
     expect(mentions.rows).toEqual([{ note_id: pat, words: ['Private Pat'] }]);
+  });
+
+  it('a thing note is type "object", the note type a place or person never gets', async () => {
+    const { notes, save } = await project('thing');
+    const memory = story('m1', 'The tin', '[[Tin of savings|her tin]] held every coin.');
+    const graph: GraphProposal = {
+      entities: [
+        {
+          ...NOTED('e1', 'Tin of savings', 'm1'),
+          type: 'thing',
+          description: [said('It held every coin she saved.', 1)],
+        },
+      ],
+      relationships: [],
+    };
+    await save([memory], graph);
+    const tin = (await notes()).find((n) => n.title === 'Tin of savings')!;
+    expect(tin.type).toBe('object');
+    expect(tin.body).toBe('It held every coin she saved.');
+  });
+
+  it('a relationship with no story, whose first entity has no note, falls back to the second', async () => {
+    const { archive, notes, save } = await project('fallback');
+    const memory = story('m1', 'Old friends', '[[Minho]] and [[Sarah]] grew up together.');
+    // e1 (Sarah's private note, read only by another member) has no note the stories may link to:
+    // notePlan gives it `none`, so a relationship tied to it alone must still land somewhere
+    const stranger = await ctx.realSession(`graph-save-notes-fallback-other-${RUN}@test.local`);
+    await ctx.pool.query(
+      `insert into public.memberships (archive_id, user_id, role) values ($1, $2, 'contributor')`,
+      [archive, stranger.userId],
+    );
+    const privateNote = await ctx.api(stranger.token, 'POST', `/v1/archives/${archive}/notes`, {
+      title: 'Sarah',
+      type: 'person',
+      body: 'Private.',
+    });
+    expect(privateNote.status).toBe(201);
+    const sarahNoteId = ((await privateNote.json()) as { id: string }).id;
+    await ctx.pool.query(
+      `insert into public.audiences (archive_id, note_id, kind) values ($1, $2, 'private-to-author')`,
+      [archive, sarahNoteId],
+    );
+    const sarahEntity = (
+      await ctx.pool.query(`select id from public.graph_entities where note_id = $1`, [sarahNoteId])
+    ).rows[0] as { id: string };
+    const graph: GraphProposal = {
+      entities: [
+        {
+          ...NOTED('e1', 'Sarah', 'm1'),
+          match: { kind: 'existing', entityId: sarahEntity.id, name: 'Sarah' },
+          // the importer cannot see Sarah's private note: notePlan gives `none` for it
+          note: { kind: 'existing', noteId: sarahNoteId, title: 'Sarah' },
+          description: [],
+        },
+        { ...NOTED('e2', 'Minho', 'm1'), description: [said('Minho grew up with Sarah.', 1)] },
+      ],
+      relationships: [
+        {
+          ref: 'r1',
+          a: 'e1',
+          b: 'e2',
+          description: 'Sarah — Minho’s childhood friend',
+          story: null,
+          sources: line(1),
+        },
+      ],
+    };
+    const out = await save([memory], graph);
+    const minho = (await notes()).find((n) => n.title === 'Minho')!;
+    const told = await ctx.pool.query(
+      `select note_id from public.graph_relationships where archive_id = $1 and run_id = $2`,
+      [archive, out.runId],
+    );
+    expect(told.rows).toEqual([{ note_id: minho.id }]);
+  });
+
+  it('a new note renamed onto an existing note’s title joins it, rather than clashing', async () => {
+    const { archive, note, notes, save } = await project('rename-onto-existing');
+    const already = await note('Mina Kim', 'person', 'Already here.');
+    const memory = story('m1', 'A visit', '[[Noah Kim’s mother|his mother]] came by.');
+    const graph: GraphProposal = {
+      entities: [
+        {
+          ...NOTED('e1', 'Mina Kim', 'm1'),
+          description: [said('She visited on Sunday.', 1)],
+        },
+      ],
+      relationships: [],
+    };
+    await save([memory], graph);
+    const all = await notes();
+    // one note, not two: the proposed one joined the one already there by name
+    expect(all.filter((n) => n.title.startsWith('Mina Kim'))).toHaveLength(1);
+    expect(all.find((n) => n.title === 'Mina Kim')!.id).toBe(already);
+    expect(all.find((n) => n.title === 'Mina Kim')!.body).toContain('Already here.');
+    const entities = await ctx.pool.query(
+      `select count(*)::int as n from public.graph_entities where archive_id = $1 and match_key = 'mina kim'`,
+      [archive],
+    );
+    expect(entities.rows[0]).toEqual({ n: 1 });
+  });
+
+  it('one name used by two types gets two notes, never one', async () => {
+    const { notes, save } = await project('two-types');
+    const memory = story(
+      'm1',
+      'Sarah and the city',
+      '[[Sarah]] was named after [[Sarah (place)|Sarah]], the town her family came from.',
+    );
+    const graph: GraphProposal = {
+      entities: [
+        {
+          ...NOTED('e1', 'Sarah', 'm1'),
+          description: [said('Sarah was the narrator’s friend.', 1)],
+        },
+        {
+          ...NOTED('e2', 'Sarah', 'm1'),
+          type: 'place',
+          description: [said('Sarah is a small town.', 1)],
+        },
+      ],
+      relationships: [],
+    };
+    await save([memory], graph);
+    const all = await notes();
+    const person = all.find((n) => n.title === 'Sarah' && n.type === 'person');
+    const place = all.find((n) => n.title === 'Sarah (place)' && n.type === 'place');
+    expect(person?.body).toBe('Sarah was the narrator’s friend.');
+    expect(place?.body).toBe('Sarah is a small town.');
+  });
+
+  it('an entity that matches the protagonist’s note gets no paragraph, even when the proposal never marked it the subject', async () => {
+    const { archive, save } = await project('subject-unmarked');
+    const subject = (
+      await ctx.pool.query(
+        `select e.id, n.id as note_id, n.body from public.graph_entities e
+           join public.archives a on a.subject_note_id = e.note_id
+           join public.notes n on n.id = e.note_id where a.id = $1`,
+        [archive],
+      )
+    ).rows[0] as { id: string; note_id: string; body: string };
+    const memory = story('m1', 'A story', 'She grew up nearby.');
+    const graph: GraphProposal = {
+      entities: [
+        {
+          // the AI mismarked this: match is the subject's entity, but `subject` was never set
+          ...NOTED('e1', 'Sunja', 'm1'),
+          match: { kind: 'existing', entityId: subject.id, name: 'Sunja' },
+          note: { kind: 'existing', noteId: subject.note_id, title: 'Sunja' },
+          description: [said('She grew up nearby.', 1)],
+        },
+      ],
+      relationships: [],
+    };
+    await save([memory], graph);
+    const after = await ctx.pool.query(`select body from public.notes where id = $1`, [
+      subject.note_id,
+    ]);
+    expect(after.rows[0]).toEqual({ body: subject.body });
+  });
+
+  it('saving the same proposal again (a retried transaction) adds no duplicate mentions or relationships', async () => {
+    const { archive, owner, save } = await project('retry');
+    const memory = story('m1', 'Old friends', '[[Minho]] and [[Sarah]] grew up together.');
+    const graph: GraphProposal = {
+      entities: [
+        { ...NOTED('e1', 'Minho', 'm1'), description: [said('Minho was kind.', 1)] },
+        { ...NOTED('e2', 'Sarah', 'm1'), description: [said('Sarah was his friend.', 1)] },
+      ],
+      relationships: [
+        {
+          ref: 'r1',
+          a: 'e1',
+          b: 'e2',
+          description: 'Minho — Sarah’s friend',
+          story: 'm1',
+          sources: line(1),
+        },
+      ],
+    };
+    const out = await save([memory], graph);
+    // the same run, told to save again (its notes, and their entities, already exist)
+    const storyNote = (
+      await ctx.pool.query(`select id from public.notes where archive_id = $1 and title = $2`, [
+        archive,
+        'Old friends',
+      ])
+    ).rows[0] as { id: string };
+    const minhoEntity = (
+      await ctx.pool.query(
+        `select id, note_id from public.graph_entities where archive_id = $1 and match_key = 'minho'`,
+        [archive],
+      )
+    ).rows[0] as { id: string; note_id: string };
+    const sarahEntity = (
+      await ctx.pool.query(
+        `select id, note_id from public.graph_entities where archive_id = $1 and match_key = 'sarah'`,
+        [archive],
+      )
+    ).rows[0] as { id: string; note_id: string };
+    await inTransaction(ctx.deps, archive, async (client, changeId) => {
+      await saveGraph(client, {
+        archiveId: archive,
+        userId: owner.userId,
+        runId: out.runId!,
+        proposal: graph,
+        storyNote: new Map([['m1', storyNote.id]]),
+        interviewId: null,
+        notes: {
+          plan: new Map<string, NoteChoice>([
+            [
+              'e1',
+              {
+                kind: 'existing',
+                entityId: minhoEntity.id,
+                noteId: minhoEntity.note_id,
+                title: 'Minho',
+              },
+            ],
+            [
+              'e2',
+              {
+                kind: 'existing',
+                entityId: sarahEntity.id,
+                noteId: sarahEntity.note_id,
+                title: 'Sarah',
+              },
+            ],
+          ]),
+          made: new Map(),
+          interviewName: 'Old friends',
+          changeId,
+        },
+      });
+    });
+    const mentions = await ctx.pool.query(
+      `select count(*)::int as n from public.graph_mentions where archive_id = $1`,
+      [archive],
+    );
+    expect(mentions.rows[0]).toEqual({ n: 2 });
+    const relationships = await ctx.pool.query(
+      `select count(*)::int as n from public.graph_relationships where archive_id = $1`,
+      [archive],
+    );
+    expect(relationships.rows[0]).toEqual({ n: 1 });
   });
 });

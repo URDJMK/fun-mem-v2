@@ -367,6 +367,21 @@ describe('relink and plainOf', () => {
     ).toBe('Tom met Mina, ![[pic.png]] and the port.');
     expect(plainOf('No links.')).toBe('No links.');
   });
+  it('leaves a marker line ("> ...") alone, even one that quotes a retargeted link', () => {
+    const body =
+      'They lived in [[Busan]].\n\n' +
+      '> ⚠ May disagree with [[Busan]] · 1946 · Noah Kim: that note says “she was born in Seoul”';
+    const out = relink(body, new Set(), new Map([['busan', 'Busan (place)']]));
+    expect(out).toBe(
+      'They lived in [[Busan (place)|Busan]].\n\n' +
+        '> ⚠ May disagree with [[Busan]] · 1946 · Noah Kim: that note says “she was born in Seoul”',
+    );
+  });
+  it('leaves a marker line alone for an unlinked target too', () => {
+    const body = '[[Tom]] came.\n> ⚠ May disagree with [[Tom]] · 1946 · Noah Kim: says otherwise';
+    const out = relink(body, new Set(['tom']), new Map());
+    expect(out).toBe('Tom came.\n> ⚠ May disagree with [[Tom]] · 1946 · Noah Kim: says otherwise');
+  });
 });
 
 describe('placeIn and findIn', () => {

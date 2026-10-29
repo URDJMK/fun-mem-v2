@@ -42,6 +42,16 @@ export function entityNoteSql(alias: string, userParam: string): string {
             where n.id = ${alias}.note_id and ${visibleSql('n', userParam)})`;
 }
 
+/**
+ * Is the note <alias> shared with every member (no audience narrower than the whole project),
+ * not just whoever is asking? A story every member reads may only link to a note every member
+ * may read; `visibleSql` answers a different question (visible to ONE member) and is not this.
+ */
+export function sharedNoteSql(alias: string): string {
+  return `(not exists (select 1 from public.audiences sa
+                         where sa.note_id = ${alias}.id and sa.kind <> 'archive-members'))`;
+}
+
 /** A story's words, its [[links]] read as the words they show: "[[Walter|Dad]]" is "Dad". */
 export const plainWords = (text: string): string =>
   text.replace(/!?\[\[([^\]|]*)(?:\|([^\]]*))?\]\]/g, (_m, target: string, shown?: string) =>

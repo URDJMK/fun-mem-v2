@@ -148,8 +148,18 @@ export function linkSentences(
 }
 
 /**
+ * Whether the line holding position `at` starts with "> ": a quoted marker line ("May disagree
+ * with …", a source line), whose link is the quote's own wording, not this story's to relink.
+ */
+function onMarkerLine(body: string, at: number): boolean {
+  return body[body.lastIndexOf('\n', at - 1) + 1] === '>';
+}
+
+/**
  * Links to `unlink` (normalized titles) become the words they show; links to a key of `to` get
- * its title, still showing the words they showed. Everything else is left byte for byte.
+ * its title, still showing the words they showed. A marker line's own link is left alone (so an
+ * erased note's quote can still be found and scrubbed by its original title). Everything else is
+ * left byte for byte.
  */
 export function relink(
   body: string,
@@ -160,7 +170,7 @@ export function relink(
   let out = '';
   let at = 0;
   for (const l of extractWikilinks(body)) {
-    if (l.embed || l.heading || l.blockId) continue;
+    if (l.embed || l.heading || l.blockId || onMarkerLine(body, l.start)) continue;
     const key = normalizeTitle(l.target);
     const shown = l.alias?.trim() || l.target;
     const next = to.get(key);

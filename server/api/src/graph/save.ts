@@ -5,7 +5,7 @@ import { appendParagraph, type NewNoteInput } from '../notes';
 import { relink } from './marks';
 import { addAliases } from './note-entity';
 import { NOT_IN_TITLE } from './shared';
-import { entityVisibleSql } from './store';
+import { entityVisibleSql, sharedNoteSql } from './store';
 import {
   NOTE_TYPE,
   type DescriptionSentence,
@@ -221,10 +221,7 @@ export async function notePlan(
       ? await client.query(
           `select e.name, e.type::text as type, e.note_id, n.title,
                   coalesce(e.note_id = a.subject_note_id, false) as subject,
-                  (n.id is not null
-                   and not exists (select 1 from public.audiences au
-                                    where au.note_id = n.id and au.kind <> 'archive-members'))
-                    as shared
+                  (n.id is not null and ${sharedNoteSql('n')}) as shared
              from public.graph_entities e
              join public.archives a on a.id = e.archive_id
              left join public.notes n on n.id = e.note_id
@@ -267,55 +264,72 @@ export async function notePlan(
 /** a sentence as part of a paragraph: one line */
 const oneLine = (s: string): string => s.replace(/\s+/g, ' ').trim();
 
-/** sentences as one paragraph, which never reads as a source line ("> Told by") */
-const asParagraph = (said: readonly DescriptionSentence[]): string =>
-  said
-    .map((s) => oneLine(s.text))
-    .join(' ')
-    .replace(/^(?:>\s*)+/, '');
+/** a description sentence may not hold a real link, and never reads as a marker or source line */
+const cleanSentence = (s: string): string =>
+  oneLine(s)
+    .replace(/[[\]]/g, '')
+    .replace(/^(?:>+\s*)+/, '');
 
-/** sentences with words, each once */
+/** a note made with an import holds at most this many sentences, the same cap as the Entity step */
+const MAX_SENTENCES = 4;
+
+/** sentences as one paragraph */
+const asParagraph = (said: readonly DescriptionSentence[]): string =>
+  said.map((s) => cleanSentence(s.text)).join(' ');
+
+/** sentences with words, each once, capped as a note's description is */
 const sentencesOf = (all: readonly DescriptionSentence[]): DescriptionSentence[] => {
   const seen = new Set<string>();
-  return all.filter((s) => {
+  const out: DescriptionSentence[] = [];
+  for (const s of all) {
     const k = oneLine(s.text);
-    if (!k || seen.has(k)) return false;
+    if (!k || seen.has(k)) continue;
     seen.add(k);
-    return true;
-  });
+    out.push(s);
+    if (out.length >= MAX_SENTENCES) break;
+  }
+  return out;
 };
 
 /** where each sentence comes from, as a note's `extra.sources` holds it */
 const sourcesFor = (said: readonly DescriptionSentence[], interviewId: string | null) =>
-  said.map((s) => ({ sentence: oneLine(s.text), sources: withInterview(s.sources, interviewId) }));
+  said.map((s) => ({
+    sentence: cleanSentence(s.text),
+    sources: withInterview(s.sources, interviewId),
+  }));
 
 /**
  * The notes to make with the stories (entity design 5.1): one per choice, its text the
  * description as one paragraph. `refs` are the entities it is for; `hint` tells it from a note of
- * the same title ("Busan (place)").
+ * the same title ("Busan (place)"). Grouped by an explicit key — the entity it already is, or its
+ * type and name — never by object identity: a `plan` built another way must still merge correctly.
  */
 export function entityNoteInputs(
   p: GraphProposal,
   plan: ReadonlyMap<string, NoteChoice>,
   interviewId: string | null,
 ): Array<{ refs: string[]; hint: string; input: NewNoteInput }> {
-  const notes = new Map<MakeNote, { refs: string[]; said: DescriptionSentence[] }>();
+  const notes = new Map<
+    string,
+    { type: EntityType; name: string; refs: string[]; said: DescriptionSentence[] }
+  >();
   for (const e of p.entities) {
     const c = plan.get(e.ref);
     if (c?.kind !== 'make') continue;
-    const x = notes.get(c) ?? { refs: [], said: [] };
+    const key = c.entityId ?? `${c.type}:${matchKey(c.name)}`;
+    const x = notes.get(key) ?? { type: c.type, name: c.name, refs: [], said: [] };
     x.refs.push(e.ref);
     x.said.push(...(e.description ?? []));
-    notes.set(c, x);
+    notes.set(key, x);
   }
-  return [...notes].map(([c, x]) => {
+  return [...notes.values()].map((x) => {
     const said = sentencesOf(x.said);
     return {
       refs: x.refs,
-      hint: c.type,
+      hint: x.type,
       input: {
-        title: cleanName(c.name),
-        type: NOTE_TYPE[c.type],
+        title: cleanName(x.name),
+        type: NOTE_TYPE[x.type],
         body: asParagraph(said),
         entity: false,
         extra: { sources: sourcesFor(said, interviewId) },
@@ -324,12 +338,15 @@ export function entityNoteInputs(
   });
 }
 
+/** `_..._` would otherwise be read as emphasis, and break on a name the family actually uses */
+const escapeEmphasis = (s: string): string => s.replace(/[_*]/g, '\\$&');
+
 /**
  * A paragraph for a note already here (entity design 5.2): the interview, then what it says. One
  * line, so no line of it reads as a source line ("> Told by").
  */
 export const paragraphText = (interviewName: string, said: readonly DescriptionSentence[]) =>
-  `_From “${oneLine(interviewName)}”:_ ${asParagraph(said)}`;
+  `_From “${escapeEmphasis(oneLine(interviewName))}”:_ ${asParagraph(said)}`;
 
 /**
  * The stories' links to people, places and things, pointed at their notes' final titles (`made`,
@@ -354,7 +371,9 @@ export function linkStories(
     const now = normalizeTitle(linked.get(name) ?? e.name);
     const title = c.kind === 'existing' ? c.title : c.kind === 'make' ? made.get(e.ref) : undefined;
     if (c.kind === 'none') unlink.add(now);
-    else if (title !== undefined) {
+    // two entities of different types can share one name ("Busan" the place and a person called
+    // it too); the first proposed keeps that name's links, so a later one never steals them
+    else if (title !== undefined && !to.has(now)) {
       to.set(now, title);
       moved.set(name, title);
     }
@@ -390,11 +409,17 @@ async function entityFor(
   const made = o.notes?.made.get(e.ref);
   if (c?.kind === 'existing') return c.entityId;
   if (c?.kind === 'make' && made && c.entityId) {
-    await client.query(
+    // `where note_id is null` guards a race with another save; if it loses, the note we just
+    // made would otherwise be silently left with no entity of its own
+    const r = await client.query(
       `update public.graph_entities set note_id = $2, updated_at = now()
-        where id = $1 and note_id is null`,
+        where id = $1 and note_id is null
+        returning note_id`,
       [c.entityId, made],
     );
+    if ((r.rows[0] as { note_id: string } | undefined)?.note_id !== made) {
+      throw new Error(`entityFor: entity ${c.entityId} already has a note; cannot attach ${made}`);
+    }
     return c.entityId;
   }
   const make = c?.kind === 'make' && made ? c : null;
@@ -480,7 +505,7 @@ export async function saveGraph(
     for (const noteId of [...paragraphs.keys()].sort()) {
       const said = sentencesOf(paragraphs.get(noteId)!);
       if (said.length === 0) continue;
-      await appendParagraph(client, {
+      const added = await appendParagraph(client, {
         archiveId: o.archiveId,
         noteId,
         userId: o.userId,
@@ -489,6 +514,8 @@ export async function saveGraph(
         runId: o.runId,
         changeId: o.notes.changeId,
       });
+      // too long for the note, or it vanished mid-save: nothing else in this run depends on it
+      if (!added) console.error(`[graph] paragraph refused for note ${noteId} (run ${o.runId})`);
     }
   }
   let relationships = 0;
