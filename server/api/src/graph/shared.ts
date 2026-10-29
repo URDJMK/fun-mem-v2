@@ -65,29 +65,49 @@ export function uncovered(texts: readonly string[], covered: readonly string[]):
   return out;
 }
 
-/** case and the two apostrophes alike, one character for one, so places line up */
-export const fold = (s: string) => s.replace(/[’‘]/g, "'").toLowerCase();
+/**
+ * Case and the two apostrophes alike, one character for one, so a place found in the folded text
+ * is a place in the text. A letter whose lowercase is longer (the dotted capital I) is kept as it is.
+ */
+export const fold = (s: string) => {
+  const plain = s.replace(/[’‘]/g, "'");
+  const lowered = plain.toLowerCase();
+  if (lowered.length === plain.length) return lowered;
+  return Array.from(plain, (c) => {
+    const l = c.toLowerCase();
+    return l.length === c.length ? l : c;
+  }).join('');
+};
+
+/**
+ * Where `words` first stand in `text` as whole words (ignoring case and which apostrophe), outside
+ * the `taken` spans; -1 when they do not stand there, or when `words` is empty.
+ */
+export function placeIn(
+  text: string,
+  words: string,
+  taken: ReadonlyArray<[number, number]> = [],
+): number {
+  const w = fold(words.trim());
+  if (!w) return -1;
+  const t = fold(text);
+  for (let at = t.indexOf(w); at >= 0; at = t.indexOf(w, at + 1)) {
+    const before = t[at - 1] ?? '';
+    const after = t[at + w.length] ?? '';
+    if (/[\p{L}\p{N}]/u.test(before) || /[\p{L}\p{N}]/u.test(after)) continue;
+    if (taken.some(([s, e]) => at < e && at + w.length > s)) continue;
+    return at;
+  }
+  return -1;
+}
 
 /**
  * `words` as `text` writes them (whole words, ignoring case and which apostrophe), or null when
  * the text does not hold them. The page underlines exactly what is returned.
  */
 export function findIn(text: string, words: string): string | null {
-  const t = fold(text);
-  const w = fold(words.trim());
-  if (!w) return null;
-  // a letter whose lowercase is longer would shift the places: compare without returning them
-  if (t.length !== text.length) return t.includes(w) ? words.trim() : null;
-  let at = t.indexOf(w);
-  while (at >= 0) {
-    const before = t[at - 1] ?? '';
-    const after = t[at + w.length] ?? '';
-    if (!/[\p{L}\p{N}]/u.test(before) && !/[\p{L}\p{N}]/u.test(after)) {
-      return text.slice(at, at + w.length);
-    }
-    at = t.indexOf(w, at + 1);
-  }
-  return null;
+  const at = placeIn(text, words);
+  return at < 0 ? null : text.slice(at, at + words.trim().length);
 }
 
 /**

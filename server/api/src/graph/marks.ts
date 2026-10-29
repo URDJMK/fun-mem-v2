@@ -1,5 +1,5 @@
 import { extractWikilinks, normalizeTitle } from '@funmem/core';
-import { findIn, NAME_FILLER } from './shared';
+import { findIn, NAME_FILLER, placeIn } from './shared';
 
 /**
  * The names a story uses, as links (entity design 6): the writer marks who each sentence names
@@ -22,14 +22,20 @@ export interface Mark {
 const bare = (w: string) =>
   w.replace(/[’‘]/g, "'").toLowerCase().replace(/'s$/u, '').replace(/\s+/g, ' ').trim();
 
-/** what a mark's words may be: a name, an alias, a way, or a word of a name (2 letters or more) */
+/** titles before or after a name: not words a story calls someone by */
+const HONORIFICS = new Set('mr mrs ms dr jr sr st'.split(' '));
+
+/**
+ * what a mark's words may be: a name, an alias, a way, or a word of a name (2 letters or more,
+ * not filler and not a title)
+ */
 export function allowedWords(e: Listed): Set<string> {
   const out = new Set<string>();
   for (const n of [e.name, ...e.aliases, ...e.ways]) out.add(bare(n));
   for (const n of [e.name, ...e.aliases]) {
     for (const w of n.split(/\s+/)) {
       const b = bare(w.replace(/^[^\p{L}]+|[^\p{L}]+$/gu, ''));
-      if ([...b].length >= 2 && !NAME_FILLER.has(b)) out.add(b);
+      if ([...b].length >= 2 && !NAME_FILLER.has(b) && !HONORIFICS.has(b)) out.add(b);
     }
   }
   return out;
@@ -72,51 +78,39 @@ export function unmarked(
 export const linkText = (title: string, words: string) =>
   words === title ? `[[${title}]]` : `[[${title}|${words}]]`;
 
-/** case and the two apostrophes alike, one character for one, so a place found is a place in the text */
-const foldSameLength = (s: string) =>
-  Array.from(s.replace(/[’‘]/g, "'"), (c) => {
-    const l = c.toLowerCase();
-    return l.length === c.length ? l : c;
-  }).join('');
-
-/** where `words` stand in `text` as whole words, outside the spans already taken */
-function placeOf(text: string, words: string, taken: ReadonlyArray<[number, number]>): number {
-  const t = foldSameLength(text);
-  const w = foldSameLength(words);
-  for (let at = t.indexOf(w); at >= 0; at = t.indexOf(w, at + 1)) {
-    const before = t[at - 1] ?? '';
-    const after = t[at + w.length] ?? '';
-    if (/[\p{L}\p{N}]/u.test(before) || /[\p{L}\p{N}]/u.test(after)) continue;
-    if (taken.some(([s, e]) => at < e && at + w.length > s)) continue;
-    return at;
-  }
-  return -1;
-}
-
-/** each sentence with a link at the first mark of each entity in the story */
+/**
+ * Each sentence with a link at the first mark of each entity in the story. A link to an entity
+ * already in the story counts as its first mention, and words inside a link are never linked again.
+ */
 export function linkSentences(
   sentences: readonly string[],
   marks: ReadonlyArray<ReadonlyArray<Mark>>,
   titleOf: (ref: string) => string,
 ): string[] {
+  const refsByTitle = new Map<string, Set<string>>();
+  for (const m of marks.flat()) {
+    const key = normalizeTitle(titleOf(m.e));
+    refsByTitle.set(key, (refsByTitle.get(key) ?? new Set()).add(m.e));
+  }
   const done = new Set<string>();
   return sentences.map((text, i) => {
+    const existing = text.includes('[[') ? extractWikilinks(text) : [];
+    for (const l of existing) {
+      if (l.embed) continue;
+      for (const ref of refsByTitle.get(normalizeTitle(l.target)) ?? []) done.add(ref);
+    }
+    const taken: Array<[number, number]> = existing.map((l) => [l.start, l.end]);
     const wanted = [...(marks[i] ?? [])]
-      .filter((m) => !done.has(m.e))
+      .map((m) => ({ e: m.e, words: m.words.trim() }))
       .sort((a, b) => b.words.length - a.words.length);
-    // a link already in the sentence is not linked again
-    const taken: Array<[number, number]> = extractWikilinks(text).map((l) => [l.start, l.end]);
     const edits: Array<{ at: number; len: number; link: string }> = [];
     for (const m of wanted) {
       if (done.has(m.e)) continue;
-      const at = placeOf(text, m.words, taken);
+      const at = placeIn(text, m.words, taken);
       if (at < 0) continue;
       taken.push([at, at + m.words.length]);
-      edits.push({
-        at,
-        len: m.words.length,
-        link: linkText(titleOf(m.e), text.slice(at, at + m.words.length)),
-      });
+      const shown = text.slice(at, at + m.words.length);
+      edits.push({ at, len: m.words.length, link: linkText(titleOf(m.e), shown) });
       done.add(m.e);
     }
     let out = text;

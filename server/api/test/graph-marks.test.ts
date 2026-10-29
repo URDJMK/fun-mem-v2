@@ -7,6 +7,7 @@ import {
   unmarked,
   type Listed,
 } from '../src/graph/marks';
+import { findIn, placeIn } from '../src/graph/shared';
 
 const MOTHER: Listed = {
   ref: 'e3',
@@ -41,8 +42,8 @@ describe('checkMark', () => {
     expect(checkMark('Kim’s house was big.', { e: 'e4', words: 'kim’s' }, list)).toBe('Kim’s');
   });
   it('allows a word of a name when it has 2 letters or more and is not filler', () => {
-    const jo: Listed = { ref: 'e5', name: 'Ed Park of J. Seoul', aliases: [], ways: [] };
-    const l = new Map([[jo.ref, jo]]);
+    const ed: Listed = { ref: 'e5', name: 'Ed Park of J. Seoul', aliases: [], ways: [] };
+    const l = new Map([[ed.ref, ed]]);
     expect(checkMark('Park came.', { e: 'e5', words: 'Park' }, l)).toBe('Park');
     expect(checkMark('Ed came.', { e: 'e5', words: 'Ed' }, l)).toBe('Ed');
     expect(checkMark('Seoul was far.', { e: 'e5', words: 'Seoul' }, l)).toBe('Seoul');
@@ -56,6 +57,20 @@ describe('checkMark', () => {
     expect(checkMark('어제 김 민아 왔다.', { e: 'e6', words: '김 민아' }, l)).toBe('김 민아');
     expect(checkMark('어제 이모 왔다.', { e: 'e6', words: '이모' }, l)).toBe('이모');
     expect(checkMark('어제 민수 왔다.', { e: 'e6', words: '민수' }, l)).toBeNull();
+  });
+  it('does not take a title for a word of the name', () => {
+    const lee: Listed = { ref: 'e5', name: 'Dr. Lee Jr.', aliases: [], ways: [] };
+    const l = new Map([[lee.ref, lee]]);
+    expect(checkMark('Lee came.', { e: 'e5', words: 'Lee' }, l)).toBe('Lee');
+    expect(checkMark('Dr. Lee Jr. came.', { e: 'e5', words: 'Dr. Lee Jr.' }, l)).toBe(
+      'Dr. Lee Jr.',
+    );
+    expect(checkMark('Dr came.', { e: 'e5', words: 'Dr' }, l)).toBeNull();
+    expect(checkMark('Jr came.', { e: 'e5', words: 'Jr' }, l)).toBeNull();
+  });
+  it('still tells whole words apart after a letter whose lowercase is longer', () => {
+    expect(checkMark('İzmir. Minato came.', { e: 'e4', words: 'Mina' }, list)).toBeNull();
+    expect(checkMark('İzmir. Mina came.', { e: 'e4', words: 'Mina' }, list)).toBe('Mina');
   });
   it('drops a mark with empty words', () => {
     expect(checkMark('Mina came.', { e: 'e4', words: '  ' }, list)).toBeNull();
@@ -81,6 +96,9 @@ describe('unmarked', () => {
       new Set(['e7']),
     );
     expect(found).toEqual([{ sentence: 1, mark: { e: 'e4', words: 'Mina Kim' } }]);
+  });
+  it('finds nothing in no sentences', () => {
+    expect(unmarked([], [...list.values()], new Set())).toEqual([]);
   });
   it('takes the first sentence that names it, in the words the sentence writes', () => {
     const found = unmarked(['Nothing here.', 'BUSAN again.', 'Busan last.'], [BUSAN], new Set());
@@ -160,9 +178,84 @@ describe('linkSentences', () => {
     );
     expect(out).toEqual(['Busanese food. [[Busan]] again.', 'Busan last.']);
   });
-  it('links the first free place when an earlier one is inside a link already there', () => {
-    const out = linkSentences(['[[Busan]] and Busan.'], [[{ e: 'e7', words: 'Busan' }]], titleOf);
-    expect(out).toEqual(['[[Busan]] and [[Busan]].']);
+  it('counts a link already in the story as the first mention', () => {
+    const marks = [[{ e: 'e7', words: 'Busan' }], [{ e: 'e7', words: 'Busan' }]];
+    expect(linkSentences(['[[Busan]] is far.', 'Busan again.'], marks, titleOf)).toEqual([
+      '[[Busan]] is far.',
+      'Busan again.',
+    ]);
+    // the sentence that holds the link need not carry a mark
+    expect(
+      linkSentences(['[[busan|the port]] is far.', 'Busan again.'], [[], marks[1]!], titleOf),
+    ).toEqual(['[[busan|the port]] is far.', 'Busan again.']);
+    // in the same sentence too, wherever the link stands
+    expect(linkSentences(['Busan and [[Busan]].'], [marks[0]!], titleOf)).toEqual([
+      'Busan and [[Busan]].',
+    ]);
+  });
+  it('does not count an embed, or a link to another note, as a mention', () => {
+    const out = linkSentences(
+      ['![[Busan]] is far.', 'Mina left [[Tom]].', 'Busan again.'],
+      [[], [{ e: 'e4', words: 'Mina' }], [{ e: 'e7', words: 'Busan' }]],
+      titleOf,
+    );
+    expect(out).toEqual([
+      '![[Busan]] is far.',
+      '[[Mina Kim|Mina]] left [[Tom]].',
+      '[[Busan]] again.',
+    ]);
+  });
+  it('does not link words inside a link to another note, and links them later', () => {
+    const kim: Listed = { ref: 'e8', name: 'Kim', aliases: [], ways: [] };
+    const out = linkSentences(
+      ['[[Kim Market]] opened.', 'Then Kim left.'],
+      [[{ e: 'e8', words: 'Kim' }], [{ e: 'e8', words: 'Kim' }]],
+      () => kim.name,
+    );
+    expect(out).toEqual(['[[Kim Market]] opened.', 'Then [[Kim]] left.']);
+  });
+  it('lets the first of two equal-length overlapping marks win, the other linking later', () => {
+    const leeKim: Listed = { ref: 'e8', name: 'Lee Kim', aliases: [], ways: [] };
+    const ann: Listed = { ref: 'e9', name: 'Ann Lee', aliases: [], ways: [] };
+    const l = new Map([leeKim, ann].map((e) => [e.ref, e]));
+    const marks = [
+      [
+        { e: 'e9', words: 'Ann Lee' },
+        { e: 'e8', words: 'Lee Kim' },
+      ],
+      [{ e: 'e8', words: 'Lee Kim' }],
+    ];
+    expect(
+      linkSentences(['Ann Lee Kim came.', 'Lee Kim left.'], marks, (ref) => l.get(ref)!.name),
+    ).toEqual(['[[Ann Lee]] Kim came.', '[[Lee Kim]] left.']);
+    // the writer's order decides, not the order of the names
+    expect(
+      linkSentences(
+        ['Ann Lee Kim came.'],
+        [[marks[0]![1]!, marks[0]![0]!]],
+        (ref) => l.get(ref)!.name,
+      ),
+    ).toEqual(['Ann [[Lee Kim]] came.']);
+  });
+  it('ignores a mark with empty words', () => {
+    const out = linkSentences(
+      ['Busan is big.', 'Busan again.'],
+      [
+        [
+          { e: 'e7', words: '' },
+          { e: 'e4', words: '   ' },
+        ],
+        [{ e: 'e7', words: 'Busan' }],
+      ],
+      titleOf,
+    );
+    expect(out).toEqual(['Busan is big.', '[[Busan]] again.']);
+  });
+  it('handles no sentences and a stray [[', () => {
+    expect(linkSentences([], [], titleOf)).toEqual([]);
+    expect(linkSentences(['Busan [[ is far.'], [[{ e: 'e7', words: 'Busan' }]], titleOf)).toEqual([
+      '[[Busan]] [[ is far.',
+    ]);
   });
   it('leaves a sentence with no marks, or marks that do not fit, as it is', () => {
     const out = linkSentences(
@@ -221,10 +314,40 @@ describe('relink and plainOf', () => {
     const body = '[[Other|them]] came.';
     expect(relink(body, new Set(['tom']), new Map([['busan', 'Pusan']]))).toBe(body);
   });
+  it('handles an empty body and a stray [[', () => {
+    expect(relink('', new Set(['tom']), new Map())).toBe('');
+    expect(plainOf('')).toBe('');
+    expect(relink('A [[ b\n[[Tom]].', new Set(['tom']), new Map())).toBe('A [[ b\nTom.');
+    expect(plainOf('A [[ b')).toBe('A [[ b');
+  });
   it('plainOf reads links as the words they show and leaves embeds', () => {
     expect(
       plainOf('[[Tom]] met [[Mina Kim|Mina]], ![[pic.png]] and [[Busan#Port|the port]].'),
     ).toBe('Tom met Mina, ![[pic.png]] and the port.');
     expect(plainOf('No links.')).toBe('No links.');
+  });
+});
+
+describe('placeIn and findIn', () => {
+  it('place whole words, ignoring case and which apostrophe, outside the taken spans', () => {
+    expect(placeIn('Noah’s mother and Mina.', "noah's MOTHER")).toBe(0);
+    expect(placeIn('Mina and Mina.', 'Mina', [[0, 4]])).toBe(9);
+    expect(placeIn('Minato and Mina.', 'Mina')).toBe(11);
+    expect(placeIn('Mina.', 'Mina', [[0, 4]])).toBe(-1);
+    expect(placeIn('Mina.', 'Busan')).toBe(-1);
+  });
+  it('find nothing for empty words', () => {
+    expect(placeIn('Mina.', '')).toBe(-1);
+    expect(placeIn('Mina.', '  ')).toBe(-1);
+    expect(findIn('Mina.', '')).toBeNull();
+  });
+  it('give the text as written, trimmed of the words asked for', () => {
+    expect(findIn('Then NOAH’S mother came.', " noah's mother ")).toBe('NOAH’S mother');
+    expect(findIn('Minato came.', 'Mina')).toBeNull();
+  });
+  it('keep their places after a letter whose lowercase is longer', () => {
+    expect(placeIn('İzmir and Istanbul.', 'Istanbul')).toBe(10);
+    expect(findIn('İzmir and Istanbul.', 'istanbul')).toBe('Istanbul');
+    expect(findIn('İzmir. Minato came.', 'Mina')).toBeNull();
   });
 });
