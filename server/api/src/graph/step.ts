@@ -15,11 +15,11 @@ import {
   isObj,
   lower,
   nameHeld,
-  nameWords,
   resolveMatch,
   str,
   uncovered,
   waysToSay,
+  wordsOf,
 } from './shared';
 import type { EntityLookup, KnownEntity } from './store';
 import {
@@ -275,16 +275,22 @@ export async function graphStep(o: {
   }
 
   // a name must come from the lines: every word of it is in them, the story, or a known name
-  const knownWords = nameWords([...o.names, ...o.known.flatMap((k) => [k.name, ...k.aliases])]);
+  const knownWords = wordsOf(
+    [...o.names, ...o.known.flatMap((k) => [k.name, ...k.aliases])].join('\n'),
+  );
   const held = (e: RawEntity): boolean =>
     nameHeld(
       e.name,
-      [
-        ...e.mentions.map((m) => sRef.get(m.story)!.text),
-        ...o.lines
-          .filter((l) => e.mentions.some((m) => m.cites.some((r) => l.n >= r.from && l.n <= r.to)))
-          .map((l) => l.text),
-      ].join(' '),
+      wordsOf(
+        [
+          ...e.mentions.map((m) => sRef.get(m.story)!.text),
+          ...o.lines
+            .filter((l) =>
+              e.mentions.some((m) => m.cites.some((r) => l.n >= r.from && l.n <= r.to)),
+            )
+            .map((l) => l.text),
+        ].join('\n'),
+      ),
       knownWords,
     );
 
@@ -363,6 +369,7 @@ export async function graphStep(o: {
     });
   }
   const failed = new Set<Item>();
+  // kept in step with find.ts's checkAll until this step is removed
   for (const [sid, story] of sRef) {
     const mine = items.filter((i) => i.story === sid);
     if (mine.length === 0) continue;

@@ -1,8 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import { findEntities, FIND_SYSTEM, parseFound } from '../src/graph/find';
+import { nameHeld, uncovered, wordsOf } from '../src/graph/shared';
 import type { EntityLookup } from '../src/graph/store';
 import type { NoteRef } from '../src/graph/types';
-import type { ChatModel } from '../src/nim';
+import { ModelError, type ChatModel } from '../src/nim';
 import type { Line } from '../src/stories/lines';
 
 /**
@@ -161,6 +162,9 @@ const relOf = (r: Found, a: string, b: string) => {
   return r.relationships.find((x) => [x.a, x.b].sort().join() === [ref(a), ref(b)].sort().join());
 };
 const L = (n: number) => [{ interviewId: null, from: n, to: n }];
+/** every entity and relationship proposed is kept or counted as left out */
+const balanced = (r: Found) =>
+  expect(r.stats.proposed - r.stats.dropped).toBe(r.entities.length + r.relationships.length);
 
 describe('findEntities', () => {
   it('finds every person, place and thing, with the ways to call it and a checked description', async () => {
@@ -203,7 +207,12 @@ describe('findEntities', () => {
     expect(chat.finds[0]).toContain('L2 Noah: My friend Sarah sat next to me');
     expect(chat.finds[0]).toContain('L1 Interviewer (asking): Who did you meet at school?');
     expect(chat.finds[0]).toContain('- Noah Kim (person, id k-noah), also called Noah');
+    // the judge is told whom a sentence is about; the sentence is kept as written
+    expect(chat.judged[0]).toContain(
+      '. About Sarah: Sarah sat next to Noah on his first day at school.',
+    );
     expect(r.stats.proposed).toBe(8);
+    balanced(r);
   });
 
   it('marks the person the archive is about, with the note they have and no description', async () => {
@@ -230,7 +239,8 @@ describe('findEntities', () => {
     const chat = model(FOUND, undefined, { entities: [KOREA], relationships: [] });
     const r = await run(chat);
     expect(chat.finds).toHaveLength(2);
-    expect(chat.finds[1]).toMatch(/not in your answer: Korea\./);
+    // what is asked once more, after the task
+    expect(chat.finds[1]!.slice(chat.finds[0]!.length)).toContain('Korea');
     expect(byName(r, 'Korea')).toMatchObject({
       ref: 'e6',
       type: 'place',
@@ -296,7 +306,11 @@ describe('findEntities', () => {
     // the part after the dash never says the name again
     expect(relOf(r, 'Noah Kim’s mother', 'Seaweed soup')!.description).toBe('Noah Kim’s mother');
     expect(r.relationships).toHaveLength(3);
-    expect(r.stats.left!.map((l) => l.why)).toContain('known only through another person');
+    expect(r.stats.left).toEqual([
+      { what: 'Noah Kim — knew Tom only through Sarah', why: 'known only through another person' },
+      { what: 'Noah Kim — Sarah’s friend', why: 'a second relationship for the pair' },
+    ]);
+    balanced(r);
   });
 
   it('drops a sentence the checks or the judge fail; the entity stays with the rest', async () => {
@@ -309,6 +323,8 @@ describe('findEntities', () => {
       { text: 'Tom was tall.', cites: [] },
       { text: 'Tom came to every birthday.', cites: ['L9'] },
     );
+    // another entity's name, which its own lines do not hold
+    found.entities[4]!.description.push({ text: 'It was what Sarah loved.', cites: ['L4'] });
     const r = await run(model(found, () => ['Korean way', 'friend from school']));
     // the soup's only sentence was ruled made up: it stays, with no description
     expect(byName(r, 'Seaweed soup')!.description).toEqual([]);
@@ -320,7 +336,56 @@ describe('findEntities', () => {
     expect(relOf(r, 'Sarah', 'Noah Kim')).toBeUndefined();
     expect(relOf(r, 'Tom', 'Sarah')).toBeDefined();
     expect(r.entities).toHaveLength(5);
-    expect(r.stats.dropped).toBeGreaterThanOrEqual(5);
+    const judge = 'the judge: made_up (not told)';
+    expect(r.stats.left).toEqual([
+      { what: 'Noah Kim — knew Tom only through Sarah', why: 'known only through another person' },
+      {
+        what: 'Sarah sat next to Jessica.',
+        why: 'not_in_source: the cited lines do not name Jessica',
+      },
+      { what: 'Tom was tall.', why: 'no_citation: say which lines this comes from' },
+      { what: 'Tom came to every birthday.', why: 'bad_citation: the transcript ends at L4' },
+      { what: 'It was what Sarah loved.', why: 'not_in_source: the cited lines do not name Sarah' },
+      { what: 'Noah’s mother made it in the Korean way.', why: judge },
+      { what: 'Sarah — Noah’s friend from school', why: judge },
+    ]);
+    // the sentences are listed, and only the two relationships counted
+    expect(r.stats.dropped).toBe(2);
+    balanced(r);
+  });
+
+  it('keeps for a pair the first relationship that holds', async () => {
+    const found = structuredClone(FOUND);
+    found.relationships[0]!.cites = ['L9'];
+    found.relationships.push({
+      a: 'e1',
+      b: 'e2',
+      description: 'Noah Kim — Sarah’s friend from the first day',
+      cites: ['L2'],
+    });
+    const r = await run(model(found));
+    expect(relOf(r, 'Sarah', 'Noah Kim')!.description).toBe(
+      'Noah Kim — Sarah’s friend from the first day',
+    );
+    expect(r.stats.left).toContainEqual({
+      what: 'Sarah — Noah’s friend from school',
+      why: 'bad_citation: the transcript ends at L4',
+    });
+  });
+
+  it('drops a sentence citing a line before the part', async () => {
+    const mother = structuredClone(FOUND.entities[3]!);
+    mother.description.push({ text: 'She met Sarah on the first day.', cites: ['L2'] });
+    const r = await run(model({ entities: [FOUND.entities[0], mother], relationships: [] }), {
+      lines: LINES.slice(2),
+    });
+    expect(byName(r, 'Noah Kim’s mother')!.description!.map((s) => s.text)).toEqual([
+      'She always made seaweed soup.',
+    ]);
+    expect(r.stats.left).toContainEqual({
+      what: 'She met Sarah on the first day.',
+      why: expect.stringMatching(/^outside_story: L2 /),
+    });
   });
 
   it('judges ten entities at a time', async () => {
@@ -357,10 +422,22 @@ describe('findEntities', () => {
       'Seaweed soup',
     ]);
     expect(r.relationships).toEqual([]);
-    expect(r.stats.left).toContainEqual({
-      what: 'Sarah Lee',
-      why: 'a word of the name is not in the lines',
+    expect(r.stats.left).toEqual([
+      { what: 'Noah Kim — knew Tom only through Sarah', why: 'known only through another person' },
+      { what: 'Sarah Lee', why: 'a word of the name is not in the lines' },
+      { what: 'Sarah — Noah’s friend from school', why: 'an entity it joins was left out' },
+      { what: 'Tom — Sarah’s brother', why: 'an entity it joins was left out' },
+    ]);
+    balanced(r);
+  });
+
+  it('holds a name to whole words: "sleep" does not give "Lee"', async () => {
+    const found = structuredClone(FOUND);
+    found.entities[1]!.name = 'Sarah Lee';
+    const r = await run(model(found), {
+      lines: [...LINES, line(5, 'Noah', 'Sarah could not sleep that night.')],
     });
+    expect(r.entities.map((e) => e.name)).not.toContain('Sarah Lee');
   });
 
   it('gives an entity that matches one with a note that note', async () => {
@@ -435,6 +512,198 @@ describe('findEntities', () => {
       { text: 'She always made seaweed soup.', sources: L(4) },
       { text: 'She lived in Seoul.', sources: [] },
     ]);
+  });
+
+  it('makes one entity of two that are the same existing one', async () => {
+    const found = structuredClone(FOUND);
+    found.entities[3]!.match = 'k-mina';
+    found.entities.push(
+      {
+        ref: 'e6',
+        name: 'Mina',
+        type: 'person',
+        match: 'k-mina',
+        ways: ['Mom'],
+        description: [{ text: 'Mina came from Korea.', cites: ['L4'] }],
+      },
+      { ref: 'e7', name: 'Noah', type: 'person', match: 'k-noah', ways: [], description: [] },
+    );
+    found.relationships.push(
+      { a: 'e6', b: 'e5', description: 'Mina — made the soup', cites: ['L4'] },
+      { a: 'e6', b: 'e4', description: 'Mina — Noah Kim’s mother', cites: ['L4'] },
+      { a: 'e7', b: 'e2', description: 'Noah — sat next to Sarah', cites: ['L2'] },
+    );
+    const mina = {
+      id: 'k-mina',
+      name: 'Mina Kim',
+      type: 'person' as const,
+      aliases: ['Mina'],
+      note: { noteId: 'n-mina', title: 'Mina Kim' },
+    };
+    const r = await run(model(found), { known: [NOAH, mina] });
+    expect(r.entities.map((e) => e.name)).toEqual([
+      'Noah Kim',
+      'Sarah',
+      'Tom',
+      'Noah Kim’s mother',
+      'Seaweed soup',
+    ]);
+    expect(byName(r, 'Noah Kim’s mother')).toMatchObject({
+      match: { kind: 'existing', entityId: 'k-mina', name: 'Mina Kim' },
+      note: { kind: 'existing', noteId: 'n-mina', title: 'Mina Kim' },
+      aliases: ['Mina'],
+      ways: ['his mother', 'Mina', 'Mom'],
+      description: [
+        { text: 'She always made seaweed soup.', sources: L(4) },
+        { text: 'Mina came from Korea.', sources: L(4) },
+      ],
+    });
+    expect(byName(r, 'Noah Kim')!.ways).toEqual(['Noah']);
+    expect(relOf(r, 'Noah Kim’s mother', 'Seaweed soup')!.description).toBe('Mina — made the soup');
+    expect(relOf(r, 'Sarah', 'Noah Kim')!.description).toBe('Sarah — Noah’s friend from school');
+    expect(r.relationships).toHaveLength(3);
+    expect(r.stats.left).toEqual(
+      expect.arrayContaining([
+        { what: 'Mina', why: 'the same entity as Noah Kim’s mother' },
+        { what: 'Noah', why: 'the same entity as Noah Kim' },
+        { what: 'Mina — Noah Kim’s mother', why: 'it joins an entity to itself' },
+        { what: 'Noah — sat next to Sarah', why: 'a second relationship for the pair' },
+      ]),
+    );
+    balanced(r);
+  });
+
+  it('marks the person the archive is about when found by name, though the AI said "new"', async () => {
+    const found = structuredClone(FOUND);
+    found.entities[0]!.match = 'new';
+    found.entities[0]!.description = [{ text: 'Noah met his friend Sarah.', cites: ['L2'] }];
+    const r = await run(model(found), {
+      known: [{ ...NOAH, subject: true, note: { noteId: 'n-noah', title: 'Noah Kim' } }],
+    });
+    expect(byName(r, 'Noah Kim')).toMatchObject({
+      match: { kind: 'existing', entityId: 'k-noah', name: 'Noah Kim' },
+      subject: true,
+      description: [],
+    });
+  });
+
+  it('keeps at most 60 entities', async () => {
+    const names = Array.from(
+      { length: 65 },
+      (_, i) =>
+        `Ka${String.fromCharCode(97 + Math.floor(i / 26))}${String.fromCharCode(97 + (i % 26))}`,
+    );
+    const found = structuredClone(FOUND) as { entities: unknown[]; relationships: unknown[] };
+    found.entities.push(...names.map((n, i) => ({ ref: `k${i}`, name: n, type: 'person' })));
+    const r = await run(model(found), {
+      lines: [...LINES, line(5, 'Noah', `At the fair were ${names.join(', ')}.`)],
+    });
+    expect(r.entities).toHaveLength(60);
+    expect(r.entities.at(-1)!.name).toBe(names[54]);
+    expect(r.stats.left).toContainEqual({ what: names[55], why: 'over 60 entities' });
+    balanced(r);
+  });
+
+  it('keeps at most 20 things, counting those the recall pass adds', async () => {
+    const objects =
+      'box bell book bowl brush clock coat comb cup desk doll drum fan flag hat jar kite lamp mat mug'.split(
+        ' ',
+      );
+    const found = structuredClone(FOUND) as { entities: unknown[]; relationships: unknown[] };
+    found.entities.push(
+      ...objects.slice(0, 19).map((t, i) => ({ ref: `t${i}`, name: `the ${t}`, type: 'thing' })),
+    );
+    const more = {
+      entities: [KOREA, { ref: 'e2', name: 'the mug', type: 'thing', match: 'new' }],
+      relationships: [],
+    };
+    const r = await run(model(found, undefined, more), {
+      lines: [...LINES, line(5, 'Noah', `We kept a ${objects.join(', a ')}.`)],
+    });
+    expect(r.entities.filter((e) => e.type === 'thing')).toHaveLength(20);
+    expect(byName(r, 'Korea')).toBeDefined();
+    expect(r.stats.left).toContainEqual({ what: 'the mug', why: 'over 20 things' });
+  });
+
+  it('keeps at most 100 relationships', async () => {
+    const guests = 'Ann Ben Cal Dan Eve Fay Gus Hal Ivy Jan Kit Lou Max Ned Oz'.split(' ');
+    const found = {
+      entities: guests.map((g, i) => ({ ref: `g${i}`, name: g, type: 'person' })),
+      relationships: guests.flatMap((g, i) =>
+        guests.slice(i + 1).map((h, j) => ({
+          a: `g${i}`,
+          b: `g${i + j + 1}`,
+          description: `${g} — at the party with ${h}`,
+          cites: ['L5'],
+        })),
+      ),
+    };
+    expect(found.relationships).toHaveLength(105);
+    const r = await run(model(found), {
+      lines: [...LINES, line(5, 'Noah', `At the party were ${guests.join(', ')}.`)],
+    });
+    expect(r.relationships).toHaveLength(100);
+    expect(r.stats.left!.filter((l) => l.why === 'over 100 relationships')).toHaveLength(5);
+    balanced(r);
+  });
+
+  it('asks nothing more about a part where nobody tells', async () => {
+    const chat = model({
+      entities: [{ ref: 'e1', name: 'Noah Kim', type: 'person', match: 'k-noah' }],
+      relationships: [],
+    });
+    await run(chat, { lines: [line(1, 'Interviewer', 'Did you ever go to Korea?')] });
+    expect(chat.finds).toHaveLength(1);
+  });
+
+  it('passes on a cancel during the recall pass', async () => {
+    const base = model(FOUND);
+    const stop = new AbortController();
+    let finds = 0;
+    const chat: ChatModel = {
+      id: 'scripted-cancel',
+      complete: async (system, user, opts) => {
+        if (system.startsWith(FIND_SYSTEM) && ++finds === 2) {
+          stop.abort();
+          throw new Error('cancelled');
+        }
+        return base.complete(system, user, opts);
+      },
+    };
+    await expect(run(chat, { signal: stop.signal })).rejects.toThrow('cancelled');
+  });
+
+  it('keeps the first answer when the recall pass fails', async () => {
+    const base = model(FOUND);
+    let finds = 0;
+    const chat: ChatModel = {
+      id: 'scripted-recall-down',
+      complete: async (system, user, opts) => {
+        if (system.startsWith(FIND_SYSTEM) && ++finds === 2) {
+          throw new ModelError('down', 'unavailable', true);
+        }
+        return base.complete(system, user, opts);
+      },
+    };
+    const r = await run(chat);
+    expect(finds).toBe(2);
+    expect(r.entities.map((e) => e.name)).toEqual([
+      'Noah Kim',
+      'Sarah',
+      'Tom',
+      'Noah Kim’s mother',
+      'Seaweed soup',
+    ]);
+  });
+
+  it('throws when the judge does', async () => {
+    const judge: ChatModel = {
+      id: 'scripted-judge-down',
+      complete: async () => {
+        throw new ModelError('down', 'unavailable', true);
+      },
+    };
+    await expect(run(model(FOUND), { judge })).rejects.toMatchObject({ kind: 'unavailable' });
   });
 
   it('throws when the answer cannot be read, so the import can say it is pending', async () => {
@@ -533,5 +802,31 @@ describe('parseFound', () => {
     );
     if (typeof p === 'string') throw new Error(p);
     expect(p.relationships).toHaveLength(1);
+  });
+});
+
+describe('the name rule', () => {
+  it('reads whole words, without a "\'s"', () => {
+    expect(wordsOf('Sarah’s brother could not sleep.')).toEqual(
+      new Set(['sarah', 'brother', 'could', 'not', 'sleep']),
+    );
+    const said = wordsOf('Sarah could not sleep.');
+    expect(nameHeld('Sarah Lee', said, new Set())).toBe(false);
+    expect(nameHeld('Sarah Lee', said, new Set(['lee']))).toBe(true);
+    expect(nameHeld('Sarah of the Hills', wordsOf('Sarah lived in the hills.'), new Set())).toBe(
+      true,
+    );
+  });
+});
+
+describe('uncovered', () => {
+  it('gives at most 10 names, or as many as asked', () => {
+    const names = Array.from(
+      { length: 40 },
+      (_, i) => `Ka${String.fromCharCode(97 + Math.floor(i / 26), 97 + (i % 26))}`,
+    );
+    const text = `We met ${names.join(' and ')}.`;
+    expect(uncovered([text], [])).toHaveLength(10);
+    expect(uncovered([text], [], 30)).toHaveLength(30);
   });
 });

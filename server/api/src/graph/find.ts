@@ -12,6 +12,7 @@ import { checkDraft } from '../stories/check';
 import { FAILING, judgeStory } from '../stories/judge';
 import { renderLines, type Line, type Range } from '../stories/lines';
 import { runWithTools } from '../stories/tools';
+import type { StoryDraft } from '../stories/write';
 import {
   KEPT,
   MAX_WORDS,
@@ -22,10 +23,10 @@ import {
   isObj,
   lower,
   nameHeld,
-  nameWords,
   resolveMatch,
   str,
   uncovered,
+  wordsOf,
 } from './shared';
 import type { EntityLookup, FoundEntity, KnownEntity } from './store';
 import {
@@ -64,13 +65,20 @@ const MAX_THINGS = 20;
 const MAX_RELATIONSHIPS = 100;
 const MAX_SENTENCES = 4;
 const MAX_WAYS = 8;
+/**
+ * the names the recall pass may ask about: a whole part of an interview holds more capitalized
+ * words that are not names (a holiday, a brand, a title) than one story does
+ */
+const RECALL_NAMES = 30;
 /** the entities whose sentences and relationships the judge reads in one call */
 const JUDGE_BATCH = 10;
-/** what the checks call the sentences they read together */
+/** what the checks call the sentences they read */
 const TITLE = 'People, places and things';
 /** a note title may not hold these (validateNoteTitle) */
 const NOT_IN_TITLE = /[[\]#^|\p{Cc}]/gu;
 
+/** a sentence with the lines it comes from */
+type Cited = { text: string; cites: Range[] };
 interface RawFound {
   ref: string;
   name: string;
@@ -78,7 +86,7 @@ interface RawFound {
   match: string;
   candidates: string[];
   ways: string[];
-  description: Array<{ text: string; cites: Range[] }>;
+  description: Cited[];
 }
 interface RawTold {
   a: string;
@@ -87,6 +95,48 @@ interface RawTold {
   cites: Range[];
 }
 type Answer = { entities: RawFound[]; relationships: RawTold[] };
+
+/** an entity once its match is settled */
+interface Settled {
+  ref: string;
+  name: string;
+  type: EntityType;
+  match: EntityMatch;
+  subject: boolean;
+  aliases?: string[];
+  note: EntityNote;
+  ways: string[];
+  description: Cited[];
+  /** its name, and those of the entities found to be the same one: what its sentences may name */
+  names: string[];
+}
+
+export interface FindInput {
+  chat: ChatModel;
+  judge: ChatModel;
+  /** the part's lines; with the profile as line 0 when there is one */
+  lines: readonly Line[];
+  /** "Who this is about" (stories/profile.ts), or '' */
+  profile: string;
+  /** the protagonist and the tellers, already in the graph */
+  known: readonly KnownEntity[];
+  /** names the checks accept without a citation: speakers, the profile's */
+  names: readonly string[];
+  lookup: EntityLookup;
+  signal?: AbortSignal;
+}
+
+export interface FindResult {
+  /** each with `ways`, `description` and `note`; `mentions` are filled from the stories */
+  entities: ProposedEntity[];
+  /** each with `story: null`: the workflow ties it to the story whose lines tell it */
+  relationships: ProposedRelationship[];
+  /**
+   * `proposed` and `dropped` count entities and relationships, so `proposed - dropped` are kept;
+   * `left` also names the description sentences left out
+   */
+  stats: NonNullable<GraphProposal['stats']>;
+}
 
 /** the model's answer, read leniently: an item that is not right is left out, not argued over */
 export function parseFound(
@@ -145,62 +195,194 @@ export function parseFound(
  * not added twice, a ref already taken gets a "+", and the relationships follow. The recall
  * answer's own refs come first; a ref it does not give is the first answer's.
  */
-function merge(into: Answer, more: Answer): void {
-  const earlier = new Set(into.entities.map((e) => e.ref));
+function merge(first: Answer, more: Answer): Answer {
+  const entities = [...first.entities];
+  const relationships = [...first.relationships];
+  const earlier = new Set(first.entities.map((e) => e.ref));
   const taken = new Set(earlier);
   const rename = new Map<string, string>();
   for (const e of more.entities) {
-    const same = into.entities.find(
-      (x) => matchKey(x.name) === matchKey(e.name) && x.type === e.type,
-    );
+    const same = entities.find((x) => matchKey(x.name) === matchKey(e.name) && x.type === e.type);
     let ref = same?.ref ?? e.ref;
     if (!same) {
       while (taken.has(ref)) ref = `${ref}+`;
       taken.add(ref);
-      into.entities.push({ ...e, ref });
+      entities.push({ ...e, ref });
     }
     rename.set(e.ref, ref);
   }
   for (const r of more.relationships) {
     const a = rename.get(r.a) ?? (earlier.has(r.a) ? r.a : null);
     const b = rename.get(r.b) ?? (earlier.has(r.b) ? r.b : null);
-    if (a && b && a !== b) into.relationships.push({ ...r, a, b });
+    if (a && b && a !== b) relationships.push({ ...r, a, b });
   }
+  return { entities, relationships };
+}
+
+/**
+ * Names the tellers say that the first answer left out ("in Korea"): asked about once more,
+ * alone, and joined to that answer. If this fails, the first answer stands; only a cancel is
+ * passed on.
+ */
+async function recall(
+  o: FindInput,
+  task: string,
+  first: Answer,
+): Promise<{ answer: Answer; calls: number }> {
+  const missing = uncovered(
+    o.lines.filter((l) => l.n > 0 && l.teller).map((l) => l.text),
+    [
+      ...o.names,
+      ...o.known.flatMap((k) => [k.name, ...k.aliases]),
+      ...first.entities.flatMap((e) => [e.name, ...e.ways]),
+    ],
+    RECALL_NAMES,
+  );
+  if (missing.length === 0) return { answer: first, calls: 0 };
+  const named = first.entities;
+  try {
+    const more = await runWithTools(o.chat, {
+      system: FIND_SYSTEM,
+      task: `${task}\n\nYour answer named: ${named.map((e) => e.name).join(', ') || 'nobody'}.\nThese names are in the lines but not in your answer: ${missing.join(', ')}. For each that is a person, place or thing, give it the same way, with the relationships the lines tell; leave out the rest. Its relationships may name the entities of your answer by their refs (${named.map((e) => `${e.ref} ${e.name}`).join(', ')}).`,
+      tools: [],
+      maxToolCalls: 0,
+      maxCalls: 2,
+      signal: o.signal,
+      parse: (v) => parseFound(v, new Set(named.map((e) => e.ref))),
+    });
+    return { answer: merge(first, more.value), calls: more.calls };
+  } catch (e) {
+    if (o.signal?.aborted) throw e;
+    return { answer: first, calls: 0 };
+  }
+}
+
+/**
+ * The note an existing entity has, as the member sees it, and the names it goes by: what a known
+ * entity says, else the row a lookup gave for that very id (never a close spelling's).
+ */
+async function noteOf(
+  id: string,
+  name: string,
+  o: {
+    known: readonly KnownEntity[];
+    seen: ReadonlyMap<string, FoundEntity>;
+    lookup: EntityLookup;
+  },
+): Promise<{ note: EntityNote; aliases: string[] }> {
+  const k = o.known.find((x) => x.id === id);
+  if (k?.note !== undefined) return { note: noteFrom(k.note), aliases: k.aliases };
+  const row = o.seen.get(id) ?? (await o.lookup.find(name)).find((f) => f.id === id);
+  return { note: noteFrom(row?.note ?? null), aliases: k?.aliases ?? row?.aliases ?? [] };
+}
+
+const noteFrom = (n: NoteRef | null): EntityNote =>
+  n ? { kind: 'existing', ...n } : { kind: 'new' };
+
+/**
+ * Another entity found to be the same existing one, joined to the first: its name and its ways
+ * become ways, and its sentences follow the first's, up to 4. Gives the sentences that did not fit.
+ */
+function join(into: Settled, e: RawFound): Cited[] {
+  into.names.push(e.name);
+  const name =
+    matchKey(e.name) !== matchKey(into.name) && e.name.split(/\s+/).length <= MAX_WORDS
+      ? [e.name]
+      : [];
+  into.ways = [...new Set([...into.ways, ...name, ...e.ways])].slice(0, MAX_WAYS);
+  const room = Math.max(0, MAX_SENTENCES - into.description.length);
+  into.description.push(...e.description.slice(0, room));
+  return e.description.slice(room);
+}
+
+/** a line the checks read: a sentence about an entity, or a relationship */
+interface Item {
+  text: string;
+  cites: Range[];
+  /** the names it may hold besides the known ones: its entity's, or those of both it joins */
+  names: readonly string[];
+  /** whom a sentence is about, told to the judge ("About Sarah: She …"); never saved */
+  about?: string;
+  /** the judge reads one batch a call */
+  batch: number;
+}
+
+/** the lines the checks read, as the draft they check */
+const draftOf = (sentences: readonly Cited[]): StoryDraft => ({
+  title: TITLE,
+  occurred: null,
+  until: null,
+  sentences: sentences.map((s) => ({ text: s.text, cites: s.cites, paragraph: false })),
+});
+
+/**
+ * The checks a story sentence gets: in code (names, numbers and quotes in the cited lines; the
+ * citations inside the part), each item against the known names and its own; then the judge, a
+ * batch a call. Gives each item that fails, with why.
+ */
+async function checkAll<I extends Item>(
+  items: readonly I[],
+  o: {
+    judge: ChatModel;
+    lines: readonly Line[];
+    profile: string;
+    /** names any item may hold without its lines giving them */
+    names: readonly string[];
+    /** the lines an item may cite (the profile too) */
+    part: readonly Range[];
+    signal?: AbortSignal;
+  },
+): Promise<{ failed: Map<I, string>; calls: number }> {
+  const failed = new Map<I, string>();
+  for (const i of items) {
+    const p = checkDraft(draftOf([i]), o.lines, [...o.names, ...i.names], o.part).find(
+      (x) => x.sentence === 0 && KEPT.includes(x.kind),
+    );
+    if (p) failed.set(i, `${p.kind}: ${p.detail}`);
+  }
+  let calls = 0;
+  for (const batch of [...new Set(items.map((i) => i.batch))].sort((a, b) => a - b)) {
+    const rest = items.filter((i) => i.batch === batch && !failed.has(i));
+    if (rest.length === 0) continue;
+    const judged = await judgeStory(
+      o.judge,
+      draftOf(
+        rest.map((i) => ({
+          text: i.about ? `About ${i.about}: ${i.text}` : i.text,
+          cites: i.cites,
+        })),
+      ),
+      o.lines,
+      o.signal,
+      o.profile,
+    );
+    calls += judged.calls;
+    for (const r of judged.rulings) {
+      if (!FAILING.includes(r.verdict)) continue;
+      failed.set(rest[r.sentence]!, `the judge: ${r.verdict}${r.reason ? ` (${r.reason})` : ''}`);
+    }
+  }
+  return { failed, calls };
 }
 
 const knownLine = (k: KnownEntity): string =>
   `- ${k.name} (${k.type}, id ${k.id})${k.aliases.length ? `, also called ${k.aliases.join(', ')}` : ''}${k.subject ? ' — the person the archive is about' : ''}`;
 
+/** "Tom — Tom": a description that says the name again after the dash is only the name */
+const unrepeated = (d: string): string => {
+  const [before, after] = d.split(/\s+[—–-]\s+/, 2);
+  return before && after && matchKey(before) === matchKey(after) ? before : d;
+};
+
 /** interview lines as a proposal's sources; the profile (P) is not one */
 const sourcesOf = (rs: readonly Range[]): GraphSource[] =>
   rs.filter((r) => r.from > 0).map((r) => ({ interviewId: null, from: r.from, to: r.to }));
-
-export interface FindResult {
-  /** each with `ways`, `description` and `note`; `mentions` are filled from the stories */
-  entities: ProposedEntity[];
-  /** each with `story: null`: the workflow ties it to the story whose lines tell it */
-  relationships: ProposedRelationship[];
-  stats: NonNullable<GraphProposal['stats']>;
-}
 
 /**
  * One part of an interview through the Entity step. Throws when the AI cannot be reached or its
  * answer cannot be read, so the import can say the list is pending; a failed recall pass does not.
  */
-export async function findEntities(o: {
-  chat: ChatModel;
-  judge: ChatModel;
-  /** the part's lines; with the profile as line 0 when there is one */
-  lines: readonly Line[];
-  /** "Who this is about" (stories/profile.ts), or '' */
-  profile: string;
-  /** the protagonist and the tellers, already in the graph */
-  known: readonly KnownEntity[];
-  /** names the checks accept without a citation: speakers, the profile's */
-  names: readonly string[];
-  lookup: EntityLookup;
-  signal?: AbortSignal;
-}): Promise<FindResult> {
+export async function findEntities(o: FindInput): Promise<FindResult> {
   // every row a lookup gave, by id: what an existing match has (its aliases, its note)
   const seen = new Map<string, FoundEntity>();
   const lookup: EntityLookup = {
@@ -214,6 +396,7 @@ export async function findEntities(o: {
   // every entity id the AI was shown: the known ones, and what its tools found
   const offered = new Map<string, string>(o.known.map((k) => [k.id, k.name]));
   const told = o.lines.filter((l) => l.n > 0);
+  const knownNames = [...o.names, ...o.known.flatMap((k) => [k.name, ...k.aliases])];
   const task = [
     o.profile,
     o.known.length
@@ -224,8 +407,8 @@ export async function findEntities(o: {
     .filter(Boolean)
     .join('\n\n');
 
-  // 1. ask
-  const first = await runWithTools(o.chat, {
+  // 1. ask, then once more about the names the answer left out
+  const asked = await runWithTools(o.chat, {
     system: FIND_SYSTEM,
     task,
     tools: entityTools(lookup, offered),
@@ -233,218 +416,186 @@ export async function findEntities(o: {
     signal: o.signal,
     parse: (v) => parseFound(v),
   });
-  const raw = first.value;
-  let calls = first.calls;
-
-  // 2. names the tellers say that the answer left out ("in Korea"): asked about once more, alone
-  const missing = uncovered(
-    told.filter((l) => l.teller).map((l) => l.text),
-    [
-      ...o.names,
-      ...o.known.flatMap((k) => [k.name, ...k.aliases]),
-      ...raw.entities.flatMap((e) => [e.name, ...e.ways]),
-    ],
-  );
-  if (missing.length > 0) {
-    try {
-      const more = await runWithTools(o.chat, {
-        system: FIND_SYSTEM,
-        task: `${task}\n\nYour answer named: ${raw.entities.map((e) => e.name).join(', ') || 'nobody'}.\nThese names are in the lines but not in your answer: ${missing.join(', ')}. For each that is a person, place or thing, give it the same way, with the relationships the lines tell; leave out the rest. Its relationships may name the entities of your answer by their refs (${raw.entities.map((e) => `${e.ref} ${e.name}`).join(', ')}).`,
-        tools: [],
-        maxToolCalls: 0,
-        maxCalls: 2,
-        signal: o.signal,
-        parse: (v) => parseFound(v, new Set(raw.entities.map((e) => e.ref))),
-      });
-      calls += more.calls;
-      merge(raw, more.value);
-    } catch (e) {
-      // the first answer stands; only a cancel is passed on
-      if (o.signal?.aborted) throw e;
-    }
-  }
+  const recalled = await recall(o, task, asked.value);
+  const raw = recalled.answer;
+  let calls = asked.calls + recalled.calls;
 
   let dropped = 0;
   const proposed = raw.entities.length + raw.relationships.length;
   const left: Array<{ what: string; why: string }> = [];
-  const leave = (what: string, why: string) => {
-    dropped++;
+  /** what was left out and why: where the prompt needs work */
+  const list = (what: string, why: string) => {
     if (left.length < 30) left.push({ what, why });
   };
+  /** an entity or a relationship left out */
+  const leave = (what: string, why: string) => {
+    dropped++;
+    list(what, why);
+  };
 
-  // 3. relationships as told: knowing of someone only through another is no line between them
-  // (graph design G-D1), the name is not said again after the dash, and a pair has one
-  const pairs = new Set<string>();
-  let rels = raw.relationships.filter((r) => {
-    if (SECOND_HAND.test(r.description)) {
+  // 2. relationships as told: knowing of someone only through another is no line between them
+  // (graph design G-D1), and the part after the dash never says the name again
+  let rels = raw.relationships
+    .filter((r) => {
+      if (!SECOND_HAND.test(r.description)) return true;
       leave(r.description, 'known only through another person');
       return false;
-    }
-    const pair = [r.a, r.b].sort().join(':');
-    if (pairs.has(pair)) return false;
-    pairs.add(pair);
-    return true;
-  });
-  for (const r of rels) {
-    const [before, after] = r.description.split(/\s+[—–-]\s+/, 2);
-    if (before && after && matchKey(before) === matchKey(after)) r.description = before;
-  }
+    })
+    .map((r) => ({ ...r, description: unrepeated(r.description) }));
 
-  // 4. a name must come from the lines: every word of it is in them or in a known name; and the
-  // limits (entity design 4.4)
-  const knownWords = nameWords([...o.names, ...o.known.flatMap((k) => [k.name, ...k.aliases])]);
-  const text = o.lines.map((l) => l.text).join('\n');
+  // 3. a name must come from the lines: every word of it is said there or is a known name's; and
+  // the limits (entity design 4.4)
+  const said = wordsOf(o.lines.map((l) => l.text).join('\n'));
+  const knownWords = wordsOf(knownNames.join('\n'));
   let things = 0;
   const held = raw.entities.filter((e) => {
-    if (!nameHeld(e.name, text, knownWords)) {
+    if (!nameHeld(e.name, said, knownWords)) {
       leave(e.name, 'a word of the name is not in the lines');
       return false;
     }
     if (e.type === 'thing' && ++things > MAX_THINGS) {
-      leave(e.name, 'over 20 things');
+      leave(e.name, `over ${MAX_THINGS} things`);
       return false;
     }
     return true;
   });
-  for (const e of held.slice(MAX_ENTITIES)) leave(e.name, 'over 60 entities');
-  const entities = held.slice(0, MAX_ENTITIES);
-  const index = new Map(entities.map((e, i) => [e.ref, i]));
-  rels = rels.filter((r) => index.has(r.a) && index.has(r.b));
+  for (const e of held.slice(MAX_ENTITIES)) leave(e.name, `over ${MAX_ENTITIES} entities`);
+  const capped = held.slice(0, MAX_ENTITIES);
+  const kept = new Set(capped.map((e) => e.ref));
+  rels = rels.filter((r) => {
+    if (kept.has(r.a) && kept.has(r.b)) return true;
+    leave(r.description, 'an entity it joins was left out');
+    return false;
+  });
 
-  // 5. matches: an id it was shown, or a project entity of the same name; and the note it has.
-  // The protagonist's description is never kept, so it is not checked.
-  /** what the project has of an existing entity: the names it goes by, the note the member sees */
-  const has = async (
-    id: string,
-    name: string,
-  ): Promise<{ aliases: string[]; note: NoteRef | null }> => {
-    const k = o.known.find((x) => x.id === id);
-    if (k && k.note !== undefined) return { aliases: k.aliases, note: k.note };
-    const row = seen.get(id) ?? (await lookup.find(name)).find((f) => f.id === id);
-    return { aliases: k?.aliases ?? row?.aliases ?? [], note: row?.note ?? null };
-  };
-  const matched: Array<{
-    match: EntityMatch;
-    subject: boolean;
-    aliases?: string[];
-    note: EntityNote;
-  }> = [];
-  for (const e of entities) {
+  // 4. matches: an id it was shown, or a project entity of the same name, with the note it has.
+  // Two found to be the same existing entity are one.
+  const entities: Settled[] = [];
+  const sameAs = new Map<string, string>();
+  for (const e of capped) {
     const match = await resolveMatch(e, { lookup, known: o.known, offered });
-    if (match.kind !== 'existing') {
-      matched.push({ match, subject: false, note: { kind: 'new' } });
+    const id = match.kind === 'existing' ? match.entityId : null;
+    const into = id
+      ? entities.find((x) => x.match.kind === 'existing' && x.match.entityId === id)
+      : undefined;
+    if (into) {
+      for (const s of join(into, e)) list(s.text, `over ${MAX_SENTENCES} sentences`);
+      sameAs.set(e.ref, into.ref);
+      leave(e.name, `the same entity as ${into.name}`);
       continue;
     }
-    const subject = o.known.some((k) => k.id === match.entityId && k.subject);
-    if (subject) e.description = [];
-    const { aliases, note } = await has(match.entityId, match.name);
-    matched.push({
+    const has =
+      match.kind === 'existing'
+        ? await noteOf(match.entityId, match.name, { known: o.known, seen, lookup })
+        : null;
+    entities.push({
+      ref: e.ref,
+      name: e.name,
+      type: e.type,
       match,
-      subject,
-      aliases,
-      note: note ? { kind: 'existing', ...note } : { kind: 'new' },
+      subject: o.known.some((k) => k.id === id && k.subject),
+      ...(has ? { aliases: has.aliases } : {}),
+      note: has?.note ?? { kind: 'new' },
+      ways: [...e.ways],
+      description: [...e.description],
+      names: [e.name],
     });
   }
+  // the protagonist's note is the profile: no description, so none is checked
+  for (const e of entities.filter((x) => x.subject)) {
+    for (const s of e.description)
+      list(s.text, 'the person the archive is about has no description');
+    e.description = [];
+  }
+  rels = rels.flatMap((r) => {
+    const a = sameAs.get(r.a) ?? r.a;
+    const b = sameAs.get(r.b) ?? r.b;
+    if (a !== b) return [{ ...r, a, b }];
+    leave(r.description, 'it joins an entity to itself');
+    return [];
+  });
 
-  // 6. the sentences and relationships: the code checks, then the judge, ten entities at a time
-  const nameList = [
-    ...o.names,
-    ...o.known.flatMap((k) => [k.name, ...k.aliases]),
-    ...entities.map((e) => e.name),
-  ];
-  type Item = { text: string; cites: Range[]; batch: number; drop: () => void; why?: string };
-  const batchOf = (ref: string) => Math.floor(index.get(ref)! / JUDGE_BATCH);
-  const items: Item[] = [];
-  for (const e of entities) {
-    for (const s of e.description) {
-      items.push({
+  // 5. the sentences and relationships: the code checks, then the judge, ten entities a call
+  const at = new Map(entities.map((e, i) => [e.ref, i]));
+  const batchOf = (ref: string) => Math.floor(at.get(ref)! / JUDGE_BATCH);
+  const namesOf = (ref: string) => entities[at.get(ref)!]!.names;
+  const items: Array<Item & { sentence?: Cited; told?: RawTold }> = [
+    ...entities.flatMap((e) =>
+      e.description.map((s) => ({
         text: s.text,
         cites: s.cites,
+        names: e.names,
+        about: e.name,
         batch: batchOf(e.ref),
-        // a sentence that fails goes; its entity stays
-        drop: () => (e.description = e.description.filter((x) => x !== s)),
-      });
-    }
-  }
-  for (const r of rels) {
-    items.push({
+        sentence: s,
+      })),
+    ),
+    ...rels.map((r) => ({
       text: r.description,
       cites: r.cites,
-      // with the later of its two entities
+      names: [...namesOf(r.a), ...namesOf(r.b)],
+      // with the later of the two it joins
       batch: Math.max(batchOf(r.a), batchOf(r.b)),
-      drop: () => (rels = rels.filter((x) => x !== r)),
-    });
+      told: r,
+    })),
+  ];
+  const checked = await checkAll(items, {
+    judge: o.judge,
+    lines: o.lines,
+    profile: o.profile,
+    names: knownNames,
+    part: told.length ? [{ from: told[0]!.n, to: told[told.length - 1]!.n }] : [],
+    signal: o.signal,
+  });
+  calls += checked.calls;
+  const failed = new Set<Cited | RawTold>();
+  for (const [i, why] of checked.failed) {
+    failed.add(i.told ?? i.sentence!);
+    // a sentence that fails goes; its entity stays
+    if (i.told) leave(i.text, why);
+    else list(i.text, why);
   }
-  // a sentence may cite the part's lines, and the profile
-  const part: Range[] = told.length ? [{ from: told[0]!.n, to: told[told.length - 1]!.n }] : [];
-  const failed = new Set<Item>();
-  for (let b = 0; b * JUDGE_BATCH < entities.length; b++) {
-    const mine = items.filter((i) => i.batch === b);
-    if (mine.length === 0) continue;
-    const draft = {
-      title: TITLE,
-      occurred: null,
-      until: null,
-      sentences: mine.map((i) => ({ text: i.text, cites: i.cites, paragraph: false })),
-    };
-    const problems = checkDraft(draft, o.lines, nameList, part).filter(
-      (p) => p.sentence >= 0 && KEPT.includes(p.kind),
-    );
-    for (const p of problems) {
-      const item = mine[p.sentence]!;
-      item.why ??= `${p.kind}: ${p.detail}`;
-      failed.add(item);
+  for (const e of entities) e.description = e.description.filter((s) => !failed.has(s));
+
+  // 6. one relationship for a pair: the first that held
+  const pairs = new Set<string>();
+  rels = rels.filter((r) => {
+    if (failed.has(r)) return false;
+    const pair = [r.a, r.b].sort().join(':');
+    if (!pairs.has(pair)) {
+      pairs.add(pair);
+      return true;
     }
-    const rest = mine.filter((i) => !failed.has(i));
-    if (rest.length === 0) continue;
-    const judged = await judgeStory(
-      o.judge,
-      {
-        ...draft,
-        sentences: rest.map((i) => ({ text: i.text, cites: i.cites, paragraph: false })),
-      },
-      o.lines,
-      o.signal,
-      o.profile,
-    );
-    calls += judged.calls;
-    for (const r of judged.rulings) {
-      if (!FAILING.includes(r.verdict)) continue;
-      const item = rest[r.sentence]!;
-      item.why ??= `the judge: ${r.verdict}${r.reason ? ` (${r.reason})` : ''}`;
-      failed.add(item);
-    }
-  }
-  for (const i of failed) {
-    i.drop();
-    leave(i.text, i.why ?? 'failed');
+    leave(r.description, 'a second relationship for the pair');
+    return false;
+  });
+  for (const r of rels.slice(MAX_RELATIONSHIPS)) {
+    leave(r.description, `over ${MAX_RELATIONSHIPS} relationships`);
   }
 
   // 7. what is left, numbered in order
   const refOf = new Map(entities.map((e, i) => [e.ref, `e${i + 1}`]));
-  const out = entities.map((e, i): ProposedEntity => {
-    const m = matched[i]!;
-    return {
+  return {
+    entities: entities.map((e): ProposedEntity => ({
       ref: refOf.get(e.ref)!,
       name: e.name,
       type: e.type,
-      match: m.match,
+      match: e.match,
       mentions: [],
-      ...(m.aliases ? { aliases: m.aliases } : {}),
+      ...(e.aliases ? { aliases: e.aliases } : {}),
       ways: e.ways,
       description: e.description.map((s) => ({ text: s.text, sources: sourcesOf(s.cites) })),
-      note: m.note,
-      ...(m.subject ? { subject: true } : {}),
-    };
-  });
-  for (const r of rels.slice(MAX_RELATIONSHIPS)) leave(r.description, 'over 100 relationships');
-  const relationships = rels.slice(0, MAX_RELATIONSHIPS).map((r, i): ProposedRelationship => ({
-    ref: `r${i + 1}`,
-    a: refOf.get(r.a)!,
-    b: refOf.get(r.b)!,
-    description: r.description,
-    story: null,
-    sources: sourcesOf(r.cites),
-  }));
-  return { entities: out, relationships, stats: { calls, proposed, dropped, left } };
+      note: e.note,
+      ...(e.subject ? { subject: true } : {}),
+    })),
+    relationships: rels.slice(0, MAX_RELATIONSHIPS).map((r, i): ProposedRelationship => ({
+      ref: `r${i + 1}`,
+      a: refOf.get(r.a)!,
+      b: refOf.get(r.b)!,
+      description: r.description,
+      story: null,
+      sources: sourcesOf(r.cites),
+    })),
+    stats: { calls, proposed, dropped, left },
+  };
 }

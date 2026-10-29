@@ -45,21 +45,28 @@ export const KEPT: readonly ProblemKind[] = [
   'outside_story',
 ];
 
-/** the words of names, which a name may hold without the lines giving them (`nameHeld`) */
-export const nameWords = (names: readonly string[]): Set<string> =>
-  new Set(names.flatMap((n) => lower(n).split(/[^\p{L}\p{N}]+/u)));
+/** the words of a text, lowercased, each without a "'s" ("Sarah's" is "sarah") */
+export const wordsOf = (text: string): Set<string> =>
+  new Set(
+    lower(text)
+      .replace(/['’]s\b/g, ' ')
+      .split(/[^\p{L}\p{N}]+/u)
+      .filter(Boolean),
+  );
 
 /**
- * The name rule: a name comes from the lines. Every word of it but filler is in `where` or among
- * the `known` words; a surname the AI added ("Sarah Lee" for a "Sarah") fails it.
+ * The name rule: a name comes from the lines. Every word of it but filler is a word `said` there,
+ * or a word of a `known` name; a surname the AI added ("Sarah Lee" for a "Sarah") fails it, even
+ * when the lines hold it inside another word ("sleep").
  */
-export function nameHeld(name: string, where: string, known: ReadonlySet<string>): boolean {
-  const text = lower(where);
-  return lower(name)
-    .replace(/['’]s\b/g, ' ')
-    .split(/[^\p{L}\p{N}]+/u)
-    .filter((w) => w && !NAME_FILLER.has(w))
-    .every((w) => known.has(w) || text.includes(w));
+export function nameHeld(
+  name: string,
+  said: ReadonlySet<string>,
+  known: ReadonlySet<string>,
+): boolean {
+  return [...wordsOf(name)]
+    .filter((w) => !NAME_FILLER.has(w))
+    .every((w) => known.has(w) || said.has(w));
 }
 
 /** capitalized words that are not names: they open a sentence or stand for anyone */
@@ -74,9 +81,14 @@ export const NOT_A_NAME = new Set(
 
 /**
  * Names in `texts` that none of `covered` holds: capitalized words not opening a sentence ("in
- * Korea", "a dance in Xenia"), at most 10. What the AI is asked about once more (the recall pass).
+ * Korea", "a dance in Xenia"), at most `limit`. What the AI is asked about once more (the recall
+ * pass).
  */
-export function uncovered(texts: readonly string[], covered: readonly string[]): string[] {
+export function uncovered(
+  texts: readonly string[],
+  covered: readonly string[],
+  limit = 10,
+): string[] {
   const have = new Set(covered.flatMap((c) => matchKey(c).split(' ')).filter(Boolean));
   const out: string[] = [];
   for (const text of texts) {
@@ -89,7 +101,7 @@ export function uncovered(texts: readonly string[], covered: readonly string[]):
         if (!key || NOT_A_NAME.has(key) || NOT_A_NAME.has(key.replace(/s$/, '')) || have.has(key))
           continue;
         if (!out.includes(w)) out.push(w);
-        if (out.length >= 10) return out;
+        if (out.length >= limit) return out;
       }
     }
   }
