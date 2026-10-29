@@ -122,7 +122,7 @@ No paragraph, no links (E-D6). Other tellers are treated like anyone else.
 
 ### 5.5 Titles
 
-Note titles are unique in a project. A new note whose title is already taken by a note of another type gets its type added: "Busan (place)"; after that, "Busan (place, 2)". Titles are settled at save time for the stories and the new notes together (`resolveTitles`), and every link is written with the final title, including after a rename in review.
+Note titles are unique in a project. A new note whose title is already taken by a note of another type gets its type added: "Busan (place)"; after that, "Busan (2)" (as `resolveTitles` already does for stories). Titles are settled at save time for the stories and the new notes together (`resolveTitles`), and every link is written with the final title, including after a rename in review.
 
 ### 5.6 Renaming later
 
@@ -248,7 +248,7 @@ No test calls a live AI.
   - the search for unmarked names, never by ways;
   - first-mention links and `[[Title]]` when the words are the title;
   - the brackets-only check, both ways;
-  - title clashes: "Busan (place)", "Busan (place, 2)".
+  - title clashes: "Busan (place)", then "Busan (2)".
 - **Scripted-model workflow tests:**
   - the list reaches the writer; a story with "his mother" links to "Noah's mother";
   - a wrong mark ("his father" for e3) is dropped and the sentence stays;
