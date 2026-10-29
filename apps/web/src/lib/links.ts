@@ -13,11 +13,13 @@ import { extractWikilinks, normalizeTitle } from '@funmem/core';
 export type Piece =
   | { kind: 'text'; text: string }
   | { kind: 'link'; label: string; noteId: string }
+  | { kind: 'proposed'; label: string }
   | { kind: 'entity'; label: string; entityId: string };
 
 export function piecesOf(
   body: string,
   notes: ReadonlyArray<{ id: string; title: string }>,
+  opts?: { proposed?: ReadonlyMap<string, boolean> },
 ): Piece[] {
   const byTitle = new Map(notes.map((n) => [normalizeTitle(n.title), n.id]));
   const out: Piece[] = [];
@@ -30,8 +32,13 @@ export function piecesOf(
   };
   for (const l of extractWikilinks(body)) {
     text(body.slice(at, l.start));
-    const noteId = l.embed || l.target === '' ? undefined : byTitle.get(normalizeTitle(l.target));
-    if (noteId) out.push({ kind: 'link', label: l.alias?.trim() || l.target, noteId });
+    const key = normalizeTitle(l.target);
+    const label = l.alias?.trim() || l.target;
+    const proposed = l.embed || key === '' ? undefined : opts?.proposed?.get(key);
+    const noteId = l.embed || key === '' ? undefined : byTitle.get(key);
+    if (proposed === true) out.push({ kind: 'proposed', label });
+    else if (proposed === false) text(label);
+    else if (noteId) out.push({ kind: 'link', label, noteId });
     else text(l.raw);
     at = l.end;
   }

@@ -69,7 +69,7 @@ export function Interviews() {
     const name = run.source ? `“${run.source}”` : 'this interview';
     if (
       !window.confirm(
-        `Take ${name} back out of the project? Its memories are erased, except any someone has worked on since.`,
+        `Take ${name} back out of the project? Its new notes are removed and notes it added paragraphs to are restored. Notes someone has edited or used elsewhere are kept.`,
       )
     )
       return;
@@ -80,10 +80,10 @@ export function Interviews() {
       setSaid({
         ok: true,
         text:
-          `Erased ${count(r.erased, 'memory', 'memories')}.` +
+          `Erased ${count(r.erased, 'note', 'notes')}.` +
           (r.restored ? ` Restored ${count(r.restored, 'note', 'notes')} it had added to.` : '') +
           (r.kept.length > 0
-            ? ` Kept ${count(r.kept.length, 'memory', 'memories')} someone has worked on since: ${r.kept.map((k) => k.title).join(', ')}.`
+            ? ` Kept ${count(r.kept.length, 'note', 'notes')} someone has edited or used elsewhere: ${r.kept.map((k) => k.title).join(', ')}.`
             : ''),
       });
       await load();
@@ -191,7 +191,7 @@ export function Interviews() {
                 </span>
                 {gone ? (
                   <span className="pill pill-soft">
-                    {r.undone ? 'Taken back' : 'Its memories are gone'}
+                    {r.undone ? 'Taken back' : 'Its notes are gone'}
                   </span>
                 ) : (
                   <span className="row">

@@ -1771,6 +1771,9 @@ a.mention {
   text-decoration-thickness: 2px;
   text-underline-offset: 3px;
 }
+.proposed-link {
+  border-bottom: 1px dashed var(--sage-ink);
+}
 
 /* the people, places and things an import found, in its review */
 .gr-list {
@@ -1792,6 +1795,9 @@ a.mention {
 }
 .gr-gone {
   opacity: 0.45;
+}
+.gr-paragraph-out {
+  text-decoration: line-through;
 }
 .gr-same {
   width: auto;

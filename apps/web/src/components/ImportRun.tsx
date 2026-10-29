@@ -4,10 +4,12 @@ import { Link, useNavigate } from 'react-router';
 import {
   ApiError,
   getImport,
+  listEntities,
   listNotes,
   saveImport,
   startImport,
   type ImportJob,
+  type EntitySummary,
   type ImportMemory,
   type ImportOutcome,
   type ImportRequest,
@@ -16,6 +18,7 @@ import {
   startGraphBuild,
 } from '../lib/api';
 import { inArchive, noteHref } from '../lib/archive';
+import { previewStory } from '../lib/graph-review';
 import { Linked, splitNote } from './NoteText';
 import { count, Failed, Icon, whenLabel } from './ui';
 
@@ -329,6 +332,7 @@ export function Review({
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [notes, setNotes] = useState<NoteSummary[]>([]);
+  const [knownEntities, setKnownEntities] = useState<EntitySummary[]>([]);
   const [graphChoices, setGraphChoices] = useState<GraphChoices>(NO_CHOICES);
 
   useEffect(() => {
@@ -336,6 +340,11 @@ export function Review({
       .then(setNotes)
       .catch(() => {
         /* links in a preview simply show as written */
+      });
+    listEntities(archiveId)
+      .then(setKnownEntities)
+      .catch(() => {
+        /* the proposal still carries its matched notes */
       });
   }, [archiveId]);
 
@@ -360,7 +369,7 @@ export function Review({
   }
 
   // the button's run: only people, places and things, in stories already saved
-  if (memories.length === 0 && outcome.graph) {
+  if (outcome.format === 'graph' && outcome.graph) {
     const g = outcome.graph;
     const kept = keptCount(g, graphChoices, () => true);
     return (
@@ -381,6 +390,8 @@ export function Review({
             storyKept={() => true}
             choices={graphChoices}
             onChange={setGraphChoices}
+            knownEntities={knownEntities}
+            noteTitles={new Map(notes.map((n) => [n.id, n.title]))}
             standalone
           />
         )}
@@ -425,6 +436,13 @@ export function Review({
   };
   const left = memories.filter((_, i) => !decided[i]).length;
   const keeping = memories.filter((_, i) => decided[i] !== 'out').length;
+  const storyKept = (id: string) => {
+    const i = memories.findIndex((x) => x.id === id);
+    return i >= 0 && decided[i] !== 'out';
+  };
+  const preview = outcome.graph
+    ? previewStory(shown.body, outcome.graph, graphChoices, storyKept, knownEntities, notes)
+    : undefined;
 
   function decide(d: Decision) {
     const next = { ...decided, [at]: d };
@@ -529,7 +547,13 @@ export function Review({
             onCancel={() => setEditing(false)}
           />
         ) : (
-          <MemoryView memory={m} shown={shown} notes={notes} archiveId={archiveId} />
+          <MemoryView
+            memory={m}
+            shown={{ ...shown, body: preview?.body ?? shown.body }}
+            notes={notes}
+            archiveId={archiveId}
+            proposed={preview?.proposed}
+          />
         )}
 
         {!editing && (
@@ -560,12 +584,11 @@ export function Review({
           archiveId={archiveId}
           graph={outcome.graph}
           storyTitle={(id) => memories.find((x) => x.id === id)?.title ?? 'a story'}
-          storyKept={(id) => {
-            const i = memories.findIndex((x) => x.id === id);
-            return i >= 0 && decided[i] !== 'out';
-          }}
+          storyKept={storyKept}
           choices={graphChoices}
           onChange={setGraphChoices}
+          knownEntities={knownEntities}
+          noteTitles={new Map(notes.map((n) => [n.id, n.title]))}
         />
       )}
 
@@ -594,11 +617,13 @@ function MemoryView({
   shown,
   notes,
   archiveId,
+  proposed,
 }: {
   memory: ImportMemory;
   shown: { title: string; body: string; occurred: string };
   notes: NoteSummary[];
   archiveId: string;
+  proposed?: ReadonlyMap<string, boolean>;
 }) {
   const parts = splitNote(shown.body);
   const [showSources, setShowSources] = useState(false);
@@ -618,7 +643,7 @@ function MemoryView({
       <div className="prose" style={{ fontSize: 16, gap: 9 }}>
         {parts.paragraphs.map((p, i) => (
           <p key={i}>
-            <Linked text={p} notes={notes} archiveId={archiveId} />
+            <Linked text={p} notes={notes} archiveId={archiveId} proposed={proposed} />
           </p>
         ))}
       </div>
@@ -757,7 +782,7 @@ export function Saved({
 }) {
   const navigate = useNavigate();
   const saved = outcome.saved ?? [];
-  if (outcome.memories.length === 0 && outcome.graph) {
+  if (outcome.format === 'graph' && outcome.graph) {
     return (
       <div className="stack" style={{ gap: 12 }}>
         <h1 className="page-title">Added to the graph</h1>

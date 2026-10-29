@@ -3,43 +3,25 @@ import {
   listEntities,
   type EntitySummary,
   type EntityType,
-  type GraphPatch,
   type GraphProposal,
   type ProposedEntity,
 } from '../lib/api';
+import {
+  cleanRename,
+  entityKept,
+  renameConflict,
+  reviewedGraph,
+  type GraphChoices,
+} from '../lib/graph-review';
+export { keptCount, NO_CHOICES, patchOf, type GraphChoices } from '../lib/graph-review';
 
 /**
  * The people, places and things an import found, to read over with its stories (graph design
  * 5.1). Everything is kept unless left out; a new one can be renamed ("Noah's mother" → "Mina
- * Kim"), or said to be someone already here. What came only from a story left out is greyed:
- * it goes with that story.
+ * Kim"), or said to be someone already here. An import's notes stay when a story is left out;
+ * the older button's entities go with their last story.
  */
-export interface GraphChoices {
-  out: Set<string>;
-  rename: Record<string, string>;
-  same: Record<string, string>;
-}
-
-export const NO_CHOICES: GraphChoices = { out: new Set(), rename: {}, same: {} };
-
-export const patchOf = (c: GraphChoices): GraphPatch => ({
-  ...(c.out.size ? { leave: [...c.out] } : {}),
-  ...(Object.keys(c.rename).length ? { rename: c.rename } : {}),
-  ...(Object.keys(c.same).length ? { same: c.same } : {}),
-});
-
 const TYPE: Record<EntityType, string> = { person: 'Person', place: 'Place', thing: 'Thing' };
-
-/** how many entities would be saved, given the choices and the stories kept */
-export function keptCount(
-  graph: GraphProposal,
-  choices: GraphChoices,
-  storyKept: (story: string) => boolean,
-): number {
-  return graph.entities.filter(
-    (e) => !choices.out.has(e.ref) && e.mentions.some((m) => storyKept(m.story)),
-  ).length;
-}
 
 export function GraphReview({
   archiveId,
@@ -49,10 +31,14 @@ export function GraphReview({
   choices,
   onChange,
   standalone = false,
+  knownEntities,
+  noteTitles,
 }: {
   archiveId: string;
   /** the button's run, with no stories of its own to save */
   standalone?: boolean;
+  knownEntities?: EntitySummary[];
+  noteTitles?: ReadonlyMap<string, string>;
   graph: GraphProposal;
   storyTitle: (story: string) => string;
   storyKept: (story: string) => boolean;
@@ -61,6 +47,7 @@ export function GraphReview({
 }) {
   const [known, setKnown] = useState<EntitySummary[]>([]);
   useEffect(() => {
+    if (knownEntities) return;
     let live = true;
     listEntities(archiveId)
       .then((l) => live && setKnown(l))
@@ -70,7 +57,7 @@ export function GraphReview({
     return () => {
       live = false;
     };
-  }, [archiveId]);
+  }, [archiveId, knownEntities]);
 
   if (graph.pending) {
     return (
@@ -84,17 +71,26 @@ export function GraphReview({
       </section>
     );
   }
-  if (graph.entities.length === 0) return null;
+  if (!graph.entities.some((e) => !e.subject)) return null;
 
+  const available = knownEntities ?? known;
   const byRef = new Map(graph.entities.map((e) => [e.ref, e]));
-  const nameOf = (ref: string) => choices.rename[ref] ?? byRef.get(ref)?.name ?? '';
-  const gone = (e: ProposedEntity) =>
-    choices.out.has(e.ref) || !e.mentions.some((m) => storyKept(m.story));
+  const reviewed = new Map(
+    reviewedGraph(graph, choices, storyKept).entities.map((e) => [e.ref, e]),
+  );
+  const nameOf = (ref: string) => reviewed.get(ref)?.name ?? byRef.get(ref)?.name ?? '';
+  const gone = (e: ProposedEntity) => !entityKept(e, choices, storyKept);
   const toggle = (ref: string) => {
     const out = new Set(choices.out);
     if (out.has(ref)) out.delete(ref);
     else out.add(ref);
     onChange({ ...choices, out });
+  };
+  const toggleParagraph = (ref: string) => {
+    const paragraphOut = new Set(choices.paragraphOut);
+    if (paragraphOut.has(ref)) paragraphOut.delete(ref);
+    else paragraphOut.add(ref);
+    onChange({ ...choices, paragraphOut });
   };
 
   return (
@@ -114,41 +110,52 @@ export function GraphReview({
         </p>
       </div>
       <ul className="stack gr-list">
-        {graph.entities.map((e) => (
-          <EntityRow
-            key={e.ref}
-            entity={e}
-            name={nameOf(e.ref)}
-            gone={gone(e)}
-            left={choices.out.has(e.ref)}
-            same={choices.same[e.ref]}
-            known={known.filter((k) => k.type === e.type)}
-            storyTitle={storyTitle}
-            storyKept={storyKept}
-            onToggle={() => toggle(e.ref)}
-            onRename={(name) => {
-              const rename = { ...choices.rename };
-              if (name && name !== e.name) rename[e.ref] = name;
-              else delete rename[e.ref];
-              onChange({ ...choices, rename });
-            }}
-            onSame={(id) => {
-              const same = { ...choices.same };
-              if (id) same[e.ref] = id;
-              else delete same[e.ref];
-              onChange({ ...choices, same });
-            }}
-          />
-        ))}
+        {graph.entities
+          .filter((e) => !e.subject)
+          .map((e) => (
+            <EntityRow
+              key={e.ref}
+              entity={e}
+              name={nameOf(e.ref)}
+              gone={gone(e)}
+              left={choices.out.has(e.ref)}
+              same={choices.same[e.ref]}
+              paragraphOut={choices.paragraphOut.has(e.ref)}
+              known={available.filter((k) => k.type === e.type)}
+              noteTitles={noteTitles}
+              requestedName={choices.rename[e.ref]}
+              conflictFor={(name) => renameConflict(e, graph, choices, storyKept, name)}
+              storyTitle={storyTitle}
+              storyKept={storyKept}
+              onToggle={() => toggle(e.ref)}
+              onParagraphToggle={() => toggleParagraph(e.ref)}
+              onRename={(name) => {
+                const rename = { ...choices.rename };
+                const cleaned = cleanRename(name);
+                if (cleaned && cleaned !== e.name) rename[e.ref] = cleaned;
+                else delete rename[e.ref];
+                onChange({ ...choices, rename });
+              }}
+              onSame={(id) => {
+                const same = { ...choices.same };
+                if (id) same[e.ref] = id;
+                else delete same[e.ref];
+                onChange({ ...choices, same });
+              }}
+            />
+          ))}
       </ul>
       {graph.relationships.length > 0 && (
         <div className="stack" style={{ gap: 6 }}>
           <h3 style={{ fontSize: 14 }}>How they relate</h3>
           <ul className="stack gr-list">
             {graph.relationships.map((r) => {
-              const a = byRef.get(r.a)!;
-              const b = byRef.get(r.b)!;
-              const off = gone(a) || gone(b) || !storyKept(r.story);
+              const a = byRef.get(r.a);
+              const b = byRef.get(r.b);
+              if (!a || !b) return null;
+              const storyLeft = r.story !== null && !storyKept(r.story);
+              const fromInterview = r.story === null || (storyLeft && !!a.note);
+              const off = gone(a) || gone(b) || (storyLeft && !a.note);
               const left = choices.out.has(r.ref);
               return (
                 <li key={r.ref} className={`gr-row${off || left ? ' gr-gone' : ''}`}>
@@ -157,7 +164,8 @@ export function GraphReview({
                       {nameOf(r.a)} — {nameOf(r.b)}
                     </span>
                     <span className="small muted">
-                      {r.description} · from “{storyTitle(r.story)}”
+                      {r.description} ·{' '}
+                      {fromInterview ? 'from the interview' : `from “${storyTitle(r.story!)}”`}
                     </span>
                   </span>
                   {!off && (
@@ -186,10 +194,15 @@ function EntityRow({
   gone,
   left,
   same,
+  paragraphOut,
   known,
+  noteTitles,
+  requestedName,
+  conflictFor,
   storyTitle,
   storyKept,
   onToggle,
+  onParagraphToggle,
   onRename,
   onSame,
 }: {
@@ -198,16 +211,35 @@ function EntityRow({
   gone: boolean;
   left: boolean;
   same: string | undefined;
+  paragraphOut: boolean;
   known: EntitySummary[];
+  noteTitles?: ReadonlyMap<string, string>;
+  requestedName?: string;
+  conflictFor: (name: string | undefined) => ProposedEntity | undefined;
   storyTitle: (story: string) => string;
   storyKept: (story: string) => boolean;
   onToggle: () => void;
+  onParagraphToggle: () => void;
   onRename: (name: string) => void;
   onSame: (id: string) => void;
 }) {
   const [renaming, setRenaming] = useState(false);
-  const [draft, setDraft] = useState(name);
+  const [draft, setDraft] = useState(requestedName ?? name);
   const chosen = same ? known.find((k) => k.id === same) : undefined;
+  const noteTitle = chosen?.noteId
+    ? (noteTitles?.get(chosen.noteId) ?? chosen.name)
+    : !same && e.note?.kind === 'existing'
+      ? e.note.title
+      : undefined;
+  const hasDescription = (e.description?.length ?? 0) > 0;
+  const canParagraph = !!e.note && !!noteTitle && hasDescription && !chosen?.subject;
+  const badge = e.note
+    ? noteTitle
+      ? `${hasDescription && !paragraphOut ? 'Adds to' : 'Links to'} “${noteTitle}”`
+      : 'New note'
+    : undefined;
+  const conflict = conflictFor(renaming ? draft : requestedName);
+  const attempted = cleanRename(renaming ? draft : requestedName);
   const status = chosen
     ? `The same as “${chosen.name}”`
     : e.match.kind === 'existing'
@@ -228,9 +260,23 @@ function EntityRow({
         <span className="row" style={{ gap: 6 }}>
           <strong>{name}</strong>
           <span className={`pill ${e.match.kind === 'new' && !chosen ? 'pill-keep' : 'pill-sage'}`}>
-            {TYPE[e.type]} · {status}
+            {TYPE[e.type]} · {badge ?? status}
           </span>
         </span>
+        {hasDescription && (
+          <span className={`small muted${canParagraph && paragraphOut ? ' gr-paragraph-out' : ''}`}>
+            {e.description!.map((s) => s.text).join(' ')}
+          </span>
+        )}
+        {left && e.note?.kind === 'new' && (
+          <span className="small">Its links in the stories become plain words</span>
+        )}
+        {conflict && (
+          <span className="small" role="alert">
+            “{attempted}” is also the name of a kept {TYPE[conflict.type].toLowerCase()}. This
+            rename will be ignored.
+          </span>
+        )}
         {e.mentions.map((m) => (
           <span key={m.story} className={`small${storyKept(m.story) ? '' : ' muted'}`}>
             “{m.words.join('”, “')}” in {storyTitle(m.story)}
@@ -243,7 +289,7 @@ function EntityRow({
             style={{ gap: 6 }}
             onSubmit={(ev) => {
               ev.preventDefault();
-              onRename(draft.trim());
+              onRename(cleanRename(draft));
               setRenaming(false);
             }}
           >
@@ -255,7 +301,7 @@ function EntityRow({
               onChange={(ev) => setDraft(ev.target.value)}
               autoFocus
             />
-            <button type="submit" className="btn btn-sm" disabled={!draft.trim()}>
+            <button type="submit" className="btn btn-sm" disabled={!cleanRename(draft)}>
               Rename
             </button>
           </form>
@@ -263,6 +309,16 @@ function EntityRow({
       </span>
       {!gone || left ? (
         <span className="row" style={{ gap: 4 }}>
+          {!left && canParagraph && (
+            <button
+              type="button"
+              className="btn btn-quiet btn-sm"
+              aria-pressed={paragraphOut}
+              onClick={onParagraphToggle}
+            >
+              {paragraphOut ? 'Keep the paragraph' : 'Leave the paragraph out'}
+            </button>
+          )}
           {!left && e.match.kind !== 'existing' && (
             <>
               <button

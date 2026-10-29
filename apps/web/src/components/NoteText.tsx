@@ -51,19 +51,25 @@ export function Linked({
   notes,
   archiveId,
   mentions,
+  proposed,
 }: {
   text: string;
   notes: NoteSummary[];
   archiveId: string;
   mentions?: Mention[];
+  proposed?: ReadonlyMap<string, boolean>;
 }) {
   const byId = new Map(notes.map((n) => [n.id, n]));
-  const pieces = piecesOf(text, notes);
+  const pieces = piecesOf(text, notes, { proposed });
   return (
     <>
       {(mentions?.length ? withMentions(pieces, mentions) : pieces).map((p, i) =>
         p.kind === 'text' ? (
           p.text
+        ) : p.kind === 'proposed' ? (
+          <span key={i} className="proposed-link" title="A new note, made when you save">
+            {p.label}
+          </span>
         ) : p.kind === 'entity' ? (
           <Link
             key={i}

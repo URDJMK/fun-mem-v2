@@ -440,6 +440,8 @@ export interface StorySource {
 
 export interface ImportOutcome {
   status: 'previewed' | 'saved' | 'needs_confirmation' | 'duplicate';
+  /** 'graph' identifies the button's run, even when an import has no accepted stories. */
+  format?: string;
   memories: ImportMemory[];
   /** the stories could not be written yet; the interview keeps its transcript */
   pending?: { reason: string };
@@ -472,14 +474,23 @@ export interface ProposedEntity {
     | { kind: 'ask'; candidates: Array<{ entityId: string; name: string }> };
   /** `story` is a memory id ("m1"), or a note id when built from saved stories */
   mentions: Array<{ story: string; words: string[]; line: string }>;
+  aliases?: string[];
+  ways?: string[];
+  description?: Array<{ text: string; sources: GraphSource[] }>;
+  note?: { kind: 'new' } | { kind: 'existing'; noteId: string; title: string };
+  subject?: boolean;
 }
+
+/** Interview lines, or a saved story's sentence, cited by a checked description. */
+export type GraphSource =
+  { interviewId: string | null; from: number; to: number } | { noteId: string; sentence: number };
 
 export interface ProposedRelationship {
   ref: string;
   a: string;
   b: string;
   description: string;
-  story: string;
+  story: string | null;
 }
 
 /** the reviewer's choices: refs left out, renamed, or the same as an entity already here */
@@ -487,6 +498,7 @@ export interface GraphPatch {
   leave?: string[];
   rename?: Record<string, string>;
   same?: Record<string, string>;
+  leaveParagraph?: string[];
 }
 
 export interface ImportJob {

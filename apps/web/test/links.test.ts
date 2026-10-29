@@ -32,6 +32,36 @@ describe('a note read as words and links', () => {
     const body = '[[Father]], [[father]], [[Mother]], [[ Uncle Joe ]], ![[abc123]], [[#Heading]]';
     expect(missingTargets(body, NOTES)).toEqual(['Father', 'Uncle Joe']);
   });
+
+  it('shows kept proposed notes before resolving saved notes, and leaves aliases intact', () => {
+    expect(
+      piecesOf('Meet [[MOTHER|Mom]] and [[Café Rosa]].', NOTES, {
+        proposed: new Map([
+          ['mother', true],
+          ['café rosa', true],
+        ]),
+      }),
+    ).toEqual([
+      { kind: 'text', text: 'Meet ' },
+      { kind: 'proposed', label: 'Mom' },
+      { kind: 'text', text: ' and ' },
+      { kind: 'proposed', label: 'Café Rosa' },
+      { kind: 'text', text: '.' },
+    ]);
+  });
+
+  it('reads a left-out proposed target as plain words even when a saved note has that title', () => {
+    expect(
+      piecesOf('Meet [[Mother|Mom]], then [[Mother]].', NOTES, {
+        proposed: new Map([['mother', false]]),
+      }),
+    ).toEqual([{ kind: 'text', text: 'Meet Mom, then Mother.' }]);
+    expect(
+      piecesOf('![[Mother]] and [[#Mother]]', NOTES, {
+        proposed: new Map([['mother', false]]),
+      }),
+    ).toEqual([{ kind: 'text', text: '![[Mother]] and [[#Mother]]' }]);
+  });
 });
 
 describe('withMentions: the names a story mentions open their entity (graph design 6.3)', () => {
