@@ -47,6 +47,8 @@ const storyText = (body: string) =>
 
 /** the button's preview is of this format: how its save is told from an import's */
 export const GRAPH_FORMAT = 'graph';
+/** the button's preview (`req.graph`): only the graph, on stories already saved */
+export const isGraphOnly = (o: { format?: string }): boolean => o.format === GRAPH_FORMAT;
 
 export async function buildGraph(
   deps: AppDeps,

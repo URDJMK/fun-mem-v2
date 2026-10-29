@@ -16,6 +16,7 @@ import type { StoryDraft } from '../stories/write';
 import {
   KEPT,
   MAX_WORDS,
+  NOT_IN_TITLE,
   PRONOUNS,
   SECOND_HAND,
   cites,
@@ -76,8 +77,6 @@ const JUDGE_BATCH = 10;
 const TITLE = 'People, places and things';
 /** why the protagonist's sentences are left out: their note is the profile */
 const NO_DESCRIPTION = 'the person the archive is about has no description';
-/** a note title may not hold these (validateNoteTitle) */
-const NOT_IN_TITLE = /[[\]#^|\p{Cc}]/gu;
 
 /** a sentence with the lines it comes from */
 type Cited = { text: string; cites: Range[] };

@@ -3,6 +3,7 @@ import type { PoolClient } from 'pg';
 import { UUID_RE } from '../membership';
 import { relink } from './marks';
 import { addAliases } from './note-entity';
+import { NOT_IN_TITLE } from './shared';
 import { entityVisibleSql } from './store';
 import type { GraphPatch, GraphProposal, GraphSource, ProposedEntity } from './types';
 
@@ -13,12 +14,18 @@ import type { GraphPatch, GraphProposal, GraphSource, ProposedEntity } from './t
 
 const MAX_NAME = 200;
 
+/** a name the reviewer typed, as a note title may hold it (validateNoteTitle) */
+const cleanName = (raw: string | undefined): string =>
+  (raw ?? '').replace(NOT_IN_TITLE, '').replace(/\s+/g, ' ').trim().slice(0, MAX_NAME);
+
 /**
  * The proposal as the reviewer left it: entities and relationships left out, renamed, or the same
  * as one already here, from the stories kept (`keptStories`). An import's entity has a note to
  * make or add to (`note`, entity design 7.1): it comes from the transcript, so it stays when its
  * stories are left out, and a relationship from a story left out is tied to a note instead. The
  * button's entities (no `note`) go with their last story, and their relationships with theirs.
+ * A new name another kept entity of another type answers to is not taken: the two would be one
+ * title, and one link. Of the same type they are one, and saving joins them.
  */
 export function applyGraphPatch(
   p: GraphProposal,
@@ -27,14 +34,23 @@ export function applyGraphPatch(
 ): GraphProposal {
   const leave = new Set(patch.leave ?? []);
   const noParagraph = new Set(patch.leaveParagraph ?? []);
+  const kept = p.entities.filter(
+    (e) => !leave.has(e.ref) && (!!e.note || e.mentions.some((m) => keptStories.has(m.story))),
+  );
+  /** another kept entity, of another type, answers to this name: as named, or as renamed */
+  const elsewhere = (e: ProposedEntity, name: string) =>
+    kept.some(
+      (o) =>
+        o.ref !== e.ref &&
+        o.type !== e.type &&
+        [o.name, cleanName(patch.rename?.[o.ref])].some((n) => n && matchKey(n) === matchKey(name)),
+    );
   const entities: ProposedEntity[] = [];
-  for (const e of p.entities) {
-    if (leave.has(e.ref)) continue;
+  for (const e of kept) {
     const mentions = e.mentions.filter((m) => keptStories.has(m.story));
-    if (mentions.length === 0 && !e.note) continue;
     const next: ProposedEntity = { ...e, mentions };
-    const name = patch.rename?.[e.ref]?.replace(/\s+/g, ' ').trim().slice(0, MAX_NAME);
-    if (name && matchKey(name) && name !== e.name) {
+    const name = cleanName(patch.rename?.[e.ref]);
+    if (name && matchKey(name) && name !== e.name && !elsewhere(e, name)) {
       next.aliases = [...(e.aliases ?? []), e.name];
       next.name = name;
     }
@@ -55,6 +71,8 @@ export function applyGraphPatch(
     const a = live.get(r.a);
     if (leave.has(r.ref) || !a || !live.has(r.b)) return [];
     if (r.story === null || keptStories.has(r.story)) return [r];
+    // an import's relationship outlives its story: saving ties one with no story to its first
+    // entity's note (entity design 7.2). The button's entities have no note to tie it to.
     return a.note ? [{ ...r, story: null }] : [];
   });
   return { ...p, entities, relationships };
@@ -63,7 +81,8 @@ export function applyGraphPatch(
 /**
  * The stories' links as the reviewer left the proposal: a link to an entity left out becomes the
  * words it shows, and one to an entity renamed follows its new name. The preview links each by
- * its name (stories/workflow.ts); a name an entity still kept answers to stays linked.
+ * its name (stories/workflow.ts), so a link to a name another kept entity still answers to is
+ * left as it is: it may be that one's.
  */
 export function relinkMemories(
   memories: Array<{ body: string }>,
@@ -71,9 +90,15 @@ export function relinkMemories(
   after: GraphProposal,
 ): void {
   const kept = new Map(after.entities.map((e) => [e.ref, e]));
-  const keptNames = new Set(
-    before.entities.filter((e) => kept.has(e.ref)).map((e) => normalizeTitle(e.name)),
-  );
+  const keptBefore = before.entities.filter((e) => kept.has(e.ref));
+  const keptNames = new Set(keptBefore.map((e) => normalizeTitle(e.name)));
+  // the kept entities still called by the name they were linked by, by that name
+  const still = new Map<string, string[]>();
+  for (const e of keptBefore) {
+    const key = normalizeTitle(e.name);
+    if (normalizeTitle(kept.get(e.ref)!.name) === key)
+      still.set(key, [...(still.get(key) ?? []), e.ref]);
+  }
   const unlink = new Set<string>();
   const to = new Map<string, string>();
   for (const e of before.entities) {
@@ -81,7 +106,9 @@ export function relinkMemories(
     const now = kept.get(e.ref);
     if (!now) {
       if (!keptNames.has(key)) unlink.add(key);
-    } else if (now.name !== e.name) to.set(key, now.name);
+    } else if (now.name !== e.name && !(still.get(key) ?? []).some((r) => r !== e.ref)) {
+      to.set(key, now.name);
+    }
   }
   if (unlink.size === 0 && to.size === 0) return;
   for (const m of memories) m.body = relink(m.body, unlink, to);

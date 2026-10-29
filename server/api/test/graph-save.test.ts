@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto';
+import { extractWikilinks } from '@funmem/core';
 import { afterAll, describe, expect, it } from 'vitest';
 import { createApp } from '../src/app';
 import { FIND_SYSTEM } from '../src/graph/find';
@@ -441,6 +442,8 @@ describe('the reviewer’s choices on an import’s people, places and things', 
     };
     const out = applyGraphPatch(p, {}, new Set(['m1']));
     expect(out.entities.map((e) => [e.name, e.mentions.length])).toEqual([['Minho', 0]]);
+    // Tom went with his story, and the relationship with him
+    expect(out.relationships).toEqual([]);
   });
 
   it('leaving out a paragraph keeps the entity and its links', () => {
@@ -528,6 +531,62 @@ describe('the reviewer’s choices on an import’s people, places and things', 
     );
     relinkMemories(memories, before, after);
     expect(memories[0]!.body).toBe('[[Mina Kim|His mother]] met Tom.');
+  });
+
+  it('a new name never breaks a link', () => {
+    const memories = [{ id: 'm1', body: '[[Tom]] met [[Ann]].' }];
+    const before: GraphProposal = {
+      entities: [NOTED('e1', 'Tom', 'm1'), NOTED('e2', 'Ann', 'm1')],
+      relationships: [],
+    };
+    const after = applyGraphPatch(
+      before,
+      { rename: { e1: 'Tom | Lee', e2: 'Ann]] x [[y' } },
+      new Set(['m1']),
+    );
+    expect(after.entities.map((e) => e.name)).toEqual(['Tom Lee', 'Ann x y']);
+    relinkMemories(memories, before, after);
+    expect(memories[0]!.body).toBe('[[Tom Lee|Tom]] met [[Ann x y|Ann]].');
+    expect(extractWikilinks(memories[0]!.body).map((l) => [l.target, l.alias])).toEqual([
+      ['Tom Lee', 'Tom'],
+      ['Ann x y', 'Ann'],
+    ]);
+  });
+
+  it('a new name another kept entity of another type has is not taken', () => {
+    const memories = [{ id: 'm1', body: '[[Tom]] went to [[Busan]].' }];
+    const busan: ProposedEntity = { ...NOTED('e2', 'Busan', 'm1'), type: 'place' };
+    const before: GraphProposal = {
+      entities: [NOTED('e1', 'Tom', 'm1'), busan],
+      relationships: [],
+    };
+    const after = applyGraphPatch(before, { rename: { e1: 'busan' } }, new Set(['m1']));
+    expect(after.entities.map((e) => [e.name, e.aliases])).toEqual([
+      ['Tom', undefined],
+      ['Busan', undefined],
+    ]);
+    relinkMemories(memories, before, after);
+    expect(memories[0]!.body).toBe('[[Tom]] went to [[Busan]].');
+  });
+
+  it('a new name another kept entity of the same type has is taken: they are one', () => {
+    const before: GraphProposal = {
+      entities: [NOTED('e1', 'Tom', 'm1'), NOTED('e2', 'Tommy Lee', 'm1')],
+      relationships: [],
+    };
+    const after = applyGraphPatch(before, { rename: { e1: 'Tommy Lee' } }, new Set(['m1']));
+    expect(after.entities.map((e) => e.name)).toEqual(['Tommy Lee', 'Tommy Lee']);
+  });
+
+  it('relinkMemories leaves a link a kept entity still answers to when another is renamed', () => {
+    const memories = [{ id: 'm1', body: 'She met [[Tom]].' }];
+    const before: GraphProposal = {
+      entities: [NOTED('e1', 'Tom', 'm1'), NOTED('e2', 'Tom', 'm1')],
+      relationships: [],
+    };
+    const after = applyGraphPatch(before, { rename: { e1: 'Tommy' } }, new Set(['m1']));
+    relinkMemories(memories, before, after);
+    expect(memories[0]!.body).toBe('She met [[Tom]].');
   });
 
   it('relinkMemories keeps a link one kept entity still answers to', () => {

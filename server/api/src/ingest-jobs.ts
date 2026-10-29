@@ -42,7 +42,7 @@ import { writeStories } from './stories/workflow';
 import { profilesFor } from './stories/profile-store';
 import { ensureGraph, entityLookup, knownFor } from './graph/store';
 import { applyGraphPatch, relinkMemories, storiesOf } from './graph/save';
-import { buildGraph, GRAPH_FORMAT } from './graph/build';
+import { buildGraph, isGraphOnly } from './graph/build';
 import type { GraphPatch } from './graph/types';
 
 /**
@@ -1108,7 +1108,7 @@ export class IngestJobs {
     try {
       // the button's run (`req.graph`): only the graph, on stories already saved. An import that
       // kept no stories is not one, though it carries a graph: it has nothing to save.
-      if (held.outcome.format === GRAPH_FORMAT && held.outcome.graph) {
+      if (isGraphOnly(held.outcome) && held.outcome.graph) {
         const all = held.outcome.graph;
         const graph = applyGraphPatch(all, graphPatch, new Set(storiesOf(all)));
         if (graph.entities.length === 0)

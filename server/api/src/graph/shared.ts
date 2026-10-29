@@ -20,6 +20,8 @@ export const MAX_WORDS = 4;
 export const NAME_FILLER = new Set(
   'the a an of from in at on and s his her their my our de la le van von'.split(' '),
 );
+/** a note title may not hold these (validateNoteTitle) */
+export const NOT_IN_TITLE = /[[\]#^|\p{Cc}]/gu;
 export const PRONOUNS = new Set(
   'he she they him her them his hers their i me my we us our you'.split(' '),
 );
