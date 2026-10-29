@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { ChatModel } from '../src/nim';
 import { linesOf } from '../src/stories/lines';
-import { parseDraft, writeStory } from '../src/stories/write';
+import { parseDraft, showDraft, writeStory } from '../src/stories/write';
 
 /** The write step: one story, in the third person, every sentence citing its lines. */
 const say = (speaker: string, text: string) => ({
@@ -117,8 +117,54 @@ describe('parseDraft names', () => {
     });
     if (typeof d === 'string') throw new Error(d);
     expect(d.sentences[0]!.names).toEqual(many.slice(0, 12));
-    expect(d.sentences[1]!.names).toBeUndefined();
-    expect(d.sentences[2]!.names).toBeUndefined();
+    expect(d.sentences[1]).not.toHaveProperty('names');
+    expect(d.sentences[2]).not.toHaveProperty('names');
+  });
+
+  it('leaves out the key when no mark is usable', () => {
+    const d = parseDraft({
+      title: 'T',
+      sentences: [{ text: 'A.', cites: ['L2'], names: [{ e: 'e4', words: '   ' }, 7, null] }],
+    });
+    if (typeof d === 'string') throw new Error(d);
+    expect(d.sentences[0]).not.toHaveProperty('names');
+  });
+
+  it('trims the id and the words, drops words that are only whitespace, and joins inner whitespace', () => {
+    const d = parseDraft({
+      title: 'T',
+      sentences: [
+        {
+          text: 'His mother made soup.',
+          cites: ['L4'],
+          names: [
+            { e: ' e4 ', words: ' His mother ' },
+            { e: 'e5', words: ' \n\t ' },
+            { e: 'e6', words: 'His   old\n mother' },
+          ],
+        },
+      ],
+    });
+    if (typeof d === 'string') throw new Error(d);
+    expect(d.sentences[0]!.names).toEqual([
+      { e: 'e4', words: 'His mother' },
+      { e: 'e6', words: 'His old mother' },
+    ]);
+  });
+});
+
+describe('showDraft', () => {
+  it('shows the sentences without the names they mark (the writer gives them again)', () => {
+    const d = parseDraft({
+      title: 'Seaweed soup',
+      occurred: null,
+      until: null,
+      sentences: [
+        { text: 'His mother made soup.', cites: ['L4'], names: [{ e: 'e4', words: 'His mother' }] },
+      ],
+    });
+    if (typeof d === 'string') throw new Error(d);
+    expect(showDraft(d)).toBe('Title: Seaweed soup\nOccurred: none\n0. His mother made soup. [L4]');
   });
 });
 

@@ -65,8 +65,9 @@ How it reads:
 - "Who this is about" is what the family entered about the narrator. A sentence may use a fact
   from it, citing "P".
 - People, places and things: when a list of them is given, call each one as the list does (its
-  name, or one of the ways after the colon), and for each sentence give "names": the ones it
-  names and the exact words it uses, like [{"e": "e4", "words": "His mother"}]. Not the narrator.
+  name, or one of the ways after the colon). For each sentence give "names": the ones from the
+  list it names, by their id, with the words exactly as they appear in that sentence's text, like
+  [{"e": "e4", "words": "His mother"}]; [] when it names none. Do not list the narrator.
 
 Every sentence lists the lines it comes from in "cites" (like ["L3", "L7-L9"]). A summarizing
 sentence may cite a wider range. Set "paragraph": true on a sentence that starts a new paragraph.
@@ -86,7 +87,7 @@ function parseNames(v: unknown): Sentence['names'] {
   for (const n of v) {
     if (!isObj(n) || typeof n.e !== 'string' || typeof n.words !== 'string') continue;
     const e = n.e.trim();
-    const words = n.words.trim();
+    const words = n.words.replace(/\s+/g, ' ').trim();
     if (e && words) names.push({ e, words });
     if (names.length === MAX_NAMES) break;
   }
@@ -157,7 +158,7 @@ export async function writeStory(
     signal?: AbortSignal;
     /** "Who this is about" (stories/profile.ts), or '' */
     profile?: string;
-    /** the people, places and things of the interview, one per line (graph/find.ts), or '' */
+    /** the interview's people, places and things, one per line as `ref  Name (type): ways`, or '' */
     cast?: string;
   },
 ): Promise<{ draft: StoryDraft; calls: number }> {
