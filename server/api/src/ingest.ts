@@ -127,8 +127,11 @@ function readGraphPatch(raw: unknown): GraphPatch | string {
   if (g.leave !== undefined && !strings(g.leave)) return '"graph.leave" must be a list of refs';
   if (g.rename !== undefined && !map(g.rename)) return '"graph.rename" must map refs to names';
   if (g.same !== undefined && !map(g.same)) return '"graph.same" must map refs to entity ids';
+  if (g.leaveParagraph !== undefined && !strings(g.leaveParagraph))
+    return '"graph.leaveParagraph" must be a list of refs';
   return {
     ...(g.leave ? { leave: (g.leave as string[]).slice(0, 1000) } : {}),
+    ...(g.leaveParagraph ? { leaveParagraph: (g.leaveParagraph as string[]).slice(0, 200) } : {}),
     ...(g.rename ? { rename: g.rename as Record<string, string> } : {}),
     ...(g.same ? { same: g.same as Record<string, string> } : {}),
   };

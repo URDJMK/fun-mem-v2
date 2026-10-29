@@ -41,8 +41,8 @@ import {
 import { writeStories } from './stories/workflow';
 import { profilesFor } from './stories/profile-store';
 import { ensureGraph, entityLookup, knownFor } from './graph/store';
-import { applyGraphPatch, storiesOf } from './graph/save';
-import { buildGraph } from './graph/build';
+import { applyGraphPatch, relinkMemories, storiesOf } from './graph/save';
+import { buildGraph, GRAPH_FORMAT } from './graph/build';
 import type { GraphPatch } from './graph/types';
 
 /**
@@ -1106,8 +1106,9 @@ export class IngestJobs {
     }
     let saved: IngestOutcome | null = null;
     try {
-      // the button's run: only the graph, on stories already saved
-      if (held.outcome.memories.length === 0 && held.outcome.graph) {
+      // the button's run (`req.graph`): only the graph, on stories already saved. An import that
+      // kept no stories is not one, though it carries a graph: it has nothing to save.
+      if (held.outcome.format === GRAPH_FORMAT && held.outcome.graph) {
         const all = held.outcome.graph;
         const graph = applyGraphPatch(all, graphPatch, new Set(storiesOf(all)));
         if (graph.entities.length === 0)
@@ -1121,11 +1122,10 @@ export class IngestJobs {
         throw new SaveError('nothing is selected to save', 400, { reason: 'nothing_selected' });
       // the people, places and things as the reviewer left them, from the stories kept
       if (edited.graph) {
-        edited.graph = applyGraphPatch(
-          edited.graph,
-          graphPatch,
-          new Set(edited.memories.map((m) => m.id)),
-        );
+        const all = edited.graph;
+        edited.graph = applyGraphPatch(all, graphPatch, new Set(edited.memories.map((m) => m.id)));
+        // and the stories' links with it
+        relinkMemories(edited.memories, all, edited.graph);
       }
       // a memory left out takes the markers that named it with it
       const markers = held.markers ?? [];

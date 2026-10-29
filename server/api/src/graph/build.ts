@@ -45,6 +45,9 @@ const storyText = (body: string) =>
       .join(' '),
   );
 
+/** the button's preview is of this format: how its save is told from an import's */
+export const GRAPH_FORMAT = 'graph';
+
 export async function buildGraph(
   deps: AppDeps,
   archiveId: string,
@@ -291,7 +294,7 @@ export async function buildGraph(
   all.stats!.calls = calls;
   if (pending) all.pending = { reason: pending };
   return {
-    format: 'graph',
+    format: GRAPH_FORMAT,
     providerVersion: deps.chat?.id ?? 'no-model',
     interviewee: '',
     interviewees: [],

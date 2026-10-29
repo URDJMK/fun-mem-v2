@@ -2,9 +2,10 @@ import { randomUUID } from 'node:crypto';
 import { afterAll, describe, expect, it } from 'vitest';
 import { createApp } from '../src/app';
 import { FIND_SYSTEM } from '../src/graph/find';
-import { applyGraphPatch, storiesOf } from '../src/graph/save';
-import type { GraphProposal } from '../src/graph/types';
+import { applyGraphPatch, relinkMemories, storiesOf } from '../src/graph/save';
+import type { GraphProposal, ProposedEntity } from '../src/graph/types';
 import type { ChatModel } from '../src/nim';
+import { JUDGE_SYSTEM } from '../src/stories/judge';
 import { PLAN_SYSTEM } from '../src/stories/plan';
 import { WRITE_SYSTEM } from '../src/stories/write';
 import { testContext, type RealSession } from './helpers';
@@ -84,7 +85,7 @@ function foundFor(noahId: string) {
         [said('She always made seaweed soup.', 'L4')],
       ),
       entity('e5', 'Korea', 'place', []),
-      entity('e6', 'Busan', 'place', []),
+      entity('e6', 'Busan', 'place', [], [said('Noah went to Busan.', 'L4')]),
     ],
     relationships: [
       { a: 'e2', b: 'e1', description: 'Sarah — Noah’s friend from school', cites: ['L2'] },
@@ -118,6 +119,21 @@ const chat: ChatModel = {
   },
 };
 
+/** a judge that finds every sentence made up: no story is kept, but who is in it is still found */
+const doubter: ChatModel = {
+  id: 'scripted-graph-save-doubter',
+  complete: async (system, user, opts) => {
+    if (!system.startsWith(JUDGE_SYSTEM)) return chat.complete(system, user, opts);
+    const n = (user.match(/^\d+\. /gm) ?? []).length;
+    const rulings = Array.from({ length: n }, (_, i) => ({
+      sentence: i,
+      verdict: 'made_up',
+      reason: 'not said',
+    }));
+    return JSON.stringify({ result: { rulings } });
+  },
+};
+
 interface Preview {
   jobId: string;
   memories: Array<{ id: string; title: string }>;
@@ -125,9 +141,9 @@ interface Preview {
   graph: GraphProposal;
 }
 
-async function setup(label: string) {
+async function setup(label: string, model: ChatModel = chat) {
   const s = await ctx.realSession(`graph-save-${label}-${RUN}@test.local`);
-  const app = createApp({ ...ctx.deps, importMode: 'stories', chat });
+  const app = createApp({ ...ctx.deps, importMode: 'stories', chat: model });
   const call = (method: string, path: string, body?: unknown, who: RealSession = s) =>
     app.request(path, {
       method,
@@ -180,7 +196,16 @@ async function setup(label: string) {
         [archive],
       )
     ).rows as Array<{ a: string; b: string; description: string; story: string }>;
-  return { s, app, call, archive, preview, entities, relationships };
+  const body = async (title: string) =>
+    (
+      (
+        await ctx.pool.query(`select body from public.notes where archive_id = $1 and title = $2`, [
+          archive,
+          title,
+        ])
+      ).rows[0] as { body: string }
+    ).body;
+  return { s, app, call, archive, preview, entities, relationships, body };
 }
 
 const refOf = (g: GraphProposal, name: string) => g.entities.find((e) => e.name === name)!.ref;
@@ -198,20 +223,31 @@ describe('an import’s graph', () => {
   });
 
   it('is saved as the reviewer chose: left out, renamed, the same as one already here', async () => {
-    const { call, archive, preview, entities, relationships } = await setup('save');
+    const { call, archive, preview, entities, relationships, body } = await setup('save');
     // someone the project already knows, whom the AI did not connect
     await call('POST', `/v1/archives/${archive}/notes`, { title: 'Tommy Lee', type: 'person' });
     const p = await preview();
     const tommy = (await entities()).find((e) => e.name === 'Tommy Lee')!;
+    const busan = p.graph.entities.find((e) => e.name === 'Busan')!;
+    expect(busan.note).toMatchObject({ kind: 'existing', title: 'Busan' });
+    expect(busan.description).toHaveLength(1);
     const res = await call('POST', `/v1/archives/${archive}/ingest/${p.jobId}/save`, {
       graph: {
         leave: [refOf(p.graph, 'Korea')],
         rename: { [refOf(p.graph, 'Noah Kim’s mother')]: 'Mina Kim' },
         same: { [refOf(p.graph, 'Tom')]: tommy.id },
+        leaveParagraph: [busan.ref],
       },
     });
     expect(res.status).toBe(200);
-    const saved = (await res.json()) as { runId: string };
+    const saved = (await res.json()) as { runId: string; graph: GraphProposal };
+    // the paragraph for Busan's note is left out; Busan, and the link to it, stay
+    expect(saved.graph.entities.find((e) => e.name === 'Busan')!.description).toEqual([]);
+    // the story's links follow: a name left out is plain words, a renamed one its new name
+    expect(await body(SOUP.title)).toContain(
+      'Every birthday [[Mina Kim|his mother]] made seaweed soup, the way they did in Korea.',
+    );
+    expect(await body(SOUP.title)).toContain('They went to [[Busan]].');
     const got = await entities();
     expect(got.map((e) => e.name)).toEqual(
       expect.arrayContaining(['Busan', 'Mina Kim', `Noah Kim save ${RUN}`, 'Sarah', 'Tommy Lee']),
@@ -258,21 +294,57 @@ describe('an import’s graph', () => {
     ]);
   });
 
-  it('a story left out takes with it what came only from it', async () => {
+  it('a story left out takes its mentions with it; who it names stays', async () => {
     const { call, archive, preview, entities, relationships } = await setup('skip');
     const p = await preview();
     const res = await call('POST', `/v1/archives/${archive}/ingest/${p.jobId}/save`, {
       memories: [{ index: 1, skip: true }],
     });
     expect(res.status).toBe(200);
-    const names = (await entities()).map((e) => e.name);
-    expect(names).toContain('Sarah');
-    expect(names).not.toContain('Noah Kim’s mother');
-    expect(names).not.toContain('Korea');
+    // they come from the transcript, not from the story
+    const got = await entities();
+    expect(got.map((e) => e.name)).toEqual(
+      expect.arrayContaining(['Sarah', 'Noah Kim’s mother', 'Korea']),
+    );
+    const mentions = await ctx.pool.query(
+      `select count(*)::int as n from public.graph_mentions m
+         join public.graph_entities e on e.id = m.entity_id
+        where e.archive_id = $1 and e.name in ('Noah Kim’s mother', 'Korea')`,
+      [archive],
+    );
+    expect(mentions.rows[0]).toEqual({ n: 0 });
+    // the relationship the story left out told has no story now: it waits for its note
     expect((await relationships()).map((r) => r.story)).toEqual([
       'The new boy at school',
       'The new boy at school',
     ]);
+  });
+
+  it('an import that kept no stories is refused, never saved as the graph alone', async () => {
+    const { call, archive, preview, entities } = await setup('none', doubter);
+    const p = await preview();
+    expect(p.memories).toEqual([]);
+    expect(p.graph.entities.map((e) => e.name)).toContain('Sarah');
+    const before = await entities();
+    const res = await call('POST', `/v1/archives/${archive}/ingest/${p.jobId}/save`, {});
+    expect(res.status).toBe(400);
+    expect(await res.json()).toMatchObject({ code: 'cannot_save', reason: 'nothing_selected' });
+    expect(await entities()).toEqual(before);
+    const runs = await ctx.pool.query(
+      `select count(*)::int as n from public.ingest_runs where archive_id = $1`,
+      [archive],
+    );
+    expect(runs.rows[0]).toEqual({ n: 0 });
+  });
+
+  it('a choice it cannot read is refused', async () => {
+    const { call, archive, preview } = await setup('shape');
+    const p = await preview();
+    const res = await call('POST', `/v1/archives/${archive}/ingest/${p.jobId}/save`, {
+      graph: { leaveParagraph: 'e6' },
+    });
+    expect(res.status).toBe(400);
+    expect(await res.json()).toMatchObject({ code: 'bad_request' });
   });
 
   it('a new name made since the preview is joined, not made twice', async () => {
@@ -346,5 +418,111 @@ describe('a relationship no story tells', () => {
     const kept = applyGraphPatch(p, {}, new Set(['m1']));
     expect(kept.relationships.map((r) => [r.ref, r.story])).toEqual([['r1', null]]);
     expect(storiesOf(kept)).toEqual(['m1']);
+  });
+});
+
+/** an entity as an import proposes it: with the note it gets */
+const NOTED = (ref: string, name: string, story?: string): ProposedEntity => ({
+  ref,
+  name,
+  type: 'person',
+  match: { kind: 'new' },
+  mentions: story ? [{ story, words: [name], line: `${name}.`, sources: [] }] : [],
+  ways: [],
+  description: [{ text: `${name} came.`, sources: [] }],
+  note: { kind: 'new' },
+});
+
+describe('the reviewer’s choices on an import’s people, places and things', () => {
+  it('a note stays when its only story is left out; the button’s entities do not', () => {
+    const p: GraphProposal = {
+      entities: [NOTED('e1', 'Minho', 'm2'), { ...NOTED('e2', 'Tom', 'm2'), note: undefined }],
+      relationships: [{ ref: 'r1', a: 'e1', b: 'e2', description: 'x', story: 'm2', sources: [] }],
+    };
+    const out = applyGraphPatch(p, {}, new Set(['m1']));
+    expect(out.entities.map((e) => [e.name, e.mentions.length])).toEqual([['Minho', 0]]);
+  });
+
+  it('leaving out a paragraph keeps the entity and its links', () => {
+    const e = {
+      ...NOTED('e1', 'Mina', 'm1'),
+      note: { kind: 'existing' as const, noteId: 'n', title: 'Mina' },
+    };
+    const out = applyGraphPatch(
+      { entities: [e], relationships: [] },
+      { leaveParagraph: ['e1'] },
+      new Set(['m1']),
+    );
+    expect(out.entities[0]!.description).toEqual([]);
+    expect(out.entities[0]!.mentions).toHaveLength(1);
+  });
+
+  it('a new note’s text is not a paragraph: leaving one out keeps it', () => {
+    const out = applyGraphPatch(
+      { entities: [NOTED('e1', 'Mina', 'm1')], relationships: [] },
+      { leaveParagraph: ['e1'] },
+      new Set(['m1']),
+    );
+    expect(out.entities[0]!.description).toEqual([{ text: 'Mina came.', sources: [] }]);
+  });
+
+  it('the same as one already here: its note is looked up again at save', () => {
+    const tom = '00000000-0000-4000-8000-000000000001';
+    const e = {
+      ...NOTED('e1', 'Tom', 'm1'),
+      note: { kind: 'existing' as const, noteId: 'n', title: 'Tom' },
+    };
+    const button = { ...NOTED('e2', 'Sarah', 'm1'), note: undefined };
+    const out = applyGraphPatch(
+      { entities: [e, button], relationships: [] },
+      { same: { e1: tom, e2: tom } },
+      new Set(['m1']),
+    );
+    expect(out.entities.map((x) => [x.match, x.note])).toEqual([
+      [{ kind: 'existing', entityId: tom, name: '' }, { kind: 'new' }],
+      [{ kind: 'existing', entityId: tom, name: '' }, undefined],
+    ]);
+  });
+
+  it('a relationship from a story left out is tied to a note instead', () => {
+    const p: GraphProposal = {
+      entities: [NOTED('e1', 'Minho'), NOTED('e2', 'Busan')],
+      relationships: [{ ref: 'r1', a: 'e1', b: 'e2', description: 'x', story: 'm2', sources: [] }],
+    };
+    expect(applyGraphPatch(p, {}, new Set(['m1'])).relationships[0]!.story).toBeNull();
+  });
+
+  it('a relationship the button found in a story left out goes, as before', () => {
+    const old = (ref: string, name: string) => ({ ...NOTED(ref, name, 'm1'), note: undefined });
+    const p: GraphProposal = {
+      entities: [old('e1', 'Minho'), old('e2', 'Busan')],
+      relationships: [{ ref: 'r1', a: 'e1', b: 'e2', description: 'x', story: 'm2', sources: [] }],
+    };
+    expect(applyGraphPatch(p, {}, new Set(['m1'])).relationships).toEqual([]);
+  });
+
+  it('relinkMemories unlinks what was left out and follows renames', () => {
+    const memories = [{ id: 'm1', body: "[[Noah Kim's mother|His mother]] met [[Tom]]." }];
+    const before: GraphProposal = {
+      entities: [NOTED('e1', "Noah Kim's mother", 'm1'), NOTED('e2', 'Tom', 'm1')],
+      relationships: [],
+    };
+    const after = applyGraphPatch(
+      before,
+      { leave: ['e2'], rename: { e1: 'Mina Kim' } },
+      new Set(['m1']),
+    );
+    relinkMemories(memories, before, after);
+    expect(memories[0]!.body).toBe('[[Mina Kim|His mother]] met Tom.');
+  });
+
+  it('relinkMemories keeps a link one kept entity still answers to', () => {
+    const memories = [{ id: 'm1', body: 'She met [[Tom]] and [[Busan|the city]].' }];
+    const before: GraphProposal = {
+      entities: [NOTED('e1', 'Tom', 'm1'), NOTED('e2', 'Tom', 'm1'), NOTED('e3', 'Busan', 'm1')],
+      relationships: [],
+    };
+    relinkMemories(memories, before, applyGraphPatch(before, { leave: ['e2'] }, new Set(['m1'])));
+    expect(memories[0]!.body).toBe('She met [[Tom]] and [[Busan|the city]].');
   });
 });

@@ -1,6 +1,7 @@
-import { matchKey } from '@funmem/core';
+import { matchKey, normalizeTitle } from '@funmem/core';
 import type { PoolClient } from 'pg';
 import { UUID_RE } from '../membership';
+import { relink } from './marks';
 import { addAliases } from './note-entity';
 import { entityVisibleSql } from './store';
 import type { GraphPatch, GraphProposal, GraphSource, ProposedEntity } from './types';
@@ -12,18 +13,25 @@ import type { GraphPatch, GraphProposal, GraphSource, ProposedEntity } from './t
 
 const MAX_NAME = 200;
 
-/** The proposal as the reviewer left it: entities and relationships left out, renamed, or the same as one already here. */
+/**
+ * The proposal as the reviewer left it: entities and relationships left out, renamed, or the same
+ * as one already here, from the stories kept (`keptStories`). An import's entity has a note to
+ * make or add to (`note`, entity design 7.1): it comes from the transcript, so it stays when its
+ * stories are left out, and a relationship from a story left out is tied to a note instead. The
+ * button's entities (no `note`) go with their last story, and their relationships with theirs.
+ */
 export function applyGraphPatch(
   p: GraphProposal,
   patch: GraphPatch,
   keptStories: ReadonlySet<string>,
 ): GraphProposal {
   const leave = new Set(patch.leave ?? []);
+  const noParagraph = new Set(patch.leaveParagraph ?? []);
   const entities: ProposedEntity[] = [];
   for (const e of p.entities) {
     if (leave.has(e.ref)) continue;
     const mentions = e.mentions.filter((m) => keptStories.has(m.story));
-    if (mentions.length === 0) continue;
+    if (mentions.length === 0 && !e.note) continue;
     const next: ProposedEntity = { ...e, mentions };
     const name = patch.rename?.[e.ref]?.replace(/\s+/g, ' ').trim().slice(0, MAX_NAME);
     if (name && matchKey(name) && name !== e.name) {
@@ -31,18 +39,49 @@ export function applyGraphPatch(
       next.name = name;
     }
     const same = patch.same?.[e.ref];
-    if (same && UUID_RE.test(same)) next.match = { kind: 'existing', entityId: same, name: '' };
+    if (same && UUID_RE.test(same)) {
+      next.match = { kind: 'existing', entityId: same, name: '' };
+      // the note that entity has is looked up at save (notePlan)
+      if (e.note) next.note = { kind: 'new' };
+    }
+    if (noParagraph.has(e.ref) && next.note?.kind === 'existing') next.description = [];
     entities.push(next);
   }
-  const live = new Set(entities.map((e) => e.ref));
-  const relationships = p.relationships.filter(
-    (r) =>
-      !leave.has(r.ref) &&
-      live.has(r.a) &&
-      live.has(r.b) &&
-      (r.story === null || keptStories.has(r.story)),
-  );
+  const live = new Map(entities.map((e) => [e.ref, e]));
+  const relationships = p.relationships.flatMap((r) => {
+    const a = live.get(r.a);
+    if (leave.has(r.ref) || !a || !live.has(r.b)) return [];
+    if (r.story === null || keptStories.has(r.story)) return [r];
+    return a.note ? [{ ...r, story: null }] : [];
+  });
   return { ...p, entities, relationships };
+}
+
+/**
+ * The stories' links as the reviewer left the proposal: a link to an entity left out becomes the
+ * words it shows, and one to an entity renamed follows its new name. The preview links each by
+ * its name (stories/workflow.ts); a name an entity still kept answers to stays linked.
+ */
+export function relinkMemories(
+  memories: Array<{ body: string }>,
+  before: GraphProposal,
+  after: GraphProposal,
+): void {
+  const kept = new Map(after.entities.map((e) => [e.ref, e]));
+  const keptNames = new Set(
+    before.entities.filter((e) => kept.has(e.ref)).map((e) => normalizeTitle(e.name)),
+  );
+  const unlink = new Set<string>();
+  const to = new Map<string, string>();
+  for (const e of before.entities) {
+    const key = normalizeTitle(e.name);
+    const now = kept.get(e.ref);
+    if (!now) {
+      if (!keptNames.has(key)) unlink.add(key);
+    } else if (now.name !== e.name) to.set(key, now.name);
+  }
+  if (unlink.size === 0 && to.size === 0) return;
+  for (const m of memories) m.body = relink(m.body, unlink, to);
 }
 
 /** the stories a proposal's mentions and relationships name, each once */
