@@ -1,12 +1,12 @@
 import { matchKey } from '@funmem/core';
 import type { ChatModel } from '../nim';
-import { checkDraft, type ProblemKind } from '../stories/check';
+import { checkDraft } from '../stories/check';
 import { FAILING, judgeStory } from '../stories/judge';
 import { renderLines, type Line, type Range } from '../stories/lines';
 import { runWithTools } from '../stories/tools';
 import {
+  KEPT,
   MAX_WORDS,
-  NAME_FILLER,
   PRONOUNS,
   SECOND_HAND,
   cites,
@@ -14,6 +14,8 @@ import {
   findIn,
   isObj,
   lower,
+  nameHeld,
+  nameWords,
   resolveMatch,
   str,
   uncovered,
@@ -74,13 +76,6 @@ const TOOL_CALLS = 12;
 const MAX_ENTITIES = 60;
 const MAX_RELATIONSHIPS = 100;
 const THINGS_PER_STORY = 3;
-const KEPT: readonly ProblemKind[] = [
-  'no_citation',
-  'bad_citation',
-  'not_in_source',
-  'quote',
-  'outside_story',
-];
 
 interface RawMention {
   story: string;
@@ -280,31 +275,23 @@ export async function graphStep(o: {
   }
 
   // a name must come from the lines: every word of it is in them, the story, or a known name
-  const knownWords = new Set(
-    [...o.names, ...o.known.flatMap((k) => [k.name, ...k.aliases])].flatMap((n) =>
-      lower(n).split(/[^\p{L}\p{N}]+/u),
-    ),
-  );
-  const nameHeld = (e: RawEntity): boolean => {
-    const where = lower(
+  const knownWords = nameWords([...o.names, ...o.known.flatMap((k) => [k.name, ...k.aliases])]);
+  const held = (e: RawEntity): boolean =>
+    nameHeld(
+      e.name,
       [
         ...e.mentions.map((m) => sRef.get(m.story)!.text),
         ...o.lines
           .filter((l) => e.mentions.some((m) => m.cites.some((r) => l.n >= r.from && l.n <= r.to)))
           .map((l) => l.text),
       ].join(' '),
+      knownWords,
     );
-    return lower(e.name)
-      .replace(/['’]s\b/g, ' ')
-      .split(/[^\p{L}\p{N}]+/u)
-      .filter((w) => w && !NAME_FILLER.has(w))
-      .every((w) => knownWords.has(w) || where.includes(w));
-  };
 
   // 1. the words each mention uses must be in its story; things capped per story
   const things = new Map<string, number>();
   const entities = raw.entities.filter((e) => {
-    if (!nameHeld(e)) {
+    if (!held(e)) {
       leave(e.name, 'a word of the name is not in the lines');
       return false;
     }

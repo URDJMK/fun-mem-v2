@@ -1,13 +1,15 @@
+/**
+ * The pieces both steps that name people, places and things use: the Graph step (graph/step.ts,
+ * reads stories already written) and the Entity step (graph/find.ts, reads the transcript before
+ * any story is written). The read-only tools, the name rules, the checks kept, the match
+ * resolution.
+ */
 import { matchKey } from '@funmem/core';
+import type { ProblemKind } from '../stories/check';
 import { parseCite, type Range } from '../stories/lines';
 import type { Tool } from '../stories/tools';
 import type { EntityLookup, KnownEntity } from './store';
 import type { EntityMatch } from './types';
-
-/**
- * The pieces both steps that name entities use: the Graph step (reads written stories) and the
- * Entity step (reads the transcript). The tools, the name rules, the match resolution.
- */
 
 /** "knew Tom only from Sarah's stories", "known to Noah through Sarah", "heard of him from her" */
 export const SECOND_HAND =
@@ -31,6 +33,35 @@ export const lower = (s: string) => s.normalize('NFC').toLowerCase();
 export const cites = (v: unknown): Range[] =>
   (Array.isArray(v) ? v : []).map((c) => parseCite(c)).filter((r): r is Range => r !== null);
 
+/**
+ * The code checks that fail a line the AI wrote about an entity: a citation missing, wrong or
+ * outside the lines it may cite, or a name, number or quote the cited lines do not hold.
+ */
+export const KEPT: readonly ProblemKind[] = [
+  'no_citation',
+  'bad_citation',
+  'not_in_source',
+  'quote',
+  'outside_story',
+];
+
+/** the words of names, which a name may hold without the lines giving them (`nameHeld`) */
+export const nameWords = (names: readonly string[]): Set<string> =>
+  new Set(names.flatMap((n) => lower(n).split(/[^\p{L}\p{N}]+/u)));
+
+/**
+ * The name rule: a name comes from the lines. Every word of it but filler is in `where` or among
+ * the `known` words; a surname the AI added ("Sarah Lee" for a "Sarah") fails it.
+ */
+export function nameHeld(name: string, where: string, known: ReadonlySet<string>): boolean {
+  const text = lower(where);
+  return lower(name)
+    .replace(/['’]s\b/g, ' ')
+    .split(/[^\p{L}\p{N}]+/u)
+    .filter((w) => w && !NAME_FILLER.has(w))
+    .every((w) => known.has(w) || text.includes(w));
+}
+
 /** capitalized words that are not names: they open a sentence or stand for anyone */
 export const NOT_A_NAME = new Set(
   `i a an the and but or so if then when where while after before he she they we you it his her
@@ -42,8 +73,8 @@ export const NOT_A_NAME = new Set(
 );
 
 /**
- * Names in the stories that none of `covered` holds: capitalized words not opening a sentence
- * ("in Korea", "a dance in Xenia"), at most 10. What the Graph step is asked about once more.
+ * Names in `texts` that none of `covered` holds: capitalized words not opening a sentence ("in
+ * Korea", "a dance in Xenia"), at most 10. What the AI is asked about once more (the recall pass).
  */
 export function uncovered(texts: readonly string[], covered: readonly string[]): string[] {
   const have = new Set(covered.flatMap((c) => matchKey(c).split(' ')).filter(Boolean));
@@ -164,7 +195,10 @@ export function entityTools(lookup: EntityLookup, offered: Map<string, string>):
   ];
 }
 
-/** the AI's "match" made safe: an id it was shown, or a project entity of the same name */
+/**
+ * The AI's "match" made safe: an id it was shown, or a project entity of the same name. The ids
+ * its lookups find are added to `offered`, so a later entity may match them.
+ */
 export async function resolveMatch(
   e: { name: string; match: string; candidates: string[] },
   o: {
