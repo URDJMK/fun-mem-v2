@@ -28,7 +28,7 @@ After an import, a story names "his mother", "Korea" and "seaweed soup", but:
 
 ## 3. The import, step by step
 
-`server/api/src/stories/workflow.ts`, with the same deadline (12 minutes) and call budget (200):
+`server/api/src/stories/workflow.ts`, within the import's deadline (12 minutes) and call budget (200). Step 2 has its own slice of them, at most a third of the deadline (and never more than 4 minutes) and 60 calls, so it can never use up what the stories need:
 
 1. **Prepare** (as today): who is telling, numbered lines, parts of at most ~200k tokens.
 2. **Find everything** (new, 4): for each part, the people, places and things, their descriptions, the ways they are called, and the relationships told.
@@ -38,7 +38,7 @@ After an import, a story names "his mother", "Korea" and "seaweed soup", but:
 6. **Check, judge and fix** each story (as today: the checks and the judge read the sentences without links).
 7. **Review** (7): the stories, and a group "People, places and things".
 
-If step 2 fails (no AI, out of time, an answer that cannot be read), steps 4–6 run as today without a list, the stories have no links, and the result says `entities.pending` with the reason. The button (8) finds them later: it takes exactly the stories without links.
+If step 2 fails (no AI, out of its slice of time or calls, an answer that cannot be read), steps 4–6 run as today without a list, the stories have no links, and the result says `graph.pending` with the reason. A cancel by the person still ends the import. The button (8) finds them later: it takes exactly the stories without links.
 
 ## 4. Finding everything (the Entity step)
 
@@ -89,7 +89,7 @@ If step 2 fails (no AI, out of time, an answer that cannot be read), steps 4–6
 
 ### 4.4 Limits
 
-Per import: at most 60 entities, of which at most 20 things; at most 100 relationships; at most 4 sentences per description; at most 8 ways per entity. One Entity-step call per part (plus its tool calls and the recall call), and one judge call per ten or so entities, within the 200 calls.
+Per import: at most 60 entities, of which at most 20 things; at most 100 relationships; at most 4 sentences per description; at most 8 ways per entity. One Entity-step call per part (plus its tool calls and the recall call), and one judge call per ten or so entities, within the step's own 60 calls (section 3). The parts are read side by side.
 
 ## 5. The notes
 
