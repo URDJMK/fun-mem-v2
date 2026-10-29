@@ -2,6 +2,7 @@
 
 - **Date:** 2026-10-28
 - **Status:** Built (G1–G4), 2026-10-28; see section 11 for what building it changed
+- **Changed by:** `2026-10-29-entity-notes-first-design.md`: entities are found before the stories are written, every entity has a note, and stories link to those notes (replaces G-D5, G-D6, 4.1–4.4, 5.1–5.3 and 6.3 here once built)
 - **Replaces:** phase 2's "one name, one note" items in `2026-10-28-interviews-become-stories-prd.md` (D8, D9, step 6, the People and places review groups, merging people). The protagonist's profile (7.5, already built) stays as it is.
 - **Scope:** a graph of the people, places and things in a project's stories: built when interviews are imported (and on demand for stories already saved), reviewed before it is saved, shown on Home and on People, places & things.
 
