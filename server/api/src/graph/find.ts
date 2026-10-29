@@ -24,6 +24,7 @@ import {
   lower,
   nameHeld,
   resolveMatch,
+  sourcesOf,
   str,
   uncovered,
   wordsOf,
@@ -35,7 +36,6 @@ import {
   type EntityNote,
   type EntityType,
   type GraphProposal,
-  type GraphSource,
   type NoteRef,
   type ProposedEntity,
   type ProposedRelationship,
@@ -375,10 +375,6 @@ const unrepeated = (d: string): string => {
   const [before, after] = d.split(/\s+[—–-]\s+/, 2);
   return before && after && matchKey(before) === matchKey(after) ? before : d;
 };
-
-/** interview lines as a proposal's sources; the profile (P) is not one */
-const sourcesOf = (rs: readonly Range[]): GraphSource[] =>
-  rs.filter((r) => r.from > 0).map((r) => ({ interviewId: null, from: r.from, to: r.to }));
 
 /**
  * One part of an interview through the Entity step. Throws when the AI cannot be reached or its

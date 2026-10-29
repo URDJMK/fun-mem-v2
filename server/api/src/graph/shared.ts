@@ -9,7 +9,7 @@ import type { ProblemKind } from '../stories/check';
 import { parseCite, type Range } from '../stories/lines';
 import type { Tool } from '../stories/tools';
 import type { EntityLookup, KnownEntity } from './store';
-import type { EntityMatch } from './types';
+import type { EntityMatch, GraphSource } from './types';
 
 /** "knew Tom only from Sarah's stories", "known to Noah through Sarah", "heard of him from her" */
 export const SECOND_HAND =
@@ -32,6 +32,10 @@ export const lower = (s: string) => s.normalize('NFC').toLowerCase();
 
 export const cites = (v: unknown): Range[] =>
   (Array.isArray(v) ? v : []).map((c) => parseCite(c)).filter((r): r is Range => r !== null);
+
+/** interview lines as a proposal's sources; the profile (P) is not one */
+export const sourcesOf = (rs: readonly Range[]): GraphSource[] =>
+  rs.filter((r) => r.from > 0).map((r) => ({ interviewId: null, from: r.from, to: r.to }));
 
 /**
  * The code checks that fail a line the AI wrote about an entity: a citation missing, wrong or

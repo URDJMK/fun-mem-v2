@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   checkMark,
   linkSentences,
+  marksOf,
   plainOf,
   relink,
   unmarked,
@@ -103,6 +104,46 @@ describe('unmarked', () => {
   it('takes the first sentence that names it, in the words the sentence writes', () => {
     const found = unmarked(['Nothing here.', 'BUSAN again.', 'Busan last.'], [BUSAN], new Set());
     expect(found).toEqual([{ sentence: 1, mark: { e: 'e7', words: 'BUSAN' } }]);
+  });
+});
+
+describe('marksOf', () => {
+  const cast = { listed: [MOTHER, MINA, BUSAN, NOAH], byRef: list };
+  it('keeps the marks that hold, counts those that do not, and adds the names not marked', () => {
+    const out = marksOf(
+      [
+        {
+          text: 'His mother took Noah to Busan.',
+          names: [
+            { e: 'e3', words: 'His mother' },
+            { e: 'e7', words: 'the city' },
+          ],
+        },
+        { text: 'Mina came too.' },
+        { text: 'Busan was cold.' },
+      ],
+      cast,
+    );
+    expect(out.marks).toEqual([
+      [
+        { e: 'e3', words: 'His mother' },
+        { e: 'e7', words: 'Busan' },
+      ],
+      [{ e: 'e4', words: 'Mina' }],
+      [],
+    ]);
+    expect(out.wrong).toBe(1);
+  });
+  it('drops a mark of the person it is about without counting it: they are never linked', () => {
+    const out = marksOf([{ text: 'Noah came.', names: [{ e: 'e1', words: 'Noah' }] }], cast);
+    expect(out).toEqual({ marks: [[]], wrong: 0 });
+  });
+  it('marks nothing without a list: the writer was given none', () => {
+    const out = marksOf([{ text: 'Busan.', names: [{ e: 'e7', words: 'Busan' }] }], {
+      listed: [],
+      byRef: new Map(),
+    });
+    expect(out).toEqual({ marks: [[]], wrong: 0 });
   });
 });
 

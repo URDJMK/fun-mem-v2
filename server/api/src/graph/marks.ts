@@ -75,6 +75,33 @@ export function unmarked(
   return out;
 }
 
+/**
+ * The names each sentence uses (entity design 6.2, 6.3): the writer's marks that hold, then the
+ * name or alias of each entity it did not mark, in the first sentence holding it. `wrong` counts
+ * the marks that do not hold; a mark of the protagonist is only dropped, as they are never linked.
+ * Without a list the writer was given none, so nothing is marked.
+ */
+export function marksOf(
+  sentences: ReadonlyArray<{ text: string; names?: readonly Mark[] }>,
+  cast: { listed: readonly Listed[]; byRef: ReadonlyMap<string, Listed> },
+): { marks: Mark[][]; wrong: number } {
+  if (cast.listed.length === 0) return { marks: sentences.map(() => []), wrong: 0 };
+  let wrong = 0;
+  const marks = sentences.map((s) =>
+    (s.names ?? []).flatMap((m): Mark[] => {
+      if (cast.byRef.get(m.e)?.subject) return [];
+      const words = checkMark(s.text, m, cast.byRef);
+      if (words !== null) return [{ e: m.e, words }];
+      wrong++;
+      return [];
+    }),
+  );
+  const marked = new Set(marks.flat().map((m) => m.e));
+  const texts = sentences.map((s) => s.text);
+  for (const u of unmarked(texts, cast.listed, marked)) marks[u.sentence]!.push(u.mark);
+  return { marks, wrong };
+}
+
 export const linkText = (title: string, words: string) =>
   words === title ? `[[${title}]]` : `[[${title}|${words}]]`;
 

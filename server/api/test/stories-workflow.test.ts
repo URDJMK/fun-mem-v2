@@ -66,6 +66,15 @@ const allSupported = (user: string) => {
   return { rulings: Array.from({ length: n }, (_, i) => ({ sentence: i, verdict: 'supported' })) };
 };
 
+/** the judge: every sentence holding `phrase` made up, the rest supported */
+const failing = (phrase: string, user: string) => ({
+  rulings: [...user.matchAll(/^(\d+)\. (.*)$/gm)].map(([, i, text]) => ({
+    sentence: Number(i),
+    verdict: text!.includes(phrase) ? 'made_up' : 'supported',
+    reason: 'not told',
+  })),
+});
+
 type Step = 'plan' | 'write' | 'judge' | 'find';
 const stepOf = (system: string): Step =>
   system.startsWith(PLAN_SYSTEM)
@@ -616,6 +625,125 @@ describe('people, places and things, found before the stories (entity design 3)'
     expect(out.stats.stories!.problems!.mark).toBe(1);
     // the checks and the judge read the sentences without links, and the sources keep them so
     expect(harbour!.sources![0]!.sentence).not.toContain('[[');
+  });
+
+  it('a note title is linked once, by the marks, and never the person it is about', async () => {
+    const twice = {
+      ...MARKED_HARBOUR,
+      sentences: [
+        ...MARKED_HARBOUR.sentences,
+        sentence('Sunja Kim always remembered Busan.', ['L4']),
+      ],
+    };
+    const chat = model((step, user) =>
+      step === 'write' && !user.includes('Working title: Gravy') ? twice : listed(step, user),
+    );
+    const out = await run(chat, { titles: ['Busan', 'Sunja Kim'], profiles: [SUNJA_PROFILE] });
+    const harbour = out.memories[0]!;
+    expect(harbour.body).toContain('Sunja Kim always remembered Busan.');
+    expect(harbour.body.match(/\[\[Busan/g)).toHaveLength(1);
+    expect(harbour.body).not.toContain('[[Sunja');
+  });
+
+  it('the person it is about is never linked, and still counted, though the find leaves them out', async () => {
+    const withoutSunja = { entities: FOUND.entities.slice(1), relationships: [] };
+    const named = {
+      ...HARBOUR,
+      sentences: [
+        sentence('Sunja Kim was born in Busan, near the harbour, probably in 1946.', ['L4'], true),
+        ...HARBOUR.sentences.slice(1),
+      ],
+    };
+    const chat = model((step, user) =>
+      step === 'find'
+        ? withoutSunja
+        : step === 'write'
+          ? user.includes('Working title: Gravy')
+            ? GRAVY
+            : named
+          : happy(step, user),
+    );
+    const out = await run(chat, { titles: ['Sunja Kim'], profiles: [SUNJA_PROFILE] });
+    expect(out.memories[0]!.body).toContain('Sunja Kim was born in [[Busan]]');
+    for (const m of out.memories) expect(m.body).not.toContain('[[Sunja');
+    const sunja = out.graph!.entities.find((e) => e.subject)!;
+    expect(sunja).toMatchObject({
+      name: 'Sunja Kim',
+      match: { kind: 'existing', entityId: 'k-sunja' },
+    });
+    expect(sunja.mentions.map((m) => [m.story, m.words])).toEqual([
+      ['m1', ['Sunja Kim']],
+      ['m2', ['Sunja']],
+    ]);
+  });
+
+  it('a marked sentence the judge leaves out takes its marks with it', async () => {
+    const fisherman = {
+      ...GRAVY,
+      sentences: [
+        {
+          ...sentence('Minho was a fisherman.', ['L8'], true),
+          names: [{ e: 'e2', words: 'Minho' }],
+        },
+        {
+          ...sentence('Sunja met Minho at a church supper in 1966.', ['L8']),
+          names: [{ e: 'e2', words: 'Minho' }],
+        },
+        sentence('He spilled gravy all over his shirt, and she laughed.', ['L8']),
+      ],
+    };
+    const chat = model((step, user) =>
+      step === 'write' && user.includes('Working title: Gravy')
+        ? fisherman
+        : step === 'judge' && user.includes('fisherman')
+          ? failing('fisherman', user)
+          : listed(step, user),
+    );
+    const out = await run(chat);
+    const gravy = out.memories[1]!;
+    expect(gravy.body).not.toContain('fisherman');
+    expect(gravy.notes.join(' ')).toContain('Minho was a fisherman.');
+    expect(gravy.body).toMatch(/^Sunja met \[\[Minho\]\] at a church supper/);
+    expect(out.graph!.entities.find((e) => e.name === 'Minho')!.mentions).toEqual([
+      expect.objectContaining({ story: 'm2', line: 'Sunja met Minho at a church supper in 1966.' }),
+    ]);
+  });
+
+  it('the marks are those of the draft that is kept, after a fix', async () => {
+    const first = {
+      ...GRAVY,
+      sentences: [
+        {
+          ...sentence('Sunja met Minho at a church supper in Seoul.', ['L8'], true),
+          names: [{ e: 'e2', words: 'Minho' }],
+        },
+        GRAVY.sentences[1]!,
+      ],
+    };
+    const fixed = {
+      ...GRAVY,
+      sentences: [
+        sentence('Sunja met him at a church supper in 1966.', ['L8'], true),
+        {
+          ...sentence('Minho spilled gravy all over his shirt, and she laughed.', ['L8']),
+          names: [{ e: 'e2', words: 'Minho' }],
+        },
+      ],
+    };
+    const chat = model((step, user) =>
+      step === 'write' && user.includes('Working title: Gravy')
+        ? user.includes('Problems found')
+          ? fixed
+          : first
+        : listed(step, user),
+    );
+    const out = await run(chat);
+    expect(out.memories[1]!.body).toContain(
+      'Sunja met him at a church supper in 1966. [[Minho]] spilled gravy',
+    );
+    expect(out.graph!.entities.find((e) => e.name === 'Minho')!.mentions[0]!.line).toBe(
+      'Minho spilled gravy all over his shirt, and she laughed.',
+    );
   });
 
   it('each name is a mention of its story, and a relationship belongs to the story telling it', async () => {
