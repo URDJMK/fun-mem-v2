@@ -22,14 +22,14 @@ export interface Mark {
 const bare = (w: string) =>
   w.replace(/[’‘]/g, "'").toLowerCase().replace(/'s$/u, '').replace(/\s+/g, ' ').trim();
 
-/** what a mark's words may be: a name, an alias, a way, or a word of a name (3 letters or more) */
+/** what a mark's words may be: a name, an alias, a way, or a word of a name (2 letters or more) */
 export function allowedWords(e: Listed): Set<string> {
   const out = new Set<string>();
   for (const n of [e.name, ...e.aliases, ...e.ways]) out.add(bare(n));
   for (const n of [e.name, ...e.aliases]) {
     for (const w of n.split(/\s+/)) {
       const b = bare(w.replace(/^[^\p{L}]+|[^\p{L}]+$/gu, ''));
-      if (b.length >= 3 && !NAME_FILLER.has(b)) out.add(b);
+      if ([...b].length >= 2 && !NAME_FILLER.has(b)) out.add(b);
     }
   }
   return out;

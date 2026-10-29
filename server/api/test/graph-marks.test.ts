@@ -40,13 +40,22 @@ describe('checkMark', () => {
     );
     expect(checkMark('Kim’s house was big.', { e: 'e4', words: 'kim’s' }, list)).toBe('Kim’s');
   });
-  it('allows a word of a name only when it has 3 letters and is not filler', () => {
-    const jo: Listed = { ref: 'e5', name: 'Jo Lee of Seoul', aliases: [], ways: [] };
+  it('allows a word of a name when it has 2 letters or more and is not filler', () => {
+    const jo: Listed = { ref: 'e5', name: 'Ed Park of J. Seoul', aliases: [], ways: [] };
     const l = new Map([[jo.ref, jo]]);
-    expect(checkMark('Lee came.', { e: 'e5', words: 'Lee' }, l)).toBe('Lee');
+    expect(checkMark('Park came.', { e: 'e5', words: 'Park' }, l)).toBe('Park');
+    expect(checkMark('Ed came.', { e: 'e5', words: 'Ed' }, l)).toBe('Ed');
     expect(checkMark('Seoul was far.', { e: 'e5', words: 'Seoul' }, l)).toBe('Seoul');
-    expect(checkMark('Jo came.', { e: 'e5', words: 'Jo' }, l)).toBeNull();
     expect(checkMark('He was of Seoul.', { e: 'e5', words: 'of' }, l)).toBeNull();
+    expect(checkMark('J came.', { e: 'e5', words: 'J' }, l)).toBeNull();
+  });
+  it('allows a two-letter Korean given name written apart from the family name', () => {
+    const mina: Listed = { ref: 'e6', name: '김 민아', aliases: [], ways: ['이모'] };
+    const l = new Map([[mina.ref, mina]]);
+    expect(checkMark('어제 민아 왔다.', { e: 'e6', words: '민아' }, l)).toBe('민아');
+    expect(checkMark('어제 김 민아 왔다.', { e: 'e6', words: '김 민아' }, l)).toBe('김 민아');
+    expect(checkMark('어제 이모 왔다.', { e: 'e6', words: '이모' }, l)).toBe('이모');
+    expect(checkMark('어제 민수 왔다.', { e: 'e6', words: '민수' }, l)).toBeNull();
   });
   it('drops a mark with empty words', () => {
     expect(checkMark('Mina came.', { e: 'e4', words: '  ' }, list)).toBeNull();
