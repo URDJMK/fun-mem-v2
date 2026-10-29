@@ -151,7 +151,7 @@ describe('D2 an erased note is not quoted by the notes that disagreed with it', 
       const { call, note, reasons, links, chunkText, twoImports } = await setup('undo');
       const { first, second, a, b } = await twoImports();
       const u = await call('POST', `/ingest-runs/${first.runId}/undo`);
-      expect(await u.json()).toEqual({ erased: 1, kept: [], alreadyUndone: false });
+      expect(await u.json()).toEqual({ erased: 1, restored: 0, kept: [], alreadyUndone: false });
       const after = (await note(b.id))!.body;
       expect(after).not.toContain('1950');
       expect(after).not.toContain('May disagree');
@@ -163,7 +163,7 @@ describe('D2 an erased note is not quoted by the notes that disagreed with it', 
       void a;
       // the machine took the line out: the second import is still undone in full
       const u2 = await call('POST', `/ingest-runs/${second.runId}/undo`);
-      expect(await u2.json()).toEqual({ erased: 1, kept: [], alreadyUndone: false });
+      expect(await u2.json()).toEqual({ erased: 1, restored: 0, kept: [], alreadyUndone: false });
     },
   );
 

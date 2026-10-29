@@ -360,7 +360,7 @@ export async function writeStories(
     ): Promise<FindResult | StoriesPendingReason> {
       const own = new AbortController();
       let timedOut = false;
-      const timer = setTimeout(
+      const findTimer = setTimeout(
         () => {
           timedOut = true;
           own.abort();
@@ -368,7 +368,7 @@ export async function writeStories(
         deps.findDeadlineMs ??
           Math.min((deps.deadlineMs ?? DEFAULT_STORY_DEADLINE_MS) / 3, FIND_MAX_MS),
       );
-      timer.unref?.();
+      findTimer.unref?.();
       const onStop = () => own.abort();
       signal.addEventListener('abort', onStop, { once: true });
       // its calls count in the import's too (writer and judge are counted)
@@ -408,7 +408,7 @@ export async function writeStories(
         if (timedOut && !outOfTime) return 'deadline';
         return reasonOf(e);
       } finally {
-        clearTimeout(timer);
+        clearTimeout(findTimer);
         signal.removeEventListener('abort', onStop);
       }
     }

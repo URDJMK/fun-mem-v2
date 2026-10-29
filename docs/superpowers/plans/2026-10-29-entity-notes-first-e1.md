@@ -2,6 +2,8 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task by task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
+**Completion:** E1 Tasks 9–12 finished in the continuation on 2026-10-29; see the design’s section 15 and `docs/deploy.md` for validation and hosted migration requirements.
+
 **Goal:** when an interview is imported, every person, place and thing in its transcript is found first and gets a note (or a paragraph on the note it has), and the stories are written with real `[[links]]` to those notes.
 
 **Spec:** `docs/superpowers/specs/2026-10-29-entity-notes-first-design.md`, sections 3–7 and 9–11 (E1). The button (section 8, E2) gets its own plan; until then it keeps working as it does today.
@@ -1053,7 +1055,7 @@ export async function appendParagraph(
 - Modify: `server/api/src/ingest-save.ts` (`persistImport`)
 - Test: `server/api/test/graph-save.test.ts` (database part), `server/api/test/graph-routes.test.ts` (the note page shows backlinks)
 
-- [ ] **Step 1: Write the failing tests** (database; build an `IngestResult` by hand with two stories whose bodies hold links, and a proposal). After `persistImport`:
+- [x] **Step 1: Write the failing tests** (database; build an `IngestResult` by hand with two stories whose bodies hold links, and a proposal). After `persistImport`:
   - a note "Minho" (type `person`) exists, with the description as its body and `extra.sources`, tied to its entity (`graph_entities.note_id`);
   - "Busan", whose title is already taken by a story "Busan" in the project, is saved as "Busan (place)". The harbour story's body reads `[[Busan (place)|Busan]]`, and `links` resolves it to the place note;
   - Sunja's note (the subject) is unchanged: no paragraph;
@@ -1064,8 +1066,8 @@ export async function appendParagraph(
   - `persistImport` returns `saved` for the stories only (entity notes are not in it);
   - the note page's `GET /backlinks` for "Minho" lists the gravy story.
 
-- [ ] **Step 2: Run:** `npx vitest run test/graph-save.test.ts`. Expected: FAIL.
-- [ ] **Step 3: Implement.**
+- [x] **Step 2: Run:** `npx vitest run test/graph-save.test.ts`. Expected: FAIL.
+- [x] **Step 3: Implement.**
 
   In `graph/save.ts`:
 
@@ -1215,8 +1217,8 @@ export async function appendParagraph(
   - **A relationship with `story: null`:** its note is the first of a's, then b's: the new note id (`entityNote`), else the existing `noteId`. With neither, it is skipped.
   - Entities without a `note` (the button's) are saved exactly as today.
 
-- [ ] **Step 4: Run:** `npx vitest run test/graph-save.test.ts test/graph-routes.test.ts test/stories-jobs.test.ts test/ingest-persist.test.ts`. Expected: PASS.
-- [ ] **Step 5: Commit:** `feat(graph): save a note for every person, place and thing, and the stories' links to them`.
+- [x] **Step 4: Run:** `npx vitest run test/graph-save.test.ts test/graph-routes.test.ts test/stories-jobs.test.ts test/ingest-persist.test.ts`. Expected: PASS.
+- [x] **Step 5: Commit:** `feat(graph): save a note for every person, place and thing, and the stories' links to them`.
 
 ---
 
@@ -1227,14 +1229,14 @@ export async function appendParagraph(
 - Modify: `server/api/src/ingest-save.ts` (`undoImport`, `UndoOutcome`)
 - Test: `server/api/test/graph-save.test.ts` (undo cases)
 
-- [ ] **Step 1: Write the failing tests** (database, after a save as in Task 9). After `undoImport`:
+- [x] **Step 1: Write the failing tests** (database, after a save as in Task 9). After `undoImport`:
   - the stories and the new notes "Minho" and "Busan (place)" are gone, and their entities with them;
   - "Mina Kim"'s body is back to what it was, a `restore` revision was added, its `extra.paragraphs` has no entry for the run, and `outcome.restored === 1`;
   - edit "Mina Kim" after the import, then undo: the paragraph stays, `kept` lists it with reason `edited`, and `restored === 0`;
   - edit the new note "Minho" after the import, then undo: it is kept (`edited`), as stories are today.
 
-- [ ] **Step 2: Run:** `npx vitest run test/graph-save.test.ts`. Expected: FAIL. "Mina Kim" is listed as kept and its paragraph stays.
-- [ ] **Step 3: Implement** in `undoImport`, after locking the run's notes (step 1) and before the `flags` query:
+- [x] **Step 2: Run:** `npx vitest run test/graph-save.test.ts`. Expected: FAIL. "Mina Kim" is listed as kept and its paragraph stays.
+- [x] **Step 3: Implement** in `undoImport`, after locking the run's notes (step 1) and before the `flags` query:
 
 ```ts
 // a note the run CHANGED (its first revision is older than the run): put back, not erased
@@ -1287,8 +1289,8 @@ const changedIds = new Set((changed.rows as Array<{ id: string }>).map((r) => r.
 - Export `reindexLinks` and `reindexChunks` from where they live, if they are not exported yet.
 - The web's `undoImport` response type gains `restored` (optional).
 
-- [ ] **Step 4: Run:** `npx vitest run test/graph-save.test.ts test/ingest-undo.test.ts`. Expected: PASS. (Use whichever test files cover `undoImport` today: `grep -l undoImport server/api/test`.)
-- [ ] **Step 5: Commit:** `feat(ingest): undo puts back the notes an import added to`.
+- [x] **Step 4: Run:** `npx vitest run test/graph-save.test.ts test/ingest-undo.test.ts`. Expected: PASS. (Use whichever test files cover `undoImport` today: `grep -l undoImport server/api/test`.)
+- [x] **Step 5: Commit:** `feat(ingest): undo puts back the notes an import added to`.
 
 ---
 
@@ -1302,7 +1304,7 @@ const changedIds = new Set((changed.rows as Array<{ id: string }>).map((r) => r.
 - Modify: `apps/web/src/styles.css` (`.proposed-link`)
 - Test: `apps/web/src/lib/links.test.ts`, `apps/web/src/components/GraphReview.test.tsx` (new, if the web has component tests; else a `keptCount`/`patchOf` unit test in `links.test.ts` style)
 
-- [ ] **Step 1: Write the failing tests.**
+- [x] **Step 1: Write the failing tests.**
 
 ```ts
 // links.test.ts
@@ -1325,8 +1327,8 @@ it('a link to a note still to be made reads as such; one left out reads as its w
 expect(patchOf({ ...NO_CHOICES, paragraphOut: new Set(['e4']) })).toEqual({ leaveParagraph: ['e4'] });
 ```
 
-- [ ] **Step 2: Run:** `pnpm --filter @funmem/web test`. Expected: FAIL.
-- [ ] **Step 3: Implement.**
+- [x] **Step 2: Run:** `pnpm --filter @funmem/web test`. Expected: FAIL.
+- [x] **Step 3: Implement.**
   - **`api.ts`:** mirror the server types (`ways?`, `description?`, `note?`, `subject?`; `story: string | null`; `leaveParagraph?`). Add `restored?: number` to the undo outcome.
   - **`piecesOf(body, notes, opts?: { proposed?: ReadonlyMap<string, boolean> })`:** a link whose target (normalized) is a key of `proposed` is checked before the notes:
     - `true`: `{ kind: 'proposed', label }`;
@@ -1346,8 +1348,8 @@ expect(patchOf({ ...NO_CHOICES, paragraphOut: new Set(['e4']) })).toEqual({ leav
   - **`keptCount`:** an entity with a `note` counts when not left out, whatever stories are kept.
   - **`ImportRun`:** the story preview passes `proposed` to `Linked`. It is built from the proposal's entities (name → not left out), and for renamed ones the new name too, so a renamed link still shows as kept. `rename` must also follow in the preview: show `piecesOf` over the body with renames applied by the same rule the server uses (a small client `relink`, or pass the old name as kept).
   - **`styles.css`:** `.proposed-link { border-bottom: 1px dashed var(--sage-ink); }`.
-- [ ] **Step 4: Run:** `pnpm --filter @funmem/web test && pnpm --filter @funmem/web typecheck`. Expected: PASS.
-- [ ] **Step 5: Commit:** `feat(web): review the notes for people, places and things, and the stories' links`.
+- [x] **Step 4: Run:** `pnpm --filter @funmem/web test && pnpm --filter @funmem/web typecheck`. Expected: PASS.
+- [x] **Step 5: Commit:** `feat(web): review the notes for people, places and things, and the stories' links`.
 
 ---
 
@@ -1358,28 +1360,28 @@ expect(patchOf({ ...NO_CHOICES, paragraphOut: new Set(['e4']) })).toEqual({ leav
 - Modify: `server/api/scripts/eval-graph.ts`
 - Modify: `docs/ingest/api.md`, `docs/superpowers/specs/2026-10-28-people-places-graph-design.md` (section 11 points here), `docs/superpowers/specs/2026-10-29-entity-notes-first-design.md` (status, and a "What building it changed" section)
 
-- [ ] **Step 1: The eval.** After `writeStories`, print per entity: name, type, `note.kind`, ways, description, and its mentions. Add these checks, each PASS or FAIL:
+- [x] **Step 1: The eval.** After `writeStories`, print per entity: name, type, `note.kind`, ways, description, and its mentions. Add these checks, each PASS or FAIL:
   - every entity except the subject has `note`;
   - the expected nodes (as today);
   - Tom only through Sarah (as today);
   - every story body has at least one `[[`, and none links the subject's name;
   - the marks dropped (`stats.stories.problems.mark`), printed.
-- [ ] **Step 2: Run it** with the real model: `cd server/api && NODE_USE_ENV_PROXY=1 pnpm eval:graph`. Expected: all PASS for noah and sunja. Where the model fails a check, fix the prompt or the code the way the graph design's section 11 did, add a scripted test for the case, and write the finding in the spec's "What building it changed".
-- [ ] **Step 3: Docs.**
+- [x] **Step 2: Run it** with the real model: `cd server/api && NODE_USE_ENV_PROXY=1 pnpm eval:graph`. Expected: all PASS for noah and sunja. Where the model fails a check, fix the prompt or the code the way the graph design's section 11 did, add a scripted test for the case, and write the finding in the spec's "What building it changed".
+- [x] **Step 3: Docs.**
   - **`docs/ingest/api.md`:**
     - the proposal's new fields;
     - `leaveParagraph`;
     - the undo outcome's `restored`;
     - the note `extra.paragraphs`.
   - **The spec's status:** "Built (E1), 2026-10-29".
-- [ ] **Step 4: Full check:** `pnpm -r typecheck && pnpm lint && pnpm format && pnpm -r test`. Expected: all pass. The one known slow-container timing test (`grounding-meaning` "each under 1 s") may fail on a loaded machine. Re-run that file alone and report it as it is.
+- [x] **Step 4: Full check:** `pnpm -r typecheck && pnpm lint && pnpm format && pnpm -r test`. Expected: all pass. The one known slow-container timing test (`grounding-meaning` "each under 1 s") may fail on a loaded machine. Re-run that file alone and report it as it is.
 - [ ] **Step 5: In the browser**, with the real API (`VITE_SKIP_LOGIN=false` and local Supabase URL and anon key; the API with `NODE_USE_ENV_PROXY=1`):
   1. import the Noah fixture;
   2. review: the notes group shows "New note" rows with descriptions, and story previews show dashed links;
   3. rename "Noah Kim's mother" to "Mina Kim" and leave out one thing;
   4. save. The story links open the notes, the note "Mina Kim" shows the backlink, and the left-out thing's words are plain;
   5. undo: everything the import made is gone.
-- [ ] **Step 6: Commit and push:** `git push -u origin claude/dreamy-euler-z5cgvh`.
+- [x] **Step 6: Commit and push:** `git push -u origin claude/dreamy-euler-z5cgvh`.
 
 ---
 

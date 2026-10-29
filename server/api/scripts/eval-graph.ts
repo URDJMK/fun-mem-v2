@@ -1,8 +1,8 @@
 /**
- * The Graph step against the real model (graph design 8): `pnpm --filter @funmem/api eval:graph`.
- * Needs NVIDIA_API_KEY. Writes nothing: it writes the stories of a sample interview with an
- * empty project (only the protagonist known), runs the Graph step, and prints the people,
- * places and things, the relationships, and the checks the design asks for.
+ * Entity-first imports against the real model: `pnpm --filter @funmem/api eval:graph`.
+ * Needs NVIDIA_API_KEY (also read from the ignored root .env). Writes nothing to the database:
+ * finds entities before writing sample stories, then reports notes, descriptions, mentions,
+ * relationships, links and dropped marks. This script is opt-in; tests use scripted models.
  *
  *   eval:graph [name…]   only the named samples (noah, sunja)
  */
@@ -13,6 +13,16 @@ import { createNimChat } from '../src/nim';
 import type { Profile } from '../src/stories/profile';
 import { writeStories } from '../src/stories/workflow';
 import { parseTranscript } from '../src/transcript';
+import { noteAndLinkChecks } from './graph-eval-checks';
+
+for (const path of ['.env', '../../.env']) {
+  try {
+    process.loadEnvFile(path);
+    break;
+  } catch {
+    /* a supplied environment needs no file */
+  }
+}
 
 const here = (p: string) => fileURLToPath(new URL(p, import.meta.url));
 interface Sample {
@@ -79,6 +89,8 @@ for (const [name, sample] of Object.entries(SAMPLES)) {
     name: sample.profile.name,
     type: 'person' as const,
     aliases: sample.profile.aliases,
+    subject: true,
+    note: null,
   };
   const out = await writeStories(
     parseTranscript(readFileSync(sample.file, 'utf8')),
@@ -111,7 +123,11 @@ for (const [name, sample] of Object.entries(SAMPLES)) {
   }
   console.log('\n   people, places and things:');
   for (const e of g.entities) {
-    console.log(`   - ${e.name} (${e.type}, ${e.match.kind})`);
+    console.log(
+      `   - ${e.name} (${e.type}, ${e.match.kind}, note: ${e.note?.kind ?? 'none'}${e.subject ? ', protagonist' : ''})`,
+    );
+    console.log(`       ways: ${(e.ways ?? []).join(', ') || '(none)'}`);
+    for (const sentence of e.description ?? []) console.log(`       description: ${sentence.text}`);
     for (const m of e.mentions)
       console.log(`       ${m.story} "${m.words.join('", "')}": ${m.line}`);
   }
@@ -130,6 +146,13 @@ for (const [name, sample] of Object.entries(SAMPLES)) {
       return (x.includes(a) && y.includes(b)) || (x.includes(b) && y.includes(a));
     });
   console.log('\n   checks:');
+  for (const check of noteAndLinkChecks(g, out.memories, [
+    sample.profile.name,
+    ...sample.profile.aliases,
+  ])) {
+    if (!check.ok) failed++;
+    console.log(`   ${check.ok ? 'PASS' : 'FAIL'} ${check.label}`);
+  }
   for (const n of sample.expect.nodes) {
     const ok = has(n);
     if (!ok) failed++;
@@ -152,6 +175,7 @@ for (const [name, sample] of Object.entries(SAMPLES)) {
     `   ${dupes.length ? 'FAIL' : 'PASS'} no duplicate names${dupes.length ? `: ${dupes.join(', ')}` : ''}`,
   );
   console.log(`   stories: ${JSON.stringify(out.stats.stories)}`);
+  console.log(`   marks dropped: ${out.stats.stories?.problems?.mark ?? 0}`);
   console.log(
     `   graph: ${g.stats?.calls} calls, ${g.stats?.proposed} proposed, ${g.stats?.dropped} left out`,
   );

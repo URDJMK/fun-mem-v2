@@ -34,6 +34,9 @@ copy where; no value in this file is real.
    `supabase/migrations/20261028130000_profiles.sql`, then, for the people, places and things graph,
    `supabase/migrations/20261028140000_graph.sql`. A project made before the graph gets its
    protagonist's person note, and its people, places and things, the first time its graph is read.
+   Entity-first import undo also needs `supabase/migrations/20261029120000_import_created_notes.sql`
+   (only notes a run created keep it alive), then
+   `supabase/migrations/20261029130000_import_undo_changes.sql` (undo-restoration provenance).
    **Apply new migrations before deploying a new Worker:** the code expects its tables, and without
    the graph's, making a project or a person, place or object note fails.
 4. **Project Settings → API**: copy the **Project URL** (`https://<project-ref>.supabase.co`) and the
@@ -131,9 +134,13 @@ supper", …), each with "Where this comes from"; "The tin of savings" (she was 
 the interview waits under Interviews.
 
 The graph: bring in `server/api/test/fixtures/stories/noah.txt` (Who is telling: Noah) into a personal
-project for Noah Kim. Under the stories, the review lists the people, places and things (his mother,
+project for Noah Kim. Before writing stories, the Entity step finds the people, places and things. Under the stories,
+the review shows new notes with descriptions and proposed story links (his mother,
 Sarah, Tom, Busan, Korea, the soups…) with how they relate; after saving, Home's "Who and where" shows
-Tom joined to Sarah only, not to Noah. On a project whose stories were saved before, People, places &
+Tom joined to Sarah only, not to Noah. Rename his mother to Mina Kim and leave out a thing in review:
+the story links should open Mina’s note with backlinks, and the left-out thing should read as plain
+words. Undo removes new stories and entity notes, restores paragraphs on existing notes, and keeps
+notes someone has edited or later imports need. On a project whose stories were saved before, People, places &
 things → "Find people, places and things" does the same for them. `pnpm --filter @funmem/api
 eval:graph` runs the same checks against the real model.
 

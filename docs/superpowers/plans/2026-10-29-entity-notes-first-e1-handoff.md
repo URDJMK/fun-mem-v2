@@ -6,15 +6,21 @@
 
 ## Status
 
+E1 was completed in the continuation on 2026-10-29. The remaining sections preserve the original
+review findings and implementation guidance; the fixes below have been applied. See the design's
+section 15 for findings, and `docs/deploy.md` for required hosted migrations and redeployment.
+
 | Task | State |
 | --- | --- |
-| 1–8 | Done, reviewed (spec and code), review fixes in |
-| 9 (save notes, links, mentions, relationships) | **Dropped (reverted in `25540a5`).** It was built in `69d4aa3` and `ee80536` and passed spec review, but the code review found the bugs in 9b. Redo it: start from those commits (`git show 69d4aa3 ee80536`, or `git revert 25540a5`) and make the 9b fixes |
-| 10 (undo restores changed notes) | Not started |
-| 11 (web review) | Not started |
-| 12 (eval, docs, full check, browser) | Not started |
+| 1–8 | Done and reviewed before this handoff |
+| 9 (save notes, links, mentions, relationships) | Restored in `d7d2d80`, reviewed fixes in `f14de6d` and `571e01c`; complete |
+| 10 (undo restores changed notes) | Complete in `1cf7c19`, including both new undo migrations |
+| 11 (web review) | Complete in `f4a4cec` |
+| 12 (eval, docs, full check, browser) | Eval, docs and full check done. The browser click-through was not run in this session (see the completion report) |
 
-**The branch is mid-feature:** Tasks 6–7 are in but Task 9 is not, so an import now writes `[[links]]` to notes that are never made. Do not try imports in the preview until Task 9 is redone. Do not release before Task 10.
+The original stop warning is resolved: imports now create the notes their stories link to, and
+undo restores added paragraphs. Hosted use still requires applying the migrations before
+redeploying the Worker and web app. E2 (the button's entity notes and story links) remains separate.
 
 ## Where the plan text was changed by what was built
 
@@ -96,7 +102,7 @@ Also for Task 10: if import 2 only links to a note made by import 1, undoing imp
   - the proposal fields `ways`, `description`, `note`, `subject` and `story: null`;
   - the undo outcome's `restored`;
   - the Entity step's own slice;
-  - `stats.calls` includes the Entity step's calls.
+  - `stats.stories.calls` includes the Entity step's calls.
 - **Nit:** rename the inner `timer` in `workflow.ts` `findAll` to `findTimer`.
 - **`scripts/eval-graph.ts`** still describes the old Graph step. Rewrite it per the plan's Task 12.
 

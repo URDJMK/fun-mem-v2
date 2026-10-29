@@ -1,7 +1,7 @@
 # Design: people, places and things first, as notes the stories link to
 
 - **Date:** 2026-10-29
-- **Status:** Approved design, not built
+- **Status:** Built (E1), 2026-10-29; E2 (the button) remains planned
 - **Changes:** the graph design (`2026-10-28-people-places-graph-design.md`): G-D5 ("a note is optional") and G-D6 (the Graph step after the stories); its sections 4.1–4.4 (building), 5.1–5.3 (review, saving, undo) and 6.3 (names in stories). The graph's tables, Home's graph, the entity pages and editing (5.4) stay.
 - **Scope:** when an interview is imported, find every person, place and thing in its transcript first, make a note for each, then write the stories with real `[[links]]` to those notes. The "Find people, places and things" button does the same for stories already saved.
 
@@ -100,7 +100,7 @@ A proposed note:
 - **Title:** the entity's name.
 - **Type:** `person`, `place`, or `object` (for a thing; `NOTE_TYPE` in `graph/types.ts`).
 - **Body:** the checked description, as one paragraph. Empty when every sentence failed.
-- **`extra.sources`:** for each sentence, as a story's: `{ sentence, interviewId, from, to, start, end, text }`.
+- **`extra.sources`:** `[{ sentence, sources: [{ interviewId, from, to }] }]`, retaining the checked sentence and its cited lines.
 - **Graph:** its entity is made with `note_id` set; real names and nicknames given become aliases; ways that are family words ("his mother", "Mom") do not (graph design 3.4).
 
 ### 5.2 Someone who already has a note
@@ -109,7 +109,7 @@ A proposed paragraph at the end of that note, saved as a new version of it:
 
 > _From “Noah's birthdays”:_ She made seaweed soup every year.
 
-- The interview's name, then the description. Its sources are added to the note's `extra.sources`.
+- The interview's name, then the description. Its sources are added to `extra.paragraphs: [{ runId, sources }]`, keeping each import's paragraph sources together for undo.
 - Nothing already in the note changes. No paragraph when the description is empty; the stories still link to the note.
 
 ### 5.3 Someone in the graph without a note
@@ -220,11 +220,13 @@ One transaction with the stories (`ingest-save.ts`, `persistImport`):
 
 ## 9. Data
 
-No migration:
+The entity-note fields reuse existing tables. Undo adds two migrations:
 
 - `graph_entities.note_id` is now always set for entities this work makes; older entities get theirs when the button or an import reaches them.
-- A note's sentence sources go in `notes.extra.sources`, as a story's.
-- A paragraph is a revision like any other.
+- A new entity note's sentence sources go in `notes.extra.sources` as `[{ sentence, sources }]` (a story's are flat `{ sentence, from, to, start, end, text }`).
+- Paragraph sources go in `notes.extra.paragraphs: [{ runId, sources }]`; a paragraph is an `import` revision.
+- `20261029120000_import_created_notes.sql` changes deletion-time run cleanup to count only notes whose first revision belongs to the run.
+- `20261029130000_import_undo_changes.sql` records `ingest_runs.undo_change_id`, distinguishing import undo restores from a person restoring history during later undos.
 - The graph design's wording "a note is optional" (its section 2 and the table comment) changes to "every entity has a note"; the table comment changes in the next migration that touches the table.
 
 ## 10. Code layout
@@ -282,4 +284,37 @@ Two parts, each with its own implementation plan:
 
 ## 14. Before it can run in the preview
 
-The hosted database needs the three migrations from the last round (`20261028120000_interviews.sql`, `20261028130000_profiles.sql`, `20261028140000_graph.sql`), and the Worker and the web app need redeploying (`docs/deploy.md`). A person has to do this; nothing here does it.
+The hosted database needs the three migrations from the last round (`20261028120000_interviews.sql`, `20261028130000_profiles.sql`, `20261028140000_graph.sql`), followed by `20261029120000_import_created_notes.sql` and `20261029130000_import_undo_changes.sql`. Then the Worker and the web app need redeploying (`docs/deploy.md`). A person has to do this; nothing here does it.
+
+## 15. What building E1 changed
+
+- Names are checked as whole words. A place may be named through its people or language
+  ("Korea" from "Korean"); a person's name may not. The Entity step reads parts in parallel,
+  with its own deadline and call slice so stories still have a budget when finding fails.
+- An existing note is used only when every member may read it. Private notes never receive a
+  paragraph or public story link, even when the importer owns them. Save checks this again.
+- Shared proposed refs get one note and at most four description sentences. Description text
+  cannot create links or marker lines. Both entity attachment paths reject a competing note;
+  a complete transaction retry replans titles and keeps disagreement markers unchanged.
+- Undo restores before the run's first revision, removes its paragraph source entry, and
+  rebuilds links and chunks. It clears graph rows by run even when their notes stay. Liveness
+  and duplicate detection count notes created by the run, including deletion-time cleanup.
+- A later import's links preserve an entity note. Import undo restore revisions are recorded
+  as bookkeeping so neither the current nor an earlier undo invents evidence of human work.
+- The review distinguishes graph-only outcomes using `format: "graph"`; entity notes survive
+  skipped stories. A rename conflicting with another kept type is warned about and ignored.
+- E2 still uses the earlier graph-only workflow: no new notes or paragraphs from the button.
+
+The real-model eval on 2026-10-29 (`eval:graph`, run alone) passed every check for both fixtures:
+Noah produced 3 stories in 245.6 s with 3 writer marks dropped; Sunja produced 5 in 363 s with 12
+dropped (sentences kept). Entity notes, first-mention prose links, expected nodes, protagonist
+exclusion and Tom's relationship through Sarah all passed. The first Sunja run, made while the
+full test suite and two reviewers shared the machine, ended with `graph.pending: deadline`: the
+Entity step's 4-minute slice ran out and the stories were saved without links, as designed. Run
+the eval on an idle machine. The eval uses the installed `vite-node` runner and loads the ignored
+root `.env`; its assertions have pure tests that never call a live model.
+
+Review of the finished work fixed: undoing two imports that both added to one note, newest first,
+no longer leaves the older paragraph behind (revisions from an undone import, or from an import's
+undo, are not later work); "Same as" in the review drops a stale paragraph choice; an interview
+name cannot write a `[[link]]` into a note's paragraph.
