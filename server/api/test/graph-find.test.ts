@@ -1033,6 +1033,62 @@ describe('mergeFound', () => {
     });
   });
 
+  it('never makes one of two different entities the project has, though named alike', () => {
+    const john = (ref: string, id: string) =>
+      entity(ref, 'John Lee', { match: { kind: 'existing', entityId: id, name: 'John Lee' } });
+    const one = mergeFound([part([john('e1', 'k-j1'), john('e2', 'k-j2')])]);
+    expect(one.entities.map((e) => [e.ref, e.match])).toEqual([
+      ['e1', expect.objectContaining({ entityId: 'k-j1' })],
+      ['e2', expect.objectContaining({ entityId: 'k-j2' })],
+    ]);
+    const two = mergeFound([part([john('e1', 'k-j1')]), part([john('e1', 'k-j2')])]);
+    expect(two.entities).toHaveLength(2);
+  });
+
+  it('joins by the existing entity first: no two entities end as the same one', () => {
+    const grandma = { kind: 'existing' as const, entityId: 'k-g', name: 'Grandma Lee' };
+    const out = mergeFound([
+      part([entity('e1', 'Halmoni'), entity('e2', 'Grandma Lee', { match: grandma })]),
+      part([entity('e1', 'Halmoni', { match: grandma })]),
+    ]);
+    const ids = out.entities.flatMap((e) =>
+      e.match.kind === 'existing' ? [e.match.entityId] : [],
+    );
+    expect(ids).toEqual(['k-g']);
+    expect(out.entities.find((e) => e.name === 'Grandma Lee')!.ways).toEqual(['Halmoni']);
+  });
+
+  it('a description joined past 4 sentences, or to the person it is about, is listed as left out', () => {
+    const out = mergeFound([
+      part([
+        entity('e1', 'Sarah', {
+          description: [
+            said('Sarah sat by Noah.', 2),
+            said('Sarah had a brother.', 2),
+            said('Sarah sang.', 3),
+          ],
+        }),
+        entity('e2', 'Noah Kim', { description: [said('Noah Kim was new at school.', 2)] }),
+      ]),
+      part([
+        entity('e1', 'Sarah', {
+          description: [said('Sarah moved away.', 9), said('Sarah wrote letters.', 10)],
+        }),
+        // the same person, now known to be the one the archive is about
+        { ...NOAH_ENTITY, aliases: [] },
+      ]),
+    ]);
+    expect(out.entities[0]!.description).toHaveLength(4);
+    expect(out.entities[1]).toMatchObject({ subject: true, description: [] });
+    expect(out.stats.left).toEqual([
+      { what: 'Sarah wrote letters.', why: 'over 4 sentences' },
+      {
+        what: 'Noah Kim was new at school.',
+        why: 'the person the archive is about has no description',
+      },
+    ]);
+  });
+
   it('keeps one relationship for a pair, across parts', () => {
     const out = mergeFound([
       part([entity('e1', 'Sarah'), entity('e2', 'Tom')], [['e2', 'e1', 'Tom — Sarah’s brother']]),

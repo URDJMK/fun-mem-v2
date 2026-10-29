@@ -31,7 +31,6 @@ import {
 import type { EntityLookup, FoundEntity, KnownEntity } from './store';
 import {
   ENTITY_TYPES,
-  type DescriptionSentence,
   type EntityMatch,
   type EntityNote,
   type EntityType,
@@ -75,6 +74,8 @@ const RECALL_NAMES = 30;
 const JUDGE_BATCH = 10;
 /** what the checks call the sentences they read */
 const TITLE = 'People, places and things';
+/** why the protagonist's sentences are left out: their note is the profile */
+const NO_DESCRIPTION = 'the person the archive is about has no description';
 /** a note title may not hold these (validateNoteTitle) */
 const NOT_IN_TITLE = /[[\]#^|\p{Cc}]/gu;
 
@@ -504,8 +505,7 @@ export async function findEntities(o: FindInput): Promise<FindResult> {
   }
   // the protagonist's note is the profile: no description, so none is checked
   for (const e of entities.filter((x) => x.subject)) {
-    for (const s of e.description)
-      list(s.text, 'the person the archive is about has no description');
+    for (const s of e.description) list(s.text, NO_DESCRIPTION);
     e.description = [];
   }
   rels = rels.flatMap((r) => {
@@ -609,20 +609,28 @@ export async function findEntities(o: FindInput): Promise<FindResult> {
   };
 }
 
-/** the same entity, found in two parts: the same existing one, or the same name and type */
-const sameFound = (a: ProposedEntity, b: ProposedEntity): boolean =>
-  (a.match.kind === 'existing' &&
-    b.match.kind === 'existing' &&
-    a.match.entityId === b.match.entityId) ||
-  (a.type === b.type && matchKey(a.name) === matchKey(b.name));
+/** the project's entity it is, when it is one */
+const idOf = (e: ProposedEntity): string | null =>
+  e.match.kind === 'existing' ? e.match.entityId : null;
+
+/**
+ * The same entity, found in two parts: the same existing one; else the same name and type, but
+ * never two different entities the project has ("John Lee" and another "John Lee")
+ */
+const sameFound = (a: ProposedEntity, b: ProposedEntity): boolean => {
+  const ia = idOf(a);
+  const ib = idOf(b);
+  if (ia && ib) return ia === ib;
+  return a.type === b.type && matchKey(a.name) === matchKey(b.name);
+};
 
 /**
  * A later part's entity joined to the same one from an earlier part: what the project has, if
  * only the later part knew it; their aliases and ways together, the later name a way when it
- * differs; and the later sentences after the earlier ones, up to 4. Gives the sentences that did
- * not fit.
+ * differs; and the later sentences after the earlier ones, up to 4. Gives the sentences left out,
+ * with why: past 4, or every one once it is the person the archive is about.
  */
-function joinFound(into: ProposedEntity, e: ProposedEntity): DescriptionSentence[] {
+function joinFound(into: ProposedEntity, e: ProposedEntity): Array<{ what: string; why: string }> {
   if (into.match.kind !== 'existing' && e.match.kind === 'existing') {
     into.match = e.match;
     if (e.note) into.note = e.note;
@@ -635,10 +643,15 @@ function joinFound(into: ProposedEntity, e: ProposedEntity): DescriptionSentence
       ? [e.name]
       : [];
   into.ways = [...new Set([...(into.ways ?? []), ...name, ...(e.ways ?? [])])].slice(0, MAX_WAYS);
-  const description = into.description ?? [];
-  const room = Math.max(0, MAX_SENTENCES - description.length);
-  into.description = into.subject ? [] : [...description, ...(e.description ?? []).slice(0, room)];
-  return (e.description ?? []).slice(room);
+  const description = [...(into.description ?? []), ...(e.description ?? [])];
+  if (into.subject) {
+    into.description = [];
+    return description.map((d) => ({ what: d.text, why: NO_DESCRIPTION }));
+  }
+  into.description = description.slice(0, MAX_SENTENCES);
+  return description
+    .slice(MAX_SENTENCES)
+    .map((d) => ({ what: d.text, why: `over ${MAX_SENTENCES} sentences` }));
 }
 
 /**
@@ -673,9 +686,12 @@ export function mergeFound(results: readonly FindResult[]): FindResult {
     // this part's refs → the merged ones
     const refOf = new Map<string, string>();
     for (const e of r.entities) {
-      const into = entities.find((x) => sameFound(x, e));
+      // the project's entity first: a name alone never joins two of them
+      const id = idOf(e);
+      const into =
+        (id && entities.find((x) => idOf(x) === id)) || entities.find((x) => sameFound(x, e));
       if (into) {
-        for (const s of joinFound(into, e)) list(s.text, `over ${MAX_SENTENCES} sentences`);
+        for (const l of joinFound(into, e)) list(l.what, l.why);
         refOf.set(e.ref, into.ref);
         stats.dropped++;
         continue;

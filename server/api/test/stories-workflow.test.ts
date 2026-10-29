@@ -76,10 +76,10 @@ const stepOf = (system: string): Step =>
         ? 'find'
         : 'judge';
 
-/** a model answering each step by a function; it records every call */
+/** a model answering each step by a function, after a delay (per step, if a function); it records every call */
 function model(
   answer: (step: Step, user: string, n: number) => unknown,
-  delayMs = 0,
+  delay: number | ((step: Step) => number) = 0,
 ): ChatModel & { calls: Array<{ step: Step; user: string }> } {
   const calls: Array<{ step: Step; user: string }> = [];
   return {
@@ -88,6 +88,7 @@ function model(
     complete: async (system, user, opts) => {
       const step = stepOf(system);
       calls.push({ step, user });
+      const delayMs = typeof delay === 'number' ? delay : delay(step);
       if (delayMs) {
         await new Promise((r, reject) => {
           const t = setTimeout(r, delayMs);
@@ -677,6 +678,35 @@ describe('people, places and things, found before the stories (entity design 3)'
     expect(out.pending).toEqual({ reason: 'auth' });
     expect(out.memories).toEqual([]);
     expect(chat.calls).toHaveLength(1);
+  });
+
+  it('a find slower than its own share of the time leaves the stories their time, without links', async () => {
+    const chat = model(listed, (step) => (step === 'find' ? 300 : 0));
+    const out = await run(chat, { findDeadlineMs: 20 });
+    expect(out.pending).toBeUndefined();
+    expect(out.memories).toHaveLength(2);
+    for (const m of out.memories) expect(m.body).not.toContain('[[');
+    expect(out.graph!.pending).toEqual({ reason: 'deadline' });
+  });
+
+  it('a find that spends its own calls leaves the stories theirs, without links', async () => {
+    const chat = model(listed);
+    const out = await run(chat, { findCallCap: 1 });
+    expect(out.pending).toBeUndefined();
+    expect(out.memories).toHaveLength(2);
+    for (const m of out.memories) expect(m.body).not.toContain('[[');
+    expect(out.graph!.pending).toEqual({ reason: 'budget' });
+    // the one call it made counts in the import's too
+    expect(chat.calls.filter((c) => c.step === 'find')).toHaveLength(1);
+    expect(out.stats.stories!.calls).toBe(chat.calls.length);
+  });
+
+  it('a cancel while finding them stops the import as cancelled', async () => {
+    const ac = new AbortController();
+    const chat = model(listed, (step) => (step === 'find' ? 300 : 0));
+    setTimeout(() => ac.abort(), 20);
+    await expect(run(chat, { signal: ac.signal })).rejects.toBeInstanceOf(IngestCancelled);
+    expect(chat.calls.map((c) => c.step)).toEqual(['find']);
   });
 
   it('does not look without the project’s graph', async () => {

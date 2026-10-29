@@ -73,6 +73,10 @@ export interface StoriesDeps {
   profiles?: Profile[];
   /** the project's graph: with it, the people, places and things are found first (entity design 3) */
   graph?: { lookup: EntityLookup; known: KnownEntity[] };
+  /** the find step's own time; default a third of the deadline, at most 4 minutes */
+  findDeadlineMs?: number;
+  /** the find step's own model calls, within the import's; default 60 */
+  findCallCap?: number;
 }
 
 export const DEFAULT_STORY_DEADLINE_MS = 12 * 60_000;
@@ -82,11 +86,16 @@ const WRITE_TOOL_CALLS = 8;
 const FIX_ROUNDS = 2;
 const AT_ONCE = 3;
 const CALL_CAP = 200;
+/** the find step's own slice of the import (entity design 3), so the stories keep the rest */
+const FIND_MAX_MS = 4 * 60_000;
+const FIND_CALL_CAP = 60;
 /** a story left with fewer sentences than this after the checks is not kept */
 const MIN_SENTENCES = 2;
 const SOURCE_CHARS = 600;
 
 class BudgetSpent extends Error {}
+/** the find step's own calls are spent */
+class FindSpent extends Error {}
 
 /** a story as written: its memory, its sentences as kept, and the names each sentence marks */
 interface Made {
@@ -377,12 +386,10 @@ export async function writeStories(
     let found: FindResult | null = null;
     let foundPending: StoriesPendingReason | null = null;
     if (deps.graph) {
-      try {
-        found = await findAll(deps.graph);
-      } catch (e) {
-        foundPending = reasonOf(e);
-        if (foundPending === 'auth') return result([], 'auth');
-      }
+      const f = await findAll(deps.graph);
+      if (typeof f === 'string') foundPending = f;
+      else found = f;
+      if (foundPending === 'auth') return result([], 'auth');
     }
     cast = castOf(found);
 
@@ -447,24 +454,67 @@ export async function writeStories(
     }
     return out;
 
-    /** the find step for each part of the interview, as one list */
-    async function findAll(graph: NonNullable<StoriesDeps['graph']>): Promise<FindResult> {
-      const each: FindResult[] = [];
-      for (const part of parts) {
-        each.push(
-          await findEntities({
-            chat: writer,
-            judge,
-            lines: [...asLine, ...part],
-            profile,
-            known: graph.known,
-            names: known,
-            lookup: graph.lookup,
-            signal,
-          }),
-        );
+    /**
+     * The find step for each part of the interview, side by side, as one list; or why it could not
+     * be had. It has its own slice of the import's time and calls (entity design 3): when that runs
+     * out the find fails, and the stories are written with what is left. A cancel is thrown on.
+     */
+    async function findAll(
+      graph: NonNullable<StoriesDeps['graph']>,
+    ): Promise<FindResult | StoriesPendingReason> {
+      const own = new AbortController();
+      let timedOut = false;
+      const timer = setTimeout(
+        () => {
+          timedOut = true;
+          own.abort();
+        },
+        deps.findDeadlineMs ??
+          Math.min((deps.deadlineMs ?? DEFAULT_STORY_DEADLINE_MS) / 3, FIND_MAX_MS),
+      );
+      timer.unref?.();
+      const onStop = () => own.abort();
+      signal.addEventListener('abort', onStop, { once: true });
+      // its calls count in the import's too (writer and judge are counted)
+      let calls = 0;
+      const cap = deps.findCallCap ?? FIND_CALL_CAP;
+      const capped = (m: ChatModel): ChatModel => ({
+        id: m.id,
+        queued: m.queued,
+        complete: async (system, user, o) => {
+          if (calls >= cap) throw new FindSpent();
+          calls++;
+          return m.complete(system, user, o);
+        },
+      });
+      const models = { chat: capped(writer), judge: capped(judge) };
+      try {
+        const each = await mapPool(parts, AT_ONCE, async (part) => {
+          try {
+            return await findEntities({
+              ...models,
+              lines: [...asLine, ...part],
+              profile,
+              known: graph.known,
+              names: known,
+              lookup: graph.lookup,
+              signal: own.signal,
+            });
+          } catch (e) {
+            own.abort(); // the other parts stop too
+            throw e;
+          }
+        });
+        return mergeFound(each);
+      } catch (e) {
+        if (deps.signal?.aborted) throw new IngestCancelled();
+        if (e instanceof FindSpent) return 'budget';
+        if (timedOut && !outOfTime) return 'deadline';
+        return reasonOf(e);
+      } finally {
+        clearTimeout(timer);
+        signal.removeEventListener('abort', onStop);
       }
-      return mergeFound(each);
     }
 
     /** one story through write → check → judge → fix, and its names marked */
