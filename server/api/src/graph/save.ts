@@ -2,7 +2,6 @@ import { matchKey, normalizeTitle } from '@funmem/core';
 import type { PoolClient } from 'pg';
 import { UUID_RE } from '../membership';
 import { appendParagraph, type NewNoteInput } from '../notes';
-import { visibleSql } from '../views';
 import { relink } from './marks';
 import { addAliases } from './note-entity';
 import { NOT_IN_TITLE } from './shared';
@@ -184,7 +183,8 @@ export type MakeNote = { kind: 'make'; entityId: string | null; name: string; ty
 /**
  * What each of an import's entities gets at save, decided again now: the project may have changed
  * since the preview (entity design 7.2). A note to make; the note it has, for a paragraph and the
- * links; or none, for the protagonist and for an entity whose note the importer cannot see.
+ * links; or none, for the protagonist and for an entity whose note not every member may read (as
+ * `sharedTitles` decides what a story may link to: the stories are read by every member).
  */
 export type NoteChoice =
   MakeNote | ({ kind: 'existing'; entityId: string } & NoteRef) | { kind: 'none' };
@@ -221,12 +221,15 @@ export async function notePlan(
       ? await client.query(
           `select e.name, e.type::text as type, e.note_id, n.title,
                   coalesce(e.note_id = a.subject_note_id, false) as subject,
-                  (n.id is not null and ${visibleSql('n', '$3')}) as seen
+                  (n.id is not null
+                   and not exists (select 1 from public.audiences au
+                                    where au.note_id = n.id and au.kind <> 'archive-members'))
+                    as shared
              from public.graph_entities e
              join public.archives a on a.id = e.archive_id
              left join public.notes n on n.id = e.note_id
             where e.id = $1 and e.archive_id = $2`,
-          [id, archiveId, userId],
+          [id, archiveId],
         )
       : null;
     const row = r?.rows[0] as
@@ -236,7 +239,7 @@ export async function notePlan(
           note_id: string | null;
           title: string | null;
           subject: boolean;
-          seen: boolean;
+          shared: boolean;
         }
       | undefined;
     // found by an alias of something of another type: not it
@@ -250,10 +253,12 @@ export async function notePlan(
       // its note is called by the entity's name, which `same` may have made another
       const make: MakeNote = { kind: 'make', entityId: id, name: row.name, type: row.type };
       out.set(e.ref, once(`id:${id}`, make));
-    } else if (row.seen) {
+    } else if (row.shared) {
       out.set(e.ref, { kind: 'existing', entityId: id!, noteId: row.note_id, title: row.title! });
     } else {
-      out.set(e.ref, NONE); // a note the importer cannot see: no link to it, no second note
+      // a note not every member may read (even the importer's own): the stories every member
+      // reads do not link to it, and no paragraph or second note is made
+      out.set(e.ref, NONE);
     }
   }
   return out;
@@ -328,7 +333,7 @@ export const paragraphText = (interviewName: string, said: readonly DescriptionS
 
 /**
  * The stories' links to people, places and things, pointed at their notes' final titles (`made`,
- * by ref, for the notes made with them); a link to one with no note the importer can see becomes
+ * by ref, for the notes made with them); a link to one with no note every member may read becomes
  * its words. The protagonist's are left as they are. `linked` holds the title each name's links
  * carry now, so a save tried again moves them again.
  */

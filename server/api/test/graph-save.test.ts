@@ -971,7 +971,7 @@ describe('saving an import’s notes, links, mentions and relationships', () => 
 
   it('one note for two that ended with the same name; none for one whose note is private', async () => {
     const { archive, note, notes, save } = await project('one');
-    // someone else's private note: the importer may not see it, nor link to it
+    // someone else's private note: the stories every member reads do not link to it
     const other = await ctx.realSession(`graph-save-notes-other-${RUN}@test.local`);
     await ctx.pool.query(
       `insert into public.memberships (archive_id, user_id, role) values ($1, $2, 'contributor')`,
@@ -1010,11 +1010,50 @@ describe('saving an import’s notes, links, mentions and relationships', () => 
     expect(all.find((n) => n.title === 'Old friends')!.body).toBe(
       '[[Tommy Lee|Tom]] and [[Tommy Lee]] met Sam.',
     );
-    expect(all.filter((n) => n.title.startsWith('Secret Sam')).map((n) => n.id)).toEqual([sam]);
+    // no second note, and nothing added to it
+    expect(all.filter((n) => n.title.startsWith('Secret Sam')).map((n) => [n.id, n.body])).toEqual([
+      [sam, 'Private.'],
+    ]);
     const tommy = await ctx.pool.query(
       `select count(*)::int as n from public.graph_entities where archive_id = $1 and match_key = 'tommy lee'`,
       [archive],
     );
     expect(tommy.rows[0]).toEqual({ n: 1 });
+  });
+
+  it('none for the importer’s own private note: plain words, no paragraph, no second note', async () => {
+    const { archive, note, entityOf, notes, save } = await project('mine');
+    // the importer may read it, but the stories are read by every member
+    const pat = await note('Private Pat', 'person', 'Only mine.');
+    await ctx.pool.query(
+      `insert into public.audiences (archive_id, note_id, kind) values ($1, $2, 'private-to-author')`,
+      [archive, pat],
+    );
+    const memory = story('m1', 'A visit', '[[Private Pat|Pat]] came by.');
+    const graph: GraphProposal = {
+      entities: [
+        {
+          ...NOTED('e1', 'Private Pat', 'm1'),
+          // as the preview showed it to the importer
+          match: { kind: 'existing', entityId: await entityOf(pat), name: 'Private Pat' },
+          note: { kind: 'existing', noteId: pat, title: 'Private Pat' },
+          description: [said('Pat came by on Sundays.', 1)],
+        },
+      ],
+      relationships: [],
+    };
+    const out = await save([memory], graph);
+    const all = await notes();
+    expect(all.find((n) => n.title === 'A visit')!.body).toBe('Pat came by.');
+    expect(all.filter((n) => n.title.startsWith('Private Pat')).map((n) => [n.id, n.body])).toEqual(
+      [[pat, 'Only mine.']],
+    );
+    // the entity is still found: the story's mention is on it
+    const mentions = await ctx.pool.query(
+      `select e.note_id, m.words from public.graph_mentions m
+         join public.graph_entities e on e.id = m.entity_id where m.run_id = $1`,
+      [out.runId],
+    );
+    expect(mentions.rows).toEqual([{ note_id: pat, words: ['Private Pat'] }]);
   });
 });
