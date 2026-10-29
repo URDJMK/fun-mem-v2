@@ -81,6 +81,7 @@ export function Interviews() {
         ok: true,
         text:
           `Erased ${count(r.erased, 'memory', 'memories')}.` +
+          (r.restored ? ` Restored ${count(r.restored, 'note', 'notes')} it had added to.` : '') +
           (r.kept.length > 0
             ? ` Kept ${count(r.kept.length, 'memory', 'memories')} someone has worked on since: ${r.kept.map((k) => k.title).join(', ')}.`
             : ''),

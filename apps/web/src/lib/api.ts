@@ -682,7 +682,8 @@ export const listImports = (archive: string) =>
   apiFetch<ImportRun[]>('GET', `/archives/${archive}/ingest-runs`);
 
 export const undoImport = (archive: string, run: string) =>
-  apiFetch<{ erased: number; kept: Array<{ id: string; title: string; reason: string }> }>(
-    'POST',
-    `/archives/${archive}/ingest-runs/${run}/undo`,
-  );
+  apiFetch<{
+    erased: number;
+    restored?: number;
+    kept: Array<{ id: string; title: string; reason: string }>;
+  }>('POST', `/archives/${archive}/ingest-runs/${run}/undo`);

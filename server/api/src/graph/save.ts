@@ -575,27 +575,25 @@ export async function rebuildDescriptions(
 }
 
 /**
- * Take a run's graph back (graph design 5.3). An import's own stories are erased by its undo,
- * and their mentions and relationships with them; a graph-only run (`everything`) has its rows
- * deleted here. Then the entities the run made go, unless someone has worked on them since:
- * changed them by hand, written a note about them, or another import names them.
+ * Take a run's graph back (graph design 5.3). Its mentions and relationships are deleted by
+ * run id here — a story's own cascade only reaches rows tied to a note the undo erases, never
+ * one it keeps (an existing note, or an entity note that stays because another run or a person
+ * has since worked on it). Then the entities the run made go, unless someone has worked on them
+ * since: changed them by hand, written a note about them, or another import names them.
  */
 export async function undoGraph(
   client: PoolClient,
   archiveId: string,
   runId: string,
-  opts: { everything?: boolean } = {},
 ): Promise<void> {
-  if (opts.everything) {
-    await client.query(`delete from public.graph_mentions where run_id = $1 and archive_id = $2`, [
-      runId,
-      archiveId,
-    ]);
-    await client.query(
-      `delete from public.graph_relationships where run_id = $1 and archive_id = $2`,
-      [runId, archiveId],
-    );
-  }
+  await client.query(`delete from public.graph_mentions where run_id = $1 and archive_id = $2`, [
+    runId,
+    archiveId,
+  ]);
+  await client.query(
+    `delete from public.graph_relationships where run_id = $1 and archive_id = $2`,
+    [runId, archiveId],
+  );
   await client.query(
     `delete from public.graph_entities e
       where e.run_id = $1 and e.archive_id = $2 and e.note_id is null

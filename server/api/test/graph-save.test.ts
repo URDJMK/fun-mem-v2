@@ -15,8 +15,8 @@ import {
 } from '../src/graph/save';
 import type { GraphProposal, ProposedEntity } from '../src/graph/types';
 import type { IngestResult } from '../src/ingest-pipeline';
-import { persistImport } from '../src/ingest-save';
-import { inTransaction } from '../src/notes';
+import { findActiveImport, listRuns, persistImport, type UndoOutcome } from '../src/ingest-save';
+import { appendParagraph, inTransaction } from '../src/notes';
 import type { ChatModel } from '../src/nim';
 import { JUDGE_SYSTEM } from '../src/stories/judge';
 import { PLAN_SYSTEM } from '../src/stories/plan';
@@ -378,11 +378,13 @@ describe('an import’s graph', () => {
   });
 
   it('undo takes it back, but keeps an entity someone has worked on since', async () => {
-    const { call, archive, preview, entities, relationships } = await setup('undo');
+    const { call, archive, preview, entities, relationships, body } = await setup('undo');
     const p = await preview();
+    expect(await body('Busan')).toBe('');
     const saved = (await (
       await call('POST', `/v1/archives/${archive}/ingest/${p.jobId}/save`, {})
     ).json()) as { runId: string };
+    expect(await body('Busan')).toMatch(/^_From “[^”]+”:_ Noah went to Busan\.$/);
     const before = await entities();
     const mother = before.find((e) => e.name === 'Noah Kim’s mother')!;
     // renamed by hand since the import
@@ -393,6 +395,9 @@ describe('an import’s graph', () => {
     );
     const res = await call('POST', `/v1/archives/${archive}/ingest-runs/${saved.runId}/undo`);
     expect(res.status).toBe(200);
+    const out = (await res.json()) as { restored: number };
+    // Busan's note predates the import and only got a paragraph: put back, not kept-and-left
+    expect(out.restored).toBe(1);
     const names = (await entities()).map((e) => e.name);
     expect(names).not.toContain('Sarah');
     expect(names).not.toContain('Tom');
@@ -401,6 +406,81 @@ describe('an import’s graph', () => {
     expect(names).toContain('Busan');
     expect(names).toContain(`Noah Kim undo ${RUN}`);
     expect(await relationships()).toEqual([]);
+    expect(await body('Busan')).toBe('');
+    const busan = (
+      await ctx.pool.query(
+        `select extra, (select reason::text from public.revisions v
+                          where v.note_id = n.id order by v.seq desc limit 1) as last_reason
+           from public.notes n where n.archive_id = $1 and n.title = 'Busan'`,
+        [archive],
+      )
+    ).rows[0] as { extra: { paragraphs?: unknown[] }; last_reason: string };
+    expect(busan.last_reason).toBe('restore');
+    expect(busan.extra.paragraphs ?? []).toEqual([]);
+  });
+
+  it('a note edited since the import keeps the paragraph it added, as a made note would', async () => {
+    const { call, archive, preview, body } = await setup('restore-edited');
+    const p = await preview();
+    const saved = (await (
+      await call('POST', `/v1/archives/${archive}/ingest/${p.jobId}/save`, {})
+    ).json()) as { runId: string };
+    const busanId = (
+      (
+        await ctx.pool.query(
+          `select id from public.notes where archive_id = $1 and title = 'Busan'`,
+          [archive],
+        )
+      ).rows[0] as { id: string }
+    ).id;
+    const edited = `${await body('Busan')}\n\nA correction by hand.`;
+    const put = await call('PUT', `/v1/archives/${archive}/notes/${busanId}`, {
+      body: edited,
+    });
+    expect(put.status).toBe(200);
+    const res = await call('POST', `/v1/archives/${archive}/ingest-runs/${saved.runId}/undo`);
+    expect(res.status).toBe(200);
+    const out = (await res.json()) as {
+      restored: number;
+      kept: Array<{ id: string; reason: string }>;
+    };
+    expect(out.restored).toBe(0);
+    expect(out.kept).toEqual(
+      expect.arrayContaining([expect.objectContaining({ id: busanId, reason: 'edited' })]),
+    );
+    expect(await body('Busan')).toBe(edited);
+    const extra = (await ctx.pool.query(`select extra from public.notes where id = $1`, [busanId]))
+      .rows[0].extra as { paragraphs: Array<{ runId: string }> };
+    expect(extra.paragraphs.map((p) => p.runId)).toContain(saved.runId);
+  });
+
+  it('a new note edited since the import is kept, not restored, as today', async () => {
+    const { call, archive, preview } = await setup('restore-new-edited');
+    const p = await preview();
+    const saved = (await (
+      await call('POST', `/v1/archives/${archive}/ingest/${p.jobId}/save`, {})
+    ).json()) as { runId: string };
+    const motherId = (
+      (
+        await ctx.pool.query(
+          `select id from public.notes where archive_id = $1 and title = 'Noah Kim’s mother'`,
+          [archive],
+        )
+      ).rows[0] as { id: string }
+    ).id;
+    const put = await call('PUT', `/v1/archives/${archive}/notes/${motherId}`, {
+      body: 'Edited by hand.',
+    });
+    expect(put.status).toBe(200);
+    const res = await call('POST', `/v1/archives/${archive}/ingest-runs/${saved.runId}/undo`);
+    expect(res.status).toBe(200);
+    const out = (await res.json()) as {
+      restored: number;
+      kept: Array<{ id: string; reason: string }>;
+    };
+    // Busan's note is restored (its own paragraph), but the edited new note is kept, not restored
+    expect(out.restored).toBe(1);
+    expect(out.kept.map((k) => k.id)).toContain(motherId);
   });
 });
 
@@ -771,15 +851,272 @@ describe('saving an import’s notes, links, mentions and relationships', () => 
         body: string;
         extra: Record<string, unknown>;
       }>;
-    const save = (memories: unknown[], graph: GraphProposal) =>
+    const save = (memories: unknown[], graph: GraphProposal, sourceHash = randomUUID()) =>
       persistImport(ctx.deps, archive, owner.userId, {
-        sourceHash: randomUUID(),
+        sourceHash,
+        source: `${INTERVIEW}.txt`,
         interviewName: INTERVIEW,
         memories,
         graph,
       } as unknown as IngestResult);
-    return { owner, archive, note, entityOf, notes, save };
+    const undo = async (runId: string) => {
+      const res = await ctx.api(
+        owner.token,
+        'POST',
+        `/v1/archives/${archive}/ingest-runs/${runId}/undo`,
+      );
+      expect(res.status).toBe(200);
+      return (await res.json()) as UndoOutcome;
+    };
+    return { owner, archive, note, entityOf, notes, save, undo };
   }
+
+  it('undo restores before the first of two paragraphs from the run and rebuilds its indexes', async () => {
+    const { owner, archive, note, notes, save, undo } = await project('undo-two-paragraphs');
+    const harbour = await note('Harbour', 'event', 'The harbour.');
+    const jun = await note('Jun', 'person', 'Jun.');
+    const before = 'Mina knew [[Harbour]].';
+    const mina = await note('Mina Kim', 'person', before);
+    const older = { runId: randomUUID(), sources: [{ sentence: 'An older paragraph.' }] };
+    await ctx.pool.query(`update public.notes set extra = $1::jsonb where id = $2`, [
+      JSON.stringify({ label: 'keep this', paragraphs: [older] }),
+      mina,
+    ]);
+    const out = await save([story('m1', 'A visit', '[[Mina Kim]] came by.')], {
+      entities: [NOTED('e1', 'Mina Kim', 'm1')],
+      relationships: [],
+    });
+    const run = (
+      await ctx.pool.query(`select change_id from public.ingest_runs where id = $1`, [out.runId])
+    ).rows[0] as { change_id: string };
+    await inTransaction(ctx.deps, archive, async (client) => {
+      expect(
+        await appendParagraph(client, {
+          archiveId: archive,
+          noteId: mina,
+          userId: owner.userId,
+          text: 'She also met [[Jun]].',
+          sources: [],
+          runId: out.runId!,
+          changeId: run.change_id,
+        }),
+      ).toBe(true);
+    });
+    const imported = (await notes()).find((n) => n.id === mina)!;
+    expect(imported.body).toContain(`_From “${INTERVIEW}”:_ Mina Kim came.`);
+    expect(imported.body).toContain('She also met [[Jun]].');
+    expect(
+      (await ctx.pool.query(`select resolved_id from public.links where source_id = $1`, [mina]))
+        .rows,
+    ).toEqual([{ resolved_id: harbour }, { resolved_id: jun }]);
+
+    expect(await undo(out.runId!)).toMatchObject({ erased: 1, restored: 1, kept: [] });
+    const restored = (await notes()).find((n) => n.id === mina)!;
+    expect(restored.body).toBe(before);
+    expect(restored.extra).toEqual({ label: 'keep this', paragraphs: [older] });
+    const revisions = (
+      await ctx.pool.query(
+        `select id, reason::text, body from public.revisions where note_id = $1 order by seq`,
+        [mina],
+      )
+    ).rows;
+    expect(revisions.map((r) => r.reason)).toEqual(['create', 'import', 'import', 'restore']);
+    expect(revisions.at(-1)?.body).toBe(before);
+    expect(
+      (await ctx.pool.query(`select resolved_id from public.links where source_id = $1`, [mina]))
+        .rows,
+    ).toEqual([{ resolved_id: harbour }]);
+    expect(
+      (
+        await ctx.pool.query(`select content, revision_id from public.chunks where note_id = $1`, [
+          mina,
+        ])
+      ).rows,
+    ).toEqual([{ content: before, revision_id: revisions.at(-1)?.id }]);
+    expect(await undo(out.runId!)).toMatchObject({
+      erased: 0,
+      restored: 0,
+      kept: [],
+      alreadyUndone: true,
+    });
+  });
+
+  it('an appended-to note never keeps a run alive after its only new story is deleted', async () => {
+    const { owner, archive, note, notes, save } = await project('undo-liveness');
+    const mina = await note('Mina Kim', 'person', 'Mina was already here.');
+    const sourceHash = randomUUID();
+    const graph: GraphProposal = { entities: [NOTED('e1', 'Mina Kim', 'm1')], relationships: [] };
+    const out = await save([story('m1', 'A visit', '[[Mina Kim]] came by.')], graph, sourceHash);
+    expect(await findActiveImport(ctx.pool, archive, sourceHash)).toMatchObject({
+      runId: out.runId,
+      noteCount: 1,
+    });
+    expect((await listRuns(ctx.pool, archive)).find((r) => r.id === out.runId)?.notes).toBe(1);
+    const deleted = await ctx.api(
+      owner.token,
+      'DELETE',
+      `/v1/archives/${archive}/notes/${out.saved[0]!.id}`,
+    );
+    expect(deleted.status).toBe(200);
+    // Erasure itself must retire the record, before a lookup or listing can repair it.
+    const retired = (
+      await ctx.pool.query(
+        `select active, source_label, source_hash is not null as has_hash
+           from public.ingest_runs where id = $1`,
+        [out.runId],
+      )
+    ).rows[0];
+    expect(retired).toEqual({ active: false, source_label: null, has_hash: false });
+    expect((await notes()).find((n) => n.id === mina)?.body).toContain('_From');
+    expect(await findActiveImport(ctx.pool, archive, sourceHash)).toBeNull();
+    expect((await listRuns(ctx.pool, archive)).find((r) => r.id === out.runId)).toMatchObject({
+      notes: 0,
+      source: null,
+    });
+    expect(
+      (await save([story('m2', 'Another visit', '[[Mina Kim]] visited again.')], graph, sourceHash))
+        .runId,
+    ).not.toBe(out.runId);
+  });
+
+  it('a restore written by the undo does not make an older dangling link count as later work', async () => {
+    const { archive, note, notes, save, undo } = await project('undo-restore-link');
+    const before = 'Mina knew [[Minho]].';
+    const mina = await note('Mina Kim', 'person', before);
+    const out = await save([story('m1', 'A visit', '[[Minho]] visited [[Mina Kim]].')], {
+      entities: [NOTED('e1', 'Minho', 'm1'), NOTED('e2', 'Mina Kim', 'm1')],
+      relationships: [],
+    });
+    expect(await undo(out.runId!)).toMatchObject({ erased: 2, restored: 1, kept: [] });
+    expect((await notes()).find((n) => n.id === mina)?.body).toBe(before);
+    expect((await notes()).find((n) => n.title === 'Minho')).toBeUndefined();
+    expect(
+      (await ctx.pool.query(`select resolved_id from public.links where source_id = $1`, [mina]))
+        .rows,
+    ).toEqual([{ resolved_id: null }]);
+    expect((await listRuns(ctx.pool, archive)).find((r) => r.id === out.runId)?.notes).toBe(0);
+  });
+
+  it('an earlier undo restore never turns an old dangling link into later human work', async () => {
+    const { note, notes, save, undo } = await project('undo-earlier-restore');
+    const mina = await note('Mina Kim', 'person', 'Mina knew [[Minho]].');
+    const first = await save([story('m1', 'Mina visited', '[[Mina Kim]] visited.')], {
+      entities: [NOTED('e1', 'Mina Kim', 'm1')],
+      relationships: [],
+    });
+    const second = await save([story('m2', 'Minho visited', '[[Minho]] visited.')], {
+      entities: [NOTED('e2', 'Minho', 'm2')],
+      relationships: [],
+    });
+    expect(await undo(first.runId!)).toMatchObject({ erased: 1, restored: 1, kept: [] });
+    expect((await notes()).find((n) => n.id === mina)?.body).toBe('Mina knew [[Minho]].');
+    expect(await undo(second.runId!)).toMatchObject({ erased: 2, restored: 0, kept: [] });
+    expect((await notes()).find((n) => n.title === 'Minho')).toBeUndefined();
+  });
+
+  it('a later import that only links an earlier entity note keeps that note on undo', async () => {
+    const { entityOf, notes, save, undo } = await project('undo-later-link');
+    const first = await save([story('m1', 'A visit', '[[Minho]] came by.')], {
+      entities: [NOTED('e1', 'Minho', 'm1')],
+      relationships: [],
+    });
+    const minho = (await notes()).find((n) => n.title === 'Minho')!;
+    const second = await save([story('m2', 'Another visit', '[[Minho]] visited again.')], {
+      entities: [
+        {
+          ...NOTED('e1', 'Minho', 'm2'),
+          match: { kind: 'existing', entityId: await entityOf(minho.id), name: 'Minho' },
+          note: { kind: 'existing', noteId: minho.id, title: 'Minho' },
+          description: [],
+        },
+      ],
+      relationships: [],
+    });
+    const undone = await undo(first.runId!);
+    expect(undone).toMatchObject({
+      erased: 1,
+      restored: 0,
+      kept: [{ id: minho.id, title: 'Minho', reason: 'linked' }],
+    });
+    expect((await notes()).find((n) => n.id === minho.id)?.body).toBe('Minho came.');
+    expect(
+      (
+        await ctx.pool.query(`select resolved_id from public.links where source_id = $1`, [
+          second.saved[0]!.id,
+        ])
+      ).rows,
+    ).toEqual([{ resolved_id: minho.id }]);
+    expect(await entityOf(minho.id)).toBeTruthy();
+  });
+
+  it('undo removes its graph rows even on retained stories and existing entity notes', async () => {
+    const { owner, archive, note, entityOf, notes, save, undo } = await project('undo-graph-rows');
+    const mina = await note('Mina Kim', 'person', 'Mina was already here.');
+    const jun = await note('Jun', 'person', 'Jun was already here.');
+    const graph: GraphProposal = {
+      entities: [NOTED('e1', 'Mina Kim', 'm1'), NOTED('e2', 'Jun', 'm1')],
+      relationships: [
+        {
+          ref: 'r1',
+          a: 'e1',
+          b: 'e2',
+          description: 'Mina — Jun’s friend',
+          story: null,
+          sources: line(1),
+        },
+        {
+          ref: 'r2',
+          a: 'e1',
+          b: 'e2',
+          description: 'Mina — Jun’s visitor',
+          story: 'm1',
+          sources: line(1),
+        },
+      ],
+    };
+    const first = await save([story('m1', 'A visit', '[[Mina Kim]] visited [[Jun]].')], graph);
+    const keptStory = first.saved[0]!.id;
+    const edited = await ctx.api(owner.token, 'PUT', `/v1/archives/${archive}/notes/${keptStory}`, {
+      body: 'I remember their visit differently.',
+    });
+    expect(edited.status).toBe(200);
+    const second = await save(
+      [story('m2', 'Another visit', '[[Mina Kim]] visited [[Jun]] again.')],
+      {
+        ...graph,
+        entities: graph.entities.map((e) => ({
+          ...e,
+          description: [],
+          mentions: e.mentions.map((m) => ({ ...m, story: 'm2' })),
+        })),
+        relationships: graph.relationships
+          .filter((r) => r.story !== null)
+          .map((r) => ({ ...r, description: `${r.description} again`, story: 'm2' })),
+      },
+    );
+    const rowsFor = async (runId: string) =>
+      (
+        await ctx.pool.query(
+          `select (select count(*)::int from public.graph_mentions where run_id = $1) as mentions,
+                  (select count(*)::int from public.graph_relationships where run_id = $1) as relationships`,
+          [runId],
+        )
+      ).rows[0];
+    expect(await rowsFor(first.runId!)).toEqual({ mentions: 2, relationships: 2 });
+    expect(await rowsFor(second.runId!)).toEqual({ mentions: 2, relationships: 1 });
+    const undone = await undo(first.runId!);
+    expect(undone).toMatchObject({
+      erased: 0,
+      restored: 2,
+      kept: [{ id: keptStory, title: 'A visit', reason: 'edited' }],
+    });
+    expect((await notes()).find((n) => n.id === mina)?.body).toBe('Mina was already here.');
+    expect((await notes()).find((n) => n.id === jun)?.body).toBe('Jun was already here.');
+    expect(await rowsFor(first.runId!)).toEqual({ mentions: 0, relationships: 0 });
+    expect(await rowsFor(second.runId!)).toEqual({ mentions: 2, relationships: 1 });
+    expect(await entityOf(mina)).toBeTruthy();
+    expect(await entityOf(jun)).toBeTruthy();
+  });
 
   it('makes the notes, adds the paragraphs, and points every link at its note', async () => {
     const { owner, archive, note, entityOf, notes, save } = await project('all');

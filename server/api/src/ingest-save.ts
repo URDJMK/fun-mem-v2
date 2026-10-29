@@ -34,11 +34,14 @@ import { visibleSql } from './views';
 import {
   ApiError,
   WRITE_ROLES,
+  appendRevision,
   createNotesBatch,
   eraseNotes,
   inTransaction,
+  reindexLinks,
   withoutMarkersNaming,
 } from './notes';
+import { reindexChunks } from './chunks';
 import { forgetInterviewOf, markWritten, recordedAt } from './stories/interviews';
 
 /**
@@ -763,8 +766,12 @@ interface RunRow {
   alive: number;
 }
 
+// only a note's FIRST revision counts: a run that merely added a paragraph to a note someone
+// else made did not make that note, and must not be "alive" through it (9b, Important 2)
 const aliveSql = `(select count(distinct v.note_id)::int from public.revisions v
-                    where v.change_id = r.change_id and v.archive_id = r.archive_id)`;
+                    where v.change_id = r.change_id and v.archive_id = r.archive_id
+                      and v.seq = (select min(w.seq) from public.revisions w
+                                    where w.note_id = v.note_id))`;
 
 const recordOf = (row: RunRow): ImportRecord => ({
   runId: row.id,
@@ -798,7 +805,9 @@ async function forgetEmptyRuns(db: Db, archiveId: string, ids: string[]): Promis
         set active = false, source_label = null, source_hash = null
       where r.archive_id = $1 and r.id = any($2::uuid[])
         and not exists (select 1 from public.revisions v
-                         where v.change_id = r.change_id and v.archive_id = r.archive_id)`,
+                         where v.change_id = r.change_id and v.archive_id = r.archive_id
+                           and v.seq = (select min(w.seq) from public.revisions w
+                                         where w.note_id = v.note_id))`,
     [archiveId, ids],
   );
 }
@@ -1131,6 +1140,8 @@ export type KeptReason = 'edited' | 'linked';
 export interface UndoOutcome {
   /** notes erased */
   erased: number;
+  /** a note the run only added a paragraph to, put back to how it read before */
+  restored: number;
   /** notes of the import somebody has worked on since: they are kept */
   kept: Array<{ id: string; title: string; reason: KeptReason }>;
   alreadyUndone: boolean;
@@ -1138,16 +1149,20 @@ export interface UndoOutcome {
 
 /**
  * Take an import back as a unit: erase exactly the notes it made, but never one somebody
- * has worked on since, because that would destroy their work. Worked on means:
+ * has worked on since, because that would destroy their work. A note the run only added a
+ * paragraph to (entity design 5.2) is never erased — it is put back to the revision before
+ * the run's first one, and the run's entry in its `extra.paragraphs` goes with it — unless it
+ * too has a later revision, in which case it is kept, as a made note would be. Worked on means:
  *
  *   edited   a revision other than the import's own. A rename cascade does not count:
  *            it is the machine following another note's new title, not a person; nor
  *            does an erasure cascade (a quote of an erased note taken out of it).
  *   linked   another note links to it that a PERSON wrote, edited or restored after the
- *            import, or another memory of this import that a person has edited. A link
- *            another import (or the assistant) made by itself, because the words matched
- *            this title, is not somebody building on the memory; nor is a link between two
- *            memories of this import that nobody has touched.
+ *            import, or another memory of this import that a person has edited. An entity
+ *            note also stays when a later import links to it: those stories still need the
+ *            person, place or thing they name. A link another import (or the assistant) made
+ *            to a story by itself does not count; nor does a link between two untouched
+ *            memories of this import.
  *
  * Your own import: any role that adds memories. Someone else's: an owner or a steward.
  * The run row is locked, so two undos at once erase once and the second is told so; the
@@ -1161,7 +1176,7 @@ export async function undoImport(
 ): Promise<(UndoOutcome & { erasedIds: string[] }) | null> {
   return inTransaction(deps, archiveId, async (client, changeId) => {
     const found = await client.query(
-      `select r.change_id, r.created_by, r.created_at, r.undone_at, r.source_hash, r.kind
+      `select r.change_id, r.created_by, r.created_at, r.undone_at, r.source_hash
          from public.ingest_runs r where r.id = $1 and r.archive_id = $2 for update`,
       [runId, archiveId],
     );
@@ -1172,7 +1187,6 @@ export async function undoImport(
           created_at: Date;
           undone_at: Date | null;
           source_hash: string | null;
-          kind: string;
         }
       | undefined;
     if (!run) return null;
@@ -1187,7 +1201,9 @@ export async function undoImport(
           : 'only the person who imported it, or an owner or steward, can undo an import',
       );
     }
-    if (run.undone_at) return { erased: 0, kept: [], alreadyUndone: true, erasedIds: [] };
+    if (run.undone_at) {
+      return { erased: 0, restored: 0, kept: [], alreadyUndone: true, erasedIds: [] };
+    }
 
     // 1. LOCK the import's notes, in id order (the order every writer here locks notes in).
     // A writer that got to one of them first (an edit) is waited for here.
@@ -1202,15 +1218,70 @@ export async function undoImport(
     );
     const ids = locked.rows.map((r) => (r as { id: string }).id);
 
+    // 1b. A note the run only CHANGED — its first revision is older than the run's own — is put
+    // back to how it read before the run, not erased (Task 10, entity design 5.2/5.3): the run
+    // added a paragraph to a note someone else made, and undo takes only that paragraph back.
+    const changed = await client.query(
+      `select n.id, n.title, n.extra,
+              (select v.change_id from public.revisions v where v.note_id = n.id
+                order by v.seq desc limit 1) = $2 as ours_last,
+              (select v.body from public.revisions v where v.note_id = n.id
+                 and v.seq < (select min(w.seq) from public.revisions w
+                               where w.note_id = n.id and w.change_id = $2)
+                order by v.seq desc limit 1) as before
+         from public.notes n
+        where n.archive_id = $1 and n.id = any($3::uuid[])
+          and (select v.change_id from public.revisions v where v.note_id = n.id
+                order by v.seq asc limit 1) is distinct from $2`,
+      [archiveId, run.change_id, ids],
+    );
+    const keptChanged: UndoOutcome['kept'] = [];
+    const restored: string[] = [];
+    for (const r of changed.rows as Array<{
+      id: string;
+      title: string;
+      extra: Record<string, unknown> | null;
+      ours_last: boolean;
+      before: string | null;
+    }>) {
+      if (!r.ours_last || r.before === null) {
+        keptChanged.push({ id: r.id, title: r.title, reason: 'edited' });
+        continue;
+      }
+      const extra = r.extra ?? {};
+      const paragraphs = Array.isArray(extra.paragraphs)
+        ? (extra.paragraphs as Array<{ runId?: string }>).filter((p) => p.runId !== runId)
+        : undefined;
+      await client.query(
+        `update public.notes set body = $1, extra = $2::jsonb, revised = now() where id = $3`,
+        [r.before, JSON.stringify(paragraphs ? { ...extra, paragraphs } : extra), r.id],
+      );
+      const rev = await appendRevision(
+        client,
+        archiveId,
+        r.id,
+        userId,
+        r.title,
+        r.before,
+        'restore',
+        changeId,
+      );
+      await reindexLinks(client, archiveId, r.id, r.before);
+      await reindexChunks(client, archiveId, r.id, rev, r.before);
+      restored.push(r.id);
+    }
+    const changedIds = new Set((changed.rows as Array<{ id: string }>).map((r) => r.id));
+    const toDecide = ids.filter((id) => !changedIds.has(id));
+
     // 2. THEN decide, in a new statement. A statement sees what was committed when it began,
     // so deciding in the one that waited for the locks judged a note by how it looked BEFORE
     // the wait: an edit that won the race was not seen, and its note was erased (round-2
     // review #3).
     //   edited  a revision other than the import's own; a rename or erasure cascade is the machine
-    //   linked  a note links to it that a person has worked on since: written, edited or
-    //           restored after the import, OR another memory of this import that is itself
-    //           edited (a person who edits memory A and links it to memory B has built on B;
-    //           links among memories nobody touched still do not hold an undo back)
+    //   linked  a note links to it that a person has worked on since, or a later import uses
+    //           an entity note. Another edited memory of this import counts too; links among
+    //           memories nobody touched still do not hold an undo back. This undo's own
+    //           restore revisions above are bookkeeping, never evidence of later work.
     const flags = await client.query(
       `with imp as (select unnest($4::uuid[]) as id),
             edited as (
@@ -1227,12 +1298,23 @@ export async function undoImport(
                                   and exists (select 1 from public.revisions sv
                                                where sv.note_id = l.source_id
                                                  and sv.created_at > $3
-                                                 and sv.reason in ('create', 'edit', 'restore')))))
+                                                 and sv.change_id is distinct from $2
+                                                 and sv.change_id is distinct from $5
+                                                 and not exists (
+                                                   select 1 from public.ingest_runs u
+                                                    where u.archive_id = $1
+                                                      and u.undo_change_id = sv.change_id)
+                                                 and (sv.reason in ('create', 'edit', 'restore')
+                                                      or (sv.reason = 'import'
+                                                          and exists (
+                                                            select 1 from public.graph_entities e
+                                                             where e.note_id = n.id
+                                                               and e.archive_id = $1)))))))
                 as linked
          from public.notes n
         where n.archive_id = $1 and n.id = any($4::uuid[])
         order by n.created_at, n.id`,
-      [archiveId, run.change_id, run.created_at, ids],
+      [archiveId, run.change_id, run.created_at, toDecide, changeId],
     );
     const rows = flags.rows as Array<{
       id: string;
@@ -1254,23 +1336,33 @@ export async function undoImport(
     );
     // every note asked for was locked in step 1, so exactly those were erased: a note that is
     // still here is one with a reason
-    const kept = rows
-      .filter((r) => !erasedIds.has(r.id))
-      .map((r) => ({ id: r.id, title: r.title, reason: reasonOf(r)! }));
+    const kept = [
+      ...rows
+        .filter((r) => !erasedIds.has(r.id))
+        .map((r) => ({ id: r.id, title: r.title, reason: reasonOf(r)! })),
+      ...keptChanged,
+    ];
     const erase = [...erasedIds];
     // the interview whose stories these were goes too: the import keeps no words after an undo
     await forgetInterviewOf(client, runId);
     // and the people, places and things only it brought (graph design 5.3)
-    await undoGraph(client, archiveId, runId, { everything: run.kind === 'graph' });
+    await undoGraph(client, archiveId, runId);
     // what is left of the record is content-free: no file name, no hash of the words
     await client.query(
       `update public.ingest_runs
-          set undone_at = now(), active = false, source_label = null, source_hash = null
+          set undone_at = now(), undo_change_id = $2, active = false,
+              source_label = null, source_hash = null
         where id = $1`,
-      [runId],
+      [runId, changeId],
     );
     // an earlier import of the same interview whose notes are still there guards it again
     if (run.source_hash) await reactivate(client, archiveId, run.source_hash);
-    return { erased: erase.length, kept, alreadyUndone: false, erasedIds: erase };
+    return {
+      erased: erase.length,
+      restored: restored.length,
+      kept,
+      alreadyUndone: false,
+      erasedIds: erase,
+    };
   });
 }
