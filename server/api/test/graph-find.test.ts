@@ -431,6 +431,20 @@ describe('findEntities', () => {
     balanced(r);
   });
 
+  it('keeps a place the lines name only as its people or language', async () => {
+    const r = await run(
+      model({
+        entities: [
+          { ref: 'e1', name: 'Noah Kim', type: 'person', match: 'k-noah' },
+          { ref: 'e2', name: 'Korea', type: 'place', match: 'new' },
+        ],
+        relationships: [],
+      }),
+      { lines: [line(1, 'Noah', 'My mother always made Korean food.')] },
+    );
+    expect(r.entities.map((e) => e.name)).toEqual(['Noah Kim', 'Korea']);
+  });
+
   it('holds a name to whole words: "sleep" does not give "Lee"', async () => {
     const found = structuredClone(FOUND);
     found.entities[1]!.name = 'Sarah Lee';
@@ -816,6 +830,22 @@ describe('the name rule', () => {
     expect(nameHeld('Sarah of the Hills', wordsOf('Sarah lived in the hills.'), new Set())).toBe(
       true,
     );
+  });
+});
+
+describe('the name rule for places named as their people or language', () => {
+  const held = (name: string, text: string) => nameHeld(name, wordsOf(text), new Set());
+  it('finds a place in the word for its people or language', () => {
+    expect(held('Korea', 'My mother made Korean food.')).toBe(true);
+    expect(held('Japan', 'I went to the Japanese school.')).toBe(true);
+    expect(held('Israel', 'He married an Israeli girl.')).toBe(true);
+    expect(held('Italy', 'We ate at an Italian place.')).toBe(true);
+    expect(held('Brazil', 'Her cousin was Brazilian.')).toBe(true);
+  });
+  it('finds nothing in a word that only starts the same', () => {
+    expect(held('Kim', 'We ate kimchi every day.')).toBe(false);
+    expect(held('Ireland', 'Her grandmother was Irish.')).toBe(false);
+    expect(held('Korea', 'We had a cup of tea.')).toBe(false);
   });
 });
 

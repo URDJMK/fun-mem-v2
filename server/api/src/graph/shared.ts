@@ -54,10 +54,20 @@ export const wordsOf = (text: string): Set<string> =>
       .filter(Boolean),
   );
 
+/** endings that make a people or a language of a place: "Korean", "Japanese", "Israeli" */
+const PEOPLE_OF = ['n', 'an', 'ian', 'ese', 'i', 'ish'];
+
+/** `w` is said, or said as a people or a language ("korea" in "korean", "italy" in "italian") */
+const saidAs = (w: string, said: ReadonlySet<string>): boolean =>
+  said.has(w) ||
+  PEOPLE_OF.some((end) => said.has(w + end)) ||
+  (w.endsWith('y') && said.has(`${w.slice(0, -1)}ian`));
+
 /**
- * The name rule: a name comes from the lines. Every word of it but filler is a word `said` there,
- * or a word of a `known` name; a surname the AI added ("Sarah Lee" for a "Sarah") fails it, even
- * when the lines hold it inside another word ("sleep").
+ * The name rule: a name comes from the lines. Every word of it but filler is a word `said` there
+ * (a place also as its people or language: "Korea" from "Korean food"), or a word of a `known`
+ * name; a surname the AI added ("Sarah Lee" for a "Sarah") fails it, even when the lines hold it
+ * inside another word ("sleep").
  */
 export function nameHeld(
   name: string,
@@ -66,7 +76,7 @@ export function nameHeld(
 ): boolean {
   return [...wordsOf(name)]
     .filter((w) => !NAME_FILLER.has(w))
-    .every((w) => known.has(w) || said.has(w));
+    .every((w) => known.has(w) || saidAs(w, said));
 }
 
 /** capitalized words that are not names: they open a sentence or stand for anyone */
