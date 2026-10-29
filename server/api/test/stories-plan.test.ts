@@ -180,4 +180,31 @@ describe('planPart', () => {
     expect(users[0]).toContain('L4 Sunja: I was born in Busan');
     expect(users[1]).toContain('Minho (person, id n9)');
   });
+
+  it('shows the planner who is in the interview, when it is known', async () => {
+    const seen: string[] = [];
+    const chat: ChatModel = {
+      id: 'scripted',
+      complete: async (_system, user) => {
+        seen.push(user);
+        return JSON.stringify({ result: { stories: [story('Busan', ['L4'])] } });
+      },
+    };
+    const base = {
+      lines,
+      subject: 'Sunja',
+      carried: [],
+      lookup: { search: async () => [], read: async () => null } as StoryLookup,
+      maxToolCalls: 0,
+    };
+    await planPart(chat, { ...base, cast: "Noah Kim's mother (person)\nBusan (place)" });
+    expect(seen[0]).toContain("Who is in it:\nNoah Kim's mother (person)\nBusan (place)");
+    expect(seen[0]!.indexOf('The narrator: Sunja.')).toBeLessThan(seen[0]!.indexOf('Who is in it'));
+    expect(seen[0]!.indexOf('Who is in it')).toBeLessThan(seen[0]!.indexOf('The transcript'));
+
+    await planPart(chat, base);
+    await planPart(chat, { ...base, cast: '' });
+    expect(seen[1]).not.toContain('Who is in it');
+    expect(seen[2]).not.toContain('Who is in it');
+  });
 });
