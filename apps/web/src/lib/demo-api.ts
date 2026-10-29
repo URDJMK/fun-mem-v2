@@ -596,7 +596,10 @@ function jobView(job: DemoJob) {
             saved: job.saved,
             runId: job.runId ?? null,
             ...(job.graph
-              ? { graph: { entities: [], relationships: [], pending: { reason: 'no_model' } } }
+              ? {
+                  format: 'graph',
+                  graph: { entities: [], relationships: [], pending: { reason: 'no_model' } },
+                }
               : {}),
           },
         }),

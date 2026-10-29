@@ -140,7 +140,10 @@ export function GraphReview({
                 const same = { ...choices.same };
                 if (id) same[e.ref] = id;
                 else delete same[e.ref];
-                onChange({ ...choices, same });
+                // the paragraph choice belonged to the note picked before
+                const paragraphOut = new Set(choices.paragraphOut);
+                paragraphOut.delete(e.ref);
+                onChange({ ...choices, same, paragraphOut });
               }}
             />
           ))}
