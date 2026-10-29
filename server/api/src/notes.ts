@@ -950,7 +950,12 @@ export async function createNotesBatch(
 /**
  * Add a paragraph to the end of a note, as a new revision of it (entity design 5.2): what is
  * written is never changed. The paragraph's sources go in `extra.paragraphs` with the run, so
- * an undo can take them back. A note the paragraph would make too long is left as it is.
+ * an undo can take them back. Returns false, changing nothing, for a note the user cannot see
+ * or that is not in the project, for a paragraph with no words, and for a note the paragraph
+ * would make too long.
+ *
+ * It runs inside a transaction the caller owns, and the caller has checked that the user may
+ * write. `text` is one paragraph.
  */
 export async function appendParagraph(
   client: PoolClient,
@@ -964,9 +969,11 @@ export async function appendParagraph(
     changeId: string;
   },
 ): Promise<boolean> {
+  if (!o.text.trim()) return false;
   const cur = await client.query(
-    `select title, body, extra from public.notes where id = $1 and archive_id = $2 for update`,
-    [o.noteId, o.archiveId],
+    `select n.title, n.body, n.extra from public.notes n
+      where ${visibleNoteSql('n', '$1', '$2', '$3')} for update`,
+    [o.noteId, o.archiveId, o.userId],
   );
   const head = cur.rows[0] as
     { title: string; body: string; extra: Record<string, unknown> | null } | undefined;
@@ -974,8 +981,9 @@ export async function appendParagraph(
   const body = head.body.trim() ? `${head.body.trimEnd()}\n\n${o.text}` : o.text;
   try {
     checkBody(body);
-  } catch {
-    return false;
+  } catch (e) {
+    if (e instanceof ApiError) return false;
+    throw e;
   }
   const extra = head.extra ?? {};
   const paragraphs = Array.isArray(extra.paragraphs) ? extra.paragraphs : [];

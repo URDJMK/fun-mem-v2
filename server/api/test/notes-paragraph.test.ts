@@ -29,22 +29,30 @@ async function setup() {
     text: string,
     over: Partial<Parameters<typeof appendParagraph>[1]> = {},
   ) => {
-    const changeId = randomUUID();
-    const runId = randomUUID();
+    const o = {
+      archiveId: archive,
+      noteId,
+      userId: owner.userId,
+      text,
+      sources: [{ sentence: 0, interviewId: randomUUID() }],
+      runId: randomUUID(),
+      changeId: randomUUID(),
+      ...over,
+    };
     return inTransaction(ctx.deps, archive, async (client) => ({
-      changeId,
-      runId,
-      done: await appendParagraph(client, {
-        archiveId: archive,
-        noteId,
-        userId: owner.userId,
-        text,
-        sources: [{ sentence: 0, interviewId: randomUUID() }],
-        runId,
-        changeId,
-        ...over,
-      }),
+      changeId: o.changeId,
+      runId: o.runId,
+      done: await appendParagraph(client, o),
     }));
+  };
+  /** a member of the project who is not its owner */
+  const member = async () => {
+    const m = await ctx.realSession(`notes-paragraph-${RUN}-${n++}@test.local`);
+    await ctx.pool.query(
+      `insert into public.memberships (archive_id, user_id, role) values ($1, $2, 'contributor')`,
+      [archive, m.userId],
+    );
+    return m;
   };
   const read = async (noteId: string) =>
     (
@@ -55,7 +63,7 @@ async function setup() {
         [noteId],
       )
     ).rows[0] as { body: string; extra: Record<string, unknown>; revisions: number };
-  return { owner, archive, note, add, read };
+  return { owner, archive, note, add, read, member };
 }
 
 const entitiesOf = async (archive: string, noteId: string) =>
@@ -123,7 +131,7 @@ describe('a paragraph added to a note', () => {
     const rev = (
       await ctx.pool.query(
         `select reason::text as reason, body from public.revisions
-          where note_id = $1 order by created_at desc, id desc limit 1`,
+          where note_id = $1 order by seq desc limit 1`,
         [id],
       )
     ).rows[0] as { reason: string; body: string };
@@ -154,6 +162,55 @@ describe('a paragraph added to a note', () => {
     });
   });
 
+  it('is the whole body of a note whose body is only blank space', async () => {
+    const { note, add, read } = await setup();
+    const id = await note('Mina Kim', 'Noah’s mother.');
+    await ctx.pool.query(`update public.notes set body = $1 where id = $2`, ['  \n', id]);
+    await add(id, PARAGRAPH);
+    expect((await read(id)).body).toBe(PARAGRAPH);
+  });
+
+  it('is found by search: its words are in the note’s chunks', async () => {
+    const { note, add } = await setup();
+    const id = await note('Mina Kim', 'Noah’s mother.');
+    await add(id, PARAGRAPH);
+    const chunks = await ctx.pool.query(
+      `select content from public.chunks where note_id = $1 order by chunk_index`,
+      [id],
+    );
+    const text = chunks.rows.map((r: { content: string }) => r.content).join('\n');
+    expect(text).toContain('She made soup.');
+    expect(text).toContain('Noah’s mother.');
+  });
+
+  it('twice from one run and one change makes two revisions and two entries', async () => {
+    const { owner, archive, note, read } = await setup();
+    const id = await note('Mina Kim', 'Noah’s mother.');
+    const before = (await read(id)).revisions;
+    const runId = randomUUID();
+    const changeId = randomUUID();
+    const done = await inTransaction(ctx.deps, archive, async (client) => {
+      const o = { archiveId: archive, noteId: id, userId: owner.userId, runId, changeId };
+      return [
+        await appendParagraph(client, { ...o, text: 'First.', sources: [{ sentence: 1 }] }),
+        await appendParagraph(client, { ...o, text: 'Second.', sources: [{ sentence: 2 }] }),
+      ];
+    });
+    expect(done).toEqual([true, true]);
+    const after = await read(id);
+    expect(after.body).toBe('Noah’s mother.\n\nFirst.\n\nSecond.');
+    expect(after.revisions).toBe(before + 2);
+    expect(after.extra.paragraphs).toEqual([
+      { runId, sources: [{ sentence: 1 }] },
+      { runId, sources: [{ sentence: 2 }] },
+    ]);
+    const shared = await ctx.pool.query(
+      `select 1 from public.revisions where note_id = $1 and change_id = $2`,
+      [id, changeId],
+    );
+    expect(shared.rowCount).toBe(2);
+  });
+
   it('puts the links it has in the note’s links', async () => {
     const { note, add } = await setup();
     const minho = await note('Minho', 'Noah’s brother.');
@@ -177,11 +234,38 @@ describe('a paragraph added to a note', () => {
     expect(before.body).toBe(body);
   });
 
-  it('is refused for a note that is not in the project', async () => {
-    const { note, add } = await setup();
+  it('changes nothing for a paragraph with no words', async () => {
+    const { note, add, read } = await setup();
+    const id = await note('Mina Kim', 'Noah’s mother.');
+    const before = await read(id);
+    expect((await add(id, ' \n ')).done).toBe(false);
+    expect((await add(id, '')).done).toBe(false);
+    expect(await read(id)).toEqual(before);
+  });
+
+  it('is refused for a note that is not in the project, which stays as it was', async () => {
+    const { note, add, read } = await setup();
     const other = await setup();
     const id = await note('Mina Kim', 'Noah’s mother.');
+    const before = await read(id);
     expect((await other.add(id, PARAGRAPH)).done).toBe(false);
     expect((await add(randomUUID(), PARAGRAPH)).done).toBe(false);
+    expect(await read(id)).toEqual(before);
+  });
+
+  it('is refused for a note private to another member, which stays as it was', async () => {
+    const { archive, note, add, read, member } = await setup();
+    const other = await member();
+    const id = await note('Secret', 'Mine alone.');
+    await ctx.pool.query(
+      `insert into public.audiences (archive_id, note_id, kind) values ($1, $2, 'private-to-author')`,
+      [archive, id],
+    );
+    const before = await read(id);
+    expect((await add(id, PARAGRAPH, { userId: other.userId })).done).toBe(false);
+    expect(await read(id)).toEqual(before);
+    // its author still can
+    expect((await add(id, PARAGRAPH)).done).toBe(true);
+    expect((await read(id)).body).toBe(`Mine alone.\n\n${PARAGRAPH}`);
   });
 });
