@@ -292,6 +292,7 @@ export async function graphStep(o: {
         ].join('\n'),
       ),
       knownWords,
+      { asPeople: e.type === 'place' },
     );
 
   // 1. the words each mention uses must be in its story; things capped per story
@@ -369,7 +370,7 @@ export async function graphStep(o: {
     });
   }
   const failed = new Set<Item>();
-  // kept in step with find.ts's checkAll until this step is removed
+  // a fix here belongs in find.ts's checkAll too
   for (const [sid, story] of sRef) {
     const mine = items.filter((i) => i.story === sid);
     if (mine.length === 0) continue;

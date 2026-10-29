@@ -449,7 +449,7 @@ export async function findEntities(o: FindInput): Promise<FindResult> {
   const knownWords = wordsOf(knownNames.join('\n'));
   let things = 0;
   const held = raw.entities.filter((e) => {
-    if (!nameHeld(e.name, said, knownWords)) {
+    if (!nameHeld(e.name, said, knownWords, { asPeople: e.type === 'place' })) {
       leave(e.name, 'a word of the name is not in the lines');
       return false;
     }
@@ -519,9 +519,12 @@ export async function findEntities(o: FindInput): Promise<FindResult> {
   const at = new Map(entities.map((e, i) => [e.ref, i]));
   const batchOf = (ref: string) => Math.floor(at.get(ref)! / JUDGE_BATCH);
   const namesOf = (ref: string) => entities[at.get(ref)!]!.names;
-  const items: Array<Item & { sentence?: Cited; told?: RawTold }> = [
+  const items: Array<
+    (Item & { kind: 'sentence'; sentence: Cited }) | (Item & { kind: 'told'; told: RawTold })
+  > = [
     ...entities.flatMap((e) =>
       e.description.map((s) => ({
+        kind: 'sentence' as const,
         text: s.text,
         cites: s.cites,
         names: e.names,
@@ -531,6 +534,7 @@ export async function findEntities(o: FindInput): Promise<FindResult> {
       })),
     ),
     ...rels.map((r) => ({
+      kind: 'told' as const,
       text: r.description,
       cites: r.cites,
       names: [...namesOf(r.a), ...namesOf(r.b)],
@@ -550,10 +554,14 @@ export async function findEntities(o: FindInput): Promise<FindResult> {
   calls += checked.calls;
   const failed = new Set<Cited | RawTold>();
   for (const [i, why] of checked.failed) {
-    failed.add(i.told ?? i.sentence!);
-    // a sentence that fails goes; its entity stays
-    if (i.told) leave(i.text, why);
-    else list(i.text, why);
+    if (i.kind === 'told') {
+      failed.add(i.told);
+      leave(i.text, why);
+    } else {
+      // a sentence that fails goes; its entity stays
+      failed.add(i.sentence);
+      list(i.text, why);
+    }
   }
   for (const e of entities) e.description = e.description.filter((s) => !failed.has(s));
 

@@ -57,26 +57,56 @@ export const wordsOf = (text: string): Set<string> =>
 /** endings that make a people or a language of a place: "Korean", "Japanese", "Israeli" */
 const PEOPLE_OF = ['n', 'an', 'ian', 'ese', 'i', 'ish'];
 
-/** `w` is said, or said as a people or a language ("korea" in "korean", "italy" in "italian") */
-const saidAs = (w: string, said: ReadonlySet<string>): boolean =>
-  said.has(w) ||
-  PEOPLE_OF.some((end) => said.has(w + end)) ||
-  (w.endsWith('y') && said.has(`${w.slice(0, -1)}ian`));
+/** places whose people or language is not the place with one of those endings */
+const PEOPLE_OF_PLACE = new Map(
+  Object.entries({
+    china: 'chinese',
+    spain: 'spanish',
+    sweden: 'swedish',
+    poland: 'polish',
+    mexico: 'mexican',
+    germany: 'german',
+    canada: 'canadian',
+    france: 'french',
+    england: 'english',
+    scotland: 'scottish',
+    wales: 'welsh',
+    ireland: 'irish',
+    philippines: 'filipino',
+    thailand: 'thai',
+    greece: 'greek',
+    turkey: 'turkish',
+    switzerland: 'swiss',
+    britain: 'british',
+    netherlands: 'dutch',
+  }),
+);
+
+/** a place's word said as its people or language ("korea" in "korean", "italy" in "italian") */
+const saidAsPeople = (w: string, said: ReadonlySet<string>): boolean => {
+  const odd = PEOPLE_OF_PLACE.get(w);
+  return (
+    PEOPLE_OF.some((end) => said.has(w + end)) ||
+    (w.endsWith('y') && said.has(`${w.slice(0, -1)}ian`)) ||
+    (odd !== undefined && said.has(odd))
+  );
+};
 
 /**
- * The name rule: a name comes from the lines. Every word of it but filler is a word `said` there
- * (a place also as its people or language: "Korea" from "Korean food"), or a word of a `known`
- * name; a surname the AI added ("Sarah Lee" for a "Sarah") fails it, even when the lines hold it
- * inside another word ("sleep").
+ * The name rule: a name comes from the lines. Every word of it but filler is a word `said` there,
+ * or a word of a `known` name; a surname the AI added ("Sarah Lee" for a "Sarah") fails it, even
+ * when the lines hold it inside another word ("sleep"). A place (`asPeople`) may also be said as
+ * its people or language: "Korea" from "Korean food"; a person never ("Cho" is not "Choi").
  */
 export function nameHeld(
   name: string,
   said: ReadonlySet<string>,
   known: ReadonlySet<string>,
+  o: { asPeople?: boolean } = {},
 ): boolean {
   return [...wordsOf(name)]
     .filter((w) => !NAME_FILLER.has(w))
-    .every((w) => known.has(w) || saidAs(w, said));
+    .every((w) => known.has(w) || said.has(w) || (o.asPeople === true && saidAsPeople(w, said)));
 }
 
 /** capitalized words that are not names: they open a sentence or stand for anyone */

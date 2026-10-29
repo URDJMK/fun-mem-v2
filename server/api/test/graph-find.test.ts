@@ -445,6 +445,24 @@ describe('findEntities', () => {
     expect(r.entities.map((e) => e.name)).toEqual(['Noah Kim', 'Korea']);
   });
 
+  it('leaves out a person whose name is only the start of a word said', async () => {
+    const r = await run(
+      model({
+        entities: [
+          { ref: 'e1', name: 'Noah Kim', type: 'person', match: 'k-noah' },
+          { ref: 'e2', name: 'Jae Cho', type: 'person', match: 'new' },
+        ],
+        relationships: [],
+      }),
+      { lines: [line(1, 'Noah', 'Jae came with Mrs. Choi.')] },
+    );
+    expect(r.entities.map((e) => e.name)).toEqual(['Noah Kim']);
+    expect(r.stats.left).toContainEqual({
+      what: 'Jae Cho',
+      why: 'a word of the name is not in the lines',
+    });
+  });
+
   it('holds a name to whole words: "sleep" does not give "Lee"', async () => {
     const found = structuredClone(FOUND);
     found.entities[1]!.name = 'Sarah Lee';
@@ -834,7 +852,8 @@ describe('the name rule', () => {
 });
 
 describe('the name rule for places named as their people or language', () => {
-  const held = (name: string, text: string) => nameHeld(name, wordsOf(text), new Set());
+  const held = (name: string, text: string, asPeople = true) =>
+    nameHeld(name, wordsOf(text), new Set(), { asPeople });
   it('finds a place in the word for its people or language', () => {
     expect(held('Korea', 'My mother made Korean food.')).toBe(true);
     expect(held('Japan', 'I went to the Japanese school.')).toBe(true);
@@ -842,10 +861,20 @@ describe('the name rule for places named as their people or language', () => {
     expect(held('Italy', 'We ate at an Italian place.')).toBe(true);
     expect(held('Brazil', 'Her cousin was Brazilian.')).toBe(true);
   });
+  it('knows the words that are not the place with an ending', () => {
+    expect(held('China', 'We bought Chinese tea.')).toBe(true);
+    expect(held('the Netherlands', 'Her husband was Dutch.')).toBe(true);
+    expect(held('Ireland', 'Her grandmother was Irish.')).toBe(true);
+  });
   it('finds nothing in a word that only starts the same', () => {
     expect(held('Kim', 'We ate kimchi every day.')).toBe(false);
-    expect(held('Ireland', 'Her grandmother was Irish.')).toBe(false);
     expect(held('Korea', 'We had a cup of tea.')).toBe(false);
+  });
+  it('never reads a person or a thing that way', () => {
+    expect(held('Cho', 'Mrs. Choi taught me.', false)).toBe(false);
+    expect(held('Al', 'Alan came too.', false)).toBe(false);
+    expect(held('Dan', 'She was Danish.', false)).toBe(false);
+    expect(held('Korea', 'My mother made Korean food.', false)).toBe(false);
   });
 });
 
