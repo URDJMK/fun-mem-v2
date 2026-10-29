@@ -1,0 +1,172 @@
+import { matchKey } from '@funmem/core';
+import { parseCite, type Range } from '../stories/lines';
+import type { Tool } from '../stories/tools';
+import type { EntityLookup, KnownEntity } from './store';
+import type { EntityMatch } from './types';
+
+/**
+ * The pieces both steps that name entities use: the Graph step (reads written stories) and the
+ * Entity step (reads the transcript). The tools, the name rules, the match resolution.
+ */
+
+/** "knew Tom only from Sarah's stories", "known to Noah through Sarah", "heard of him from her" */
+export const SECOND_HAND =
+  /\b(?:knew|know[ns]?|heard(?:\s+(?:of|about))?)\b.{0,60}?\b(?:through|from|via)\b/iu;
+/** a mention's words are a name or a short phrase, never a clause */
+export const MAX_WORDS = 4;
+/** words a name may hold that need not be in the lines */
+export const NAME_FILLER = new Set(
+  'the a an of from in at on and s his her their my our de la le van von'.split(' '),
+);
+export const PRONOUNS = new Set(
+  'he she they him her them his hers their i me my we us our you'.split(' '),
+);
+
+export const isObj = (v: unknown): v is Record<string, unknown> =>
+  typeof v === 'object' && v !== null && !Array.isArray(v);
+export const str = (v: unknown): string =>
+  typeof v === 'string' ? v.replace(/\s+/g, ' ').trim() : '';
+export const lower = (s: string) => s.normalize('NFC').toLowerCase();
+
+export const cites = (v: unknown): Range[] =>
+  (Array.isArray(v) ? v : []).map((c) => parseCite(c)).filter((r): r is Range => r !== null);
+
+/** capitalized words that are not names: they open a sentence or stand for anyone */
+export const NOT_A_NAME = new Set(
+  `i a an the and but or so if then when where while after before he she they we you it his her
+  their our my its this that these those there here one two every each mr mrs ms dr
+  monday tuesday wednesday thursday friday saturday sunday january february march april may june
+  july august september october november december`
+    .split(/\s+/)
+    .filter(Boolean),
+);
+
+/**
+ * Names in the stories that none of `covered` holds: capitalized words not opening a sentence
+ * ("in Korea", "a dance in Xenia"), at most 10. What the Graph step is asked about once more.
+ */
+export function uncovered(texts: readonly string[], covered: readonly string[]): string[] {
+  const have = new Set(covered.flatMap((c) => matchKey(c).split(' ')).filter(Boolean));
+  const out: string[] = [];
+  for (const text of texts) {
+    for (const sentence of text.split(/(?<=[.!?]["”’)]?)\s+/)) {
+      const words = sentence.split(/\s+/);
+      for (let i = 1; i < words.length; i++) {
+        const w = words[i]!.replace(/^[^\p{L}]+|[^\p{L}]+$/gu, '').replace(/['’]s$/u, '');
+        if (!/^\p{Lu}/u.test(w) || w.length < 2) continue;
+        const key = matchKey(w);
+        if (!key || NOT_A_NAME.has(key) || NOT_A_NAME.has(key.replace(/s$/, '')) || have.has(key))
+          continue;
+        if (!out.includes(w)) out.push(w);
+        if (out.length >= 10) return out;
+      }
+    }
+  }
+  return out;
+}
+
+/** case and the two apostrophes alike, one character for one, so places line up */
+export const fold = (s: string) => s.replace(/[’‘]/g, "'").toLowerCase();
+
+/**
+ * `words` as `text` writes them (whole words, ignoring case and which apostrophe), or null when
+ * the text does not hold them. The page underlines exactly what is returned.
+ */
+export function findIn(text: string, words: string): string | null {
+  const t = fold(text);
+  const w = fold(words.trim());
+  if (!w) return null;
+  // a letter whose lowercase is longer would shift the places: compare without returning them
+  if (t.length !== text.length) return t.includes(w) ? words.trim() : null;
+  let at = t.indexOf(w);
+  while (at >= 0) {
+    const before = t[at - 1] ?? '';
+    const after = t[at + w.length] ?? '';
+    if (!/[\p{L}\p{N}]/u.test(before) && !/[\p{L}\p{N}]/u.test(after)) {
+      return text.slice(at, at + w.length);
+    }
+    at = t.indexOf(w, at + 1);
+  }
+  return null;
+}
+
+/**
+ * How a story may write a name: the name itself, a name it goes by, and for a name made from a
+ * relationship ("Noah Kim's mother") the ways a story says that ("Noah's mother", "his mother").
+ */
+export function waysToSay(name: string, aliases: readonly string[]): string[] {
+  const out = [name, ...aliases];
+  const rel = /^(.+?)['’]s\s+(.+)$/u.exec(name);
+  if (rel) {
+    const owner = rel[1]!;
+    const what = rel[2]!;
+    const first = owner.split(/\s+/)[0]!;
+    out.push(`${first}'s ${what}`, `his ${what}`, `her ${what}`, `their ${what}`);
+    // "uncle Jae-won": the relation holds a name of its own
+    if (/\p{Lu}/u.test(what)) out.push(what);
+  }
+  return out;
+}
+
+/** the read-only tools both steps use; `offered` collects every entity id the AI was shown */
+export function entityTools(lookup: EntityLookup, offered: Map<string, string>): Tool[] {
+  return [
+    {
+      name: 'find_entity',
+      description: 'finds people, places and things already in the project by name or alias',
+      args: '{"name": string}',
+      run: async (a) => {
+        const name = str(a.name);
+        if (!name) return 'give a name';
+        const found = await lookup.find(name);
+        for (const f of found) offered.set(f.id, f.name);
+        return found.length
+          ? found
+              .map(
+                (f) =>
+                  `- ${f.name} (${f.type}, id ${f.id})${f.aliases.length ? `, also called ${f.aliases.join(', ')}` : ''}${f.close ? ' [only a similar spelling]' : ''}${f.lines.length ? `: ${f.lines.join(' ')}` : ''}`,
+              )
+              .join('\n')
+          : 'nobody by that name yet';
+      },
+    },
+    {
+      name: 'read_entity',
+      description: 'reads one entity: what the stories say about it and its relationships',
+      args: '{"id": string}',
+      run: async (a) => {
+        const e = await lookup.read(str(a.id));
+        if (!e) return 'no such entity';
+        offered.set(e.id, e.name);
+        return `${e.name} (${e.type}, id ${e.id})${e.aliases.length ? `, also called ${e.aliases.join(', ')}` : ''}\n${e.description}\n${e.relationships.join('\n')}`;
+      },
+    },
+  ];
+}
+
+/** the AI's "match" made safe: an id it was shown, or a project entity of the same name */
+export async function resolveMatch(
+  e: { name: string; match: string; candidates: string[] },
+  o: {
+    lookup: EntityLookup;
+    known: readonly KnownEntity[];
+    offered: Map<string, string>;
+  },
+): Promise<EntityMatch> {
+  if (e.match === 'ask') {
+    const found = await o.lookup.find(e.name);
+    for (const f of found) o.offered.set(f.id, f.name);
+    const candidates = e.candidates
+      .filter((c) => o.offered.has(c))
+      .map((c) => ({ entityId: c, name: o.offered.get(c)! }));
+    if (candidates.length) return { kind: 'ask', candidates };
+  } else if (e.match !== 'new' && o.offered.has(e.match)) {
+    return { kind: 'existing', entityId: e.match, name: o.offered.get(e.match)! };
+  }
+  const exact = (await o.lookup.find(e.name)).find((f) => !f.close);
+  const known = o.known.find((k) =>
+    [k.name, ...k.aliases].some((n) => matchKey(n) === matchKey(e.name)),
+  );
+  const same = exact ?? known;
+  return same ? { kind: 'existing', entityId: same.id, name: same.name } : { kind: 'new' };
+}
