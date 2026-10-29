@@ -266,7 +266,10 @@ export interface IngestResult {
   interviewId?: string;
   /** the story workflow's proposed name for the interview, from its topics */
   interviewName?: string | null;
-  /** the people, places and things in the stories, and the relationships told (graph design 4.1) */
+  /**
+   * the people, places and things in the interview, found before its stories, with where the
+   * stories name them, and the relationships told (entity design 3)
+   */
   graph?: GraphProposal;
   stats: {
     turns: number;

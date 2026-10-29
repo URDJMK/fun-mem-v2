@@ -886,7 +886,7 @@ export class IngestJobs {
       ),
     ].filter((t): t is string => typeof t === 'string');
     const profiles = await profilesFor(pool, job.archiveId, job.userId, tellers);
-    // the project's graph, for the Graph step after the stories (graph design 4.1)
+    // the project's graph: who and what is in the interview is found first (entity design 3)
     await ensureGraph(this.deps, job.archiveId);
     const known = await knownFor(pool, job.archiveId, job.userId, tellers);
     const result = await writeStories(parsed, req, {

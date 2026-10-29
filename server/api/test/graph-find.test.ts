@@ -1,8 +1,14 @@
 import { describe, expect, it } from 'vitest';
-import { findEntities, FIND_SYSTEM, parseFound } from '../src/graph/find';
+import {
+  findEntities,
+  FIND_SYSTEM,
+  mergeFound,
+  parseFound,
+  type FindResult,
+} from '../src/graph/find';
 import { nameHeld, uncovered, wordsOf } from '../src/graph/shared';
 import type { EntityLookup } from '../src/graph/store';
-import type { NoteRef } from '../src/graph/types';
+import type { NoteRef, ProposedEntity } from '../src/graph/types';
 import { ModelError, type ChatModel } from '../src/nim';
 import type { Line } from '../src/stories/lines';
 
@@ -887,5 +893,179 @@ describe('uncovered', () => {
     const text = `We met ${names.join(' and ')}.`;
     expect(uncovered([text], [])).toHaveLength(10);
     expect(uncovered([text], [], 30)).toHaveLength(30);
+  });
+});
+
+describe('mergeFound', () => {
+  const entity = (
+    ref: string,
+    name: string,
+    more: Partial<ProposedEntity> = {},
+  ): ProposedEntity => ({
+    ref,
+    name,
+    type: 'person',
+    match: { kind: 'new' },
+    mentions: [],
+    ways: [],
+    description: [],
+    note: { kind: 'new' },
+    ...more,
+  });
+  const said = (text: string, from: number) => ({
+    text,
+    sources: [{ interviewId: null, from, to: from }],
+  });
+  const part = (
+    entities: ProposedEntity[],
+    relationships: Array<[string, string, string]> = [],
+    stats: Partial<FindResult['stats']> = {},
+  ): FindResult => ({
+    entities,
+    relationships: relationships.map(([a, b, description], i) => ({
+      ref: `r${i + 1}`,
+      a,
+      b,
+      description,
+      story: null,
+      sources: [],
+    })),
+    stats: {
+      calls: 1,
+      proposed: entities.length + relationships.length,
+      dropped: 0,
+      left: [],
+      ...stats,
+    },
+  });
+  const NOAH_ENTITY = entity('e1', 'Noah Kim', {
+    match: { kind: 'existing', entityId: 'k-noah', name: 'Noah Kim' },
+    note: { kind: 'existing', noteId: 'n-noah', title: 'Noah Kim' },
+    aliases: ['Noah'],
+    subject: true,
+  });
+
+  it("numbers the parts' entities and relationships as one list", () => {
+    const out = mergeFound([
+      part([NOAH_ENTITY, entity('e2', 'Sarah')], [['e2', 'e1', 'Sarah — Noah’s friend']]),
+      part(
+        [entity('e1', 'Busan', { type: 'place' }), entity('e2', 'Tom')],
+        [['e2', 'e1', 'Tom — lived in Busan']],
+      ),
+    ]);
+    expect(out.entities.map((e) => [e.ref, e.name])).toEqual([
+      ['e1', 'Noah Kim'],
+      ['e2', 'Sarah'],
+      ['e3', 'Busan'],
+      ['e4', 'Tom'],
+    ]);
+    expect(out.relationships.map((r) => [r.ref, r.a, r.b])).toEqual([
+      ['r1', 'e2', 'e1'],
+      ['r2', 'e4', 'e3'],
+    ]);
+    expect(out.stats).toEqual({ calls: 2, proposed: 6, dropped: 0, left: [] });
+  });
+
+  it('makes one entity of the same name and type, or of the same existing one, found in two parts', () => {
+    const out = mergeFound([
+      part([
+        NOAH_ENTITY,
+        entity('e2', 'Sarah', {
+          ways: ['his friend Sarah'],
+          description: [said('Sarah sat next to Noah.', 2)],
+        }),
+      ]),
+      part(
+        [
+          entity('e1', 'Noah', {
+            match: { kind: 'existing', entityId: 'k-noah', name: 'Noah Kim' },
+            note: { kind: 'existing', noteId: 'n-noah', title: 'Noah Kim' },
+            subject: true,
+          }),
+          entity('e2', 'sarah', {
+            ways: ['Sally'],
+            description: [said('Sarah moved away.', 9), said('Sarah wrote letters.', 10)],
+          }),
+          // the same name, but a place: another entity
+          entity('e3', 'Sarah', { type: 'place' }),
+        ],
+        [['e2', 'e1', 'Sarah — Noah’s friend']],
+      ),
+    ]);
+    expect(out.entities.map((e) => [e.ref, e.name, e.type])).toEqual([
+      ['e1', 'Noah Kim', 'person'],
+      ['e2', 'Sarah', 'person'],
+      ['e3', 'Sarah', 'place'],
+    ]);
+    const sarah = out.entities[1]!;
+    expect(sarah.ways).toEqual(['his friend Sarah', 'Sally']);
+    expect(sarah.description!.map((d) => d.text)).toEqual([
+      'Sarah sat next to Noah.',
+      'Sarah moved away.',
+      'Sarah wrote letters.',
+    ]);
+    // the second part's "Noah" is a way to call him
+    expect(out.entities[0]!.ways).toEqual(['Noah']);
+    expect(out.relationships.map((r) => [r.a, r.b])).toEqual([['e2', 'e1']]);
+    // what was joined is counted as left out of the count, so proposed - dropped are kept
+    expect(out.stats.proposed - out.stats.dropped).toBe(
+      out.entities.length + out.relationships.length,
+    );
+  });
+
+  it('a later part may say an entity is one the project has', () => {
+    const out = mergeFound([
+      part([entity('e1', 'Busan', { type: 'place' })]),
+      part([
+        entity('e1', 'Busan', {
+          type: 'place',
+          match: { kind: 'existing', entityId: 'k-busan', name: 'Busan' },
+          note: { kind: 'existing', noteId: 'n-busan', title: 'Busan' },
+          aliases: ['Pusan'],
+        }),
+      ]),
+    ]);
+    expect(out.entities).toHaveLength(1);
+    expect(out.entities[0]).toMatchObject({
+      match: { kind: 'existing', entityId: 'k-busan' },
+      note: { kind: 'existing', noteId: 'n-busan' },
+      aliases: ['Pusan'],
+    });
+  });
+
+  it('keeps one relationship for a pair, across parts', () => {
+    const out = mergeFound([
+      part([entity('e1', 'Sarah'), entity('e2', 'Tom')], [['e2', 'e1', 'Tom — Sarah’s brother']]),
+      part([entity('e1', 'Tom'), entity('e2', 'Sarah')], [['e2', 'e1', 'Sarah — Tom’s sister']]),
+    ]);
+    expect(out.relationships.map((r) => r.description)).toEqual(['Tom — Sarah’s brother']);
+    expect(out.stats.left).toContainEqual({
+      what: 'Sarah — Tom’s sister',
+      why: 'a second relationship for the pair',
+    });
+  });
+
+  it('keeps the limits for the whole interview: 60 entities, 20 things, 100 relationships', () => {
+    const people = (from: number, n: number) =>
+      Array.from({ length: n }, (_, i) => entity(`e${i + 1}`, `Person ${from + i}`));
+    const things = (from: number, n: number) =>
+      Array.from({ length: n }, (_, i) =>
+        entity(`e${i + 1}`, `Thing ${from + i}`, { type: 'thing' }),
+      );
+    const many = mergeFound([part(people(0, 40)), part(people(40, 40))]);
+    expect(many.entities).toHaveLength(60);
+    expect(many.stats.left).toContainEqual({ what: 'Person 60', why: 'over 60 entities' });
+    const stuff = mergeFound([part(things(0, 15)), part(things(15, 15))]);
+    expect(stuff.entities).toHaveLength(20);
+    // 70 pairs among a part's 30 people, in each of two parts
+    const pairs = (n: number): Array<[string, string, string]> =>
+      Array.from({ length: 30 }, (_, i) => i)
+        .flatMap((i) => Array.from({ length: 30 - i - 1 }, (_, k) => [i, i + k + 1] as const))
+        .slice(0, 70)
+        .map(([a, b]) => [`e${a + 1}`, `e${b + 1}`, `told ${n}:${a}-${b}`]);
+    const told = mergeFound([part(people(0, 30), pairs(1)), part(people(30, 30), pairs(2))]);
+    expect(told.entities).toHaveLength(60);
+    expect(told.relationships).toHaveLength(100);
+    expect(told.relationships.at(-1)!.ref).toBe('r100');
   });
 });

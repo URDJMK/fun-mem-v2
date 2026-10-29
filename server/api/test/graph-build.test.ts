@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { afterAll, describe, expect, it } from 'vitest';
 import { createApp } from '../src/app';
+import { FIND_SYSTEM } from '../src/graph/find';
 import { GRAPH_SYSTEM } from '../src/graph/step';
 import type { GraphProposal } from '../src/graph/types';
 import type { ChatModel } from '../src/nim';
@@ -17,7 +18,6 @@ const ctx = testContext();
 const RUN = randomUUID().slice(0, 8);
 afterAll(() => ctx.close());
 
-let building = false;
 const answer = (result: unknown) => JSON.stringify({ result });
 const chat: ChatModel = {
   id: 'scripted-graph-build',
@@ -37,9 +37,9 @@ const chat: ChatModel = {
         ],
       });
     }
+    // the import finds nothing; the button, asked again later, does
+    if (system.startsWith(FIND_SYSTEM)) return answer({ entities: [], relationships: [] });
     if (system.startsWith(GRAPH_SYSTEM)) {
-      // the import found nothing; the button, asked again later, does
-      if (!building) return answer({ entities: [], relationships: [] });
       if (user.includes('The new boy')) {
         return answer({
           entities: [
@@ -137,7 +137,6 @@ describe('finding the graph in stories already saved', () => {
     expect(imported.status).toBe(200);
     const story = ((await imported.json()) as { saved: Array<{ id: string }> }).saved[0]!.id;
 
-    building = true;
     const built = await call('POST', `/v1/archives/${archive}/graph/build`, {});
     expect(built.status).toBe(200);
     const out = (await built.json()) as {

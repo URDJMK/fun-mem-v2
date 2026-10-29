@@ -31,6 +31,7 @@ import {
 import type { EntityLookup, FoundEntity, KnownEntity } from './store';
 import {
   ENTITY_TYPES,
+  type DescriptionSentence,
   type EntityMatch,
   type EntityNote,
   type EntityType,
@@ -606,4 +607,120 @@ export async function findEntities(o: FindInput): Promise<FindResult> {
     })),
     stats: { calls, proposed, dropped, left },
   };
+}
+
+/** the same entity, found in two parts: the same existing one, or the same name and type */
+const sameFound = (a: ProposedEntity, b: ProposedEntity): boolean =>
+  (a.match.kind === 'existing' &&
+    b.match.kind === 'existing' &&
+    a.match.entityId === b.match.entityId) ||
+  (a.type === b.type && matchKey(a.name) === matchKey(b.name));
+
+/**
+ * A later part's entity joined to the same one from an earlier part: what the project has, if
+ * only the later part knew it; their aliases and ways together, the later name a way when it
+ * differs; and the later sentences after the earlier ones, up to 4. Gives the sentences that did
+ * not fit.
+ */
+function joinFound(into: ProposedEntity, e: ProposedEntity): DescriptionSentence[] {
+  if (into.match.kind !== 'existing' && e.match.kind === 'existing') {
+    into.match = e.match;
+    if (e.note) into.note = e.note;
+  }
+  if (e.subject) into.subject = true;
+  const aliases = [...new Set([...(into.aliases ?? []), ...(e.aliases ?? [])])];
+  if (aliases.length) into.aliases = aliases;
+  const name =
+    matchKey(e.name) !== matchKey(into.name) && e.name.split(/\s+/).length <= MAX_WORDS
+      ? [e.name]
+      : [];
+  into.ways = [...new Set([...(into.ways ?? []), ...name, ...(e.ways ?? [])])].slice(0, MAX_WAYS);
+  const description = into.description ?? [];
+  const room = Math.max(0, MAX_SENTENCES - description.length);
+  into.description = into.subject ? [] : [...description, ...(e.description ?? []).slice(0, room)];
+  return (e.description ?? []).slice(room);
+}
+
+/**
+ * The Entity step's answers for each part of a long interview, as one (entity design 4.4): refs
+ * numbered across the parts, an entity found in two parts made one, one relationship for a pair,
+ * and the limits kept for the whole interview. The stats are added up; an entity or relationship
+ * joined to an earlier one counts as dropped, so `proposed - dropped` are still the ones kept.
+ */
+export function mergeFound(results: readonly FindResult[]): FindResult {
+  const entities: ProposedEntity[] = [];
+  const relationships: ProposedRelationship[] = [];
+  const stats = {
+    calls: 0,
+    proposed: 0,
+    dropped: 0,
+    left: [] as Array<{ what: string; why: string }>,
+  };
+  const list = (what: string, why: string) => {
+    if (stats.left.length < 30) stats.left.push({ what, why });
+  };
+  const leave = (what: string, why: string) => {
+    stats.dropped++;
+    list(what, why);
+  };
+  const pairs = new Set<string>();
+  let things = 0;
+  for (const r of results) {
+    stats.calls += r.stats.calls;
+    stats.proposed += r.stats.proposed;
+    stats.dropped += r.stats.dropped;
+    for (const l of r.stats.left ?? []) list(l.what, l.why);
+    // this part's refs → the merged ones
+    const refOf = new Map<string, string>();
+    for (const e of r.entities) {
+      const into = entities.find((x) => sameFound(x, e));
+      if (into) {
+        for (const s of joinFound(into, e)) list(s.text, `over ${MAX_SENTENCES} sentences`);
+        refOf.set(e.ref, into.ref);
+        stats.dropped++;
+        continue;
+      }
+      if (entities.length >= MAX_ENTITIES) {
+        leave(e.name, `over ${MAX_ENTITIES} entities`);
+        continue;
+      }
+      if (e.type === 'thing' && ++things > MAX_THINGS) {
+        leave(e.name, `over ${MAX_THINGS} things`);
+        continue;
+      }
+      const ref = `e${entities.length + 1}`;
+      refOf.set(e.ref, ref);
+      entities.push({
+        ...e,
+        ref,
+        ...(e.aliases ? { aliases: [...e.aliases] } : {}),
+        ways: [...(e.ways ?? [])],
+        description: [...(e.description ?? [])],
+      });
+    }
+    for (const t of r.relationships) {
+      const a = refOf.get(t.a);
+      const b = refOf.get(t.b);
+      if (!a || !b) {
+        leave(t.description, 'an entity it joins was left out');
+        continue;
+      }
+      if (a === b) {
+        leave(t.description, 'it joins an entity to itself');
+        continue;
+      }
+      const pair = [a, b].sort().join(':');
+      if (pairs.has(pair)) {
+        leave(t.description, 'a second relationship for the pair');
+        continue;
+      }
+      if (relationships.length >= MAX_RELATIONSHIPS) {
+        leave(t.description, `over ${MAX_RELATIONSHIPS} relationships`);
+        continue;
+      }
+      pairs.add(pair);
+      relationships.push({ ...t, ref: `r${relationships.length + 1}`, a, b });
+    }
+  }
+  return { entities, relationships, stats };
 }

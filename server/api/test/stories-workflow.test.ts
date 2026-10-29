@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { IngestCancelled } from '../src/ingest-pipeline';
 import { ModelError, type ChatModel } from '../src/nim';
-import { GRAPH_SYSTEM } from '../src/graph/step';
+import { FIND_SYSTEM } from '../src/graph/find';
 import { PLAN_SYSTEM } from '../src/stories/plan';
 import { writeStories } from '../src/stories/workflow';
 import { WRITE_SYSTEM } from '../src/stories/write';
@@ -66,14 +66,14 @@ const allSupported = (user: string) => {
   return { rulings: Array.from({ length: n }, (_, i) => ({ sentence: i, verdict: 'supported' })) };
 };
 
-type Step = 'plan' | 'write' | 'judge' | 'graph';
+type Step = 'plan' | 'write' | 'judge' | 'find';
 const stepOf = (system: string): Step =>
   system.startsWith(PLAN_SYSTEM)
     ? 'plan'
     : system.startsWith(WRITE_SYSTEM)
       ? 'write'
-      : system.startsWith(GRAPH_SYSTEM)
-        ? 'graph'
+      : system.startsWith(FIND_SYSTEM)
+        ? 'find'
         : 'judge';
 
 /** a model answering each step by a function; it records every call */
@@ -501,108 +501,189 @@ describe('writeStories', () => {
 /** the first six lines only: two parts at a 40-token budget */
 const parse6 = () => parseTranscript(TRANSCRIPT.split('\n').slice(0, 6).join('\n'));
 
-describe('the Graph step after the stories (graph design 4.1)', () => {
+describe('people, places and things, found before the stories (entity design 3)', () => {
   const SUNJA_ENTITY = {
     id: 'k-sunja',
     name: 'Sunja Kim',
     type: 'person' as const,
     aliases: ['Sunja'],
+    subject: true,
+    note: { noteId: 'n1', title: 'Sunja Kim' },
   };
   const graphDeps = {
     lookup: { find: async () => [], read: async () => null },
     known: [SUNJA_ENTITY],
   };
-  const GRAPH = {
+  const FOUND = {
     entities: [
-      {
-        ref: 'e1',
-        name: 'Sunja Kim',
-        type: 'person',
-        match: 'k-sunja',
-        mentions: [
-          { story: 'S2', words: ['Sunja'], line: 'Sunja met Minho in 1966.', cites: ['L8'] },
-        ],
-      },
+      { ref: 'e1', name: 'Sunja Kim', type: 'person', match: 'k-sunja', ways: [], description: [] },
       {
         ref: 'e2',
         name: 'Minho',
         type: 'person',
         match: 'new',
-        mentions: [
-          {
-            story: 'S2',
-            words: ['Minho'],
-            line: 'Minho spilled gravy on his shirt.',
-            cites: ['L8'],
-          },
-        ],
+        ways: ['her husband'],
+        description: [{ text: 'Minho spilled gravy all over his shirt.', cites: ['L8'] }],
       },
       {
         ref: 'e3',
         name: 'Busan',
         type: 'place',
         match: 'new',
-        mentions: [{ story: 'S1', words: ['Busan'], line: 'Where Sunja was born.', cites: ['L4'] }],
+        ways: [],
+        description: [{ text: 'Sunja was born in Busan.', cites: ['L4'] }],
       },
     ],
     relationships: [
-      {
-        a: 'e2',
-        b: 'e1',
-        description: 'Minho — met Sunja at a church supper',
-        story: 'S2',
-        cites: ['L8'],
-      },
+      { a: 'e2', b: 'e1', description: 'Minho — met Sunja at a church supper', cites: ['L8'] },
+      { a: 'e3', b: 'e1', description: 'Busan — where Sunja was born', cites: ['L4'] },
+      // a line no story uses
+      { a: 'e2', b: 'e3', description: 'Minho — heard Sunja in Busan', cites: ['L2'] },
     ],
   };
-
-  it('proposes the people, places and relationships, naming the stories by memory id', async () => {
-    const chat = model((step, user) => (step === 'graph' ? GRAPH : happy(step, user)));
-    const out = await writeStories(parsed(), OPTS, {
+  const named = <T extends { sentences: Array<Record<string, unknown>> }>(
+    draft: T,
+    names: Array<{ e: string; words: string }>,
+  ): T => ({
+    ...draft,
+    sentences: [{ ...draft.sentences[0]!, names }, ...draft.sentences.slice(1)],
+  });
+  // the writer marks Minho, and the narrator (whom it should not); and "a small house" as Busan
+  const MARKED_GRAVY = named(GRAVY, [
+    { e: 'e2', words: 'Minho' },
+    { e: 'e1', words: 'Sunja' },
+  ]);
+  const MARKED_HARBOUR = named(HARBOUR, [{ e: 'e3', words: 'a small house' }]);
+  const listed = (step: Step, user: string) =>
+    step === 'find'
+      ? FOUND
+      : step === 'write'
+        ? user.includes('Working title: Gravy')
+          ? MARKED_GRAVY
+          : MARKED_HARBOUR
+        : happy(step, user);
+  const run = (chat: ChatModel, more: Partial<Parameters<typeof writeStories>[2]> = {}) =>
+    writeStories(parsed(), OPTS, {
       chat,
       lookup: noLookup,
       titles: [],
       graph: graphDeps,
+      ...more,
     });
+
+  it('finds them before any story is planned, once per part', async () => {
+    const one = model(listed);
+    await run(one);
+    expect(one.calls[0]!.step).toBe('find');
+    expect(one.calls.filter((c) => c.step === 'find')).toHaveLength(1);
+
+    const long = model(listed);
+    await writeStories(parse6(), OPTS, {
+      chat: long,
+      lookup: noLookup,
+      titles: [],
+      graph: graphDeps,
+      contextTokens: 40,
+    });
+    const steps = long.calls.map((c) => c.step);
+    const plans = steps.filter((s) => s === 'plan').length;
+    expect(plans).toBeGreaterThanOrEqual(2);
+    expect(steps.filter((s) => s === 'find')).toHaveLength(plans);
+    expect(steps.lastIndexOf('find')).toBeLessThan(steps.indexOf('plan'));
+  });
+
+  it('the planner and the writer are given the list, without the person it is about', async () => {
+    const chat = model(listed);
+    await run(chat);
+    const plan = chat.calls.find((c) => c.step === 'plan')!.user;
+    expect(plan).toContain('Who is in it:\nMinho (person)\nBusan (place)');
+    const write = chat.calls.find((c) => c.step === 'write')!.user;
+    expect(write).toContain(
+      'People, places and things in this interview:\ne2  Minho (person): her husband\ne3  Busan (place)',
+    );
+    for (const user of [plan, write]) expect(user).not.toContain('Sunja Kim (person)');
+  });
+
+  it('a story links the first time it names each one, never the person it is about', async () => {
+    const out = await run(model(listed));
+    const [harbour, gravy] = out.memories;
+    expect(gravy!.body.match(/\[\[Minho\]\]/g)).toHaveLength(1);
+    expect(gravy!.body).not.toContain('[[Sunja');
+    // the writer did not mark Busan: its name is found in the sentence
+    expect(harbour!.body).toContain('Sunja was born in [[Busan]], in a small house');
+    expect(harbour!.body).not.toContain('small house]]');
+    expect(out.stats.stories!.problems!.mark).toBe(1);
+    // the checks and the judge read the sentences without links, and the sources keep them so
+    expect(harbour!.sources![0]!.sentence).not.toContain('[[');
+  });
+
+  it('each name is a mention of its story, and a relationship belongs to the story telling it', async () => {
+    const out = await run(model(listed));
     expect(out.memories.map((m) => m.id)).toEqual(['m1', 'm2']);
     const g = out.graph!;
     expect(g.pending).toBeUndefined();
-    expect(g.entities.map((e) => [e.name, e.match.kind])).toEqual([
-      ['Sunja Kim', 'existing'],
-      ['Minho', 'new'],
-      ['Busan', 'new'],
+    const of = (name: string) => g.entities.find((e) => e.name === name)!;
+    expect(of('Minho').mentions).toEqual([
+      {
+        story: 'm2',
+        words: ['Minho'],
+        line: 'Sunja met Minho at a church supper in 1966.',
+        sources: [{ interviewId: null, from: 8, to: 8 }],
+      },
     ]);
-    // S1 is the harbour story (m1), S2 the church supper (m2)
-    expect(g.entities.find((e) => e.name === 'Busan')!.mentions[0]!.story).toBe('m1');
-    expect(g.relationships).toEqual([expect.objectContaining({ a: 'e2', b: 'e1', story: 'm2' })]);
-    expect(chat.calls.filter((c) => c.step === 'graph')).toHaveLength(1);
+    expect(of('Busan').mentions).toEqual([
+      {
+        story: 'm1',
+        words: ['Busan'],
+        line: HARBOUR.sentences[0]!.text,
+        sources: [{ interviewId: null, from: 4, to: 4 }],
+      },
+    ]);
+    // the person it is about is never linked, but the stories naming them are still counted
+    expect(of('Sunja Kim').mentions.map((m) => [m.story, m.words])).toEqual([
+      ['m1', ['Sunja']],
+      ['m2', ['Sunja']],
+    ]);
+    const story = (d: string) => g.relationships.find((r) => r.description.startsWith(d))!.story;
+    expect(story('Minho — met')).toBe('m2');
+    expect(story('Busan')).toBe('m1');
+    expect(story('Minho — heard')).toBeNull();
+    expect(g.stats!.calls).toBeGreaterThan(0);
   });
 
-  it('when it fails, the stories stand and only the graph waits', async () => {
+  it('when the find fails, the stories are written as before, without links, and the list waits', async () => {
     const chat = model((step, user) =>
-      step === 'graph'
-        ? new ModelError('the AI service is unavailable', 'unavailable', true)
-        : happy(step, user),
+      step === 'find' ? new ModelError('bad', 'bad_output', false) : listed(step, user),
     );
-    const out = await writeStories(parsed(), OPTS, {
-      chat,
-      lookup: noLookup,
-      titles: [],
-      graph: graphDeps,
-    });
+    const out = await run(chat);
     expect(out.pending).toBeUndefined();
     expect(out.memories).toHaveLength(2);
+    for (const m of out.memories) expect(m.body).not.toContain('[[');
+    expect(chat.calls.find((c) => c.step === 'plan')!.user).not.toContain('Who is in it:');
     expect(out.graph).toEqual({
       entities: [],
       relationships: [],
-      pending: { reason: 'unavailable' },
+      pending: { reason: 'bad_plan' },
     });
   });
 
-  it('does not run without the project’s graph to look things up in', async () => {
-    const chat = model(happy);
+  it('a rejected key while finding them ends the import', async () => {
+    const chat = model((step, user) =>
+      step === 'find'
+        ? new ModelError('the AI service answered HTTP 403', 'auth', false, 403)
+        : listed(step, user),
+    );
+    const out = await run(chat);
+    expect(out.pending).toEqual({ reason: 'auth' });
+    expect(out.memories).toEqual([]);
+    expect(chat.calls).toHaveLength(1);
+  });
+
+  it('does not look without the project’s graph', async () => {
+    const chat = model(listed);
     const out = await writeStories(parsed(), OPTS, { chat, lookup: noLookup, titles: [] });
     expect(out.graph).toBeUndefined();
-    expect(chat.calls.some((c) => c.step === 'graph')).toBe(false);
+    expect(chat.calls.some((c) => c.step === 'find')).toBe(false);
+    expect(chat.calls.find((c) => c.step === 'plan')!.user).not.toContain('Who is in it:');
   });
 });

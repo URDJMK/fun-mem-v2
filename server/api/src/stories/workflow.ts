@@ -1,3 +1,4 @@
+import { matchKey } from '@funmem/core';
 import { linkKnownTitles } from '../drafts';
 import { acceptTitle, isPersonLabel } from '../ingest-lang';
 import {
@@ -11,9 +12,11 @@ import {
   type StoriesPendingReason,
   type StorySource,
 } from '../ingest-pipeline';
-import { graphStep, type KnownEntity, type StoryForGraph } from '../graph/step';
-import { plainWords, type EntityLookup } from '../graph/store';
-import type { GraphProposal } from '../graph/types';
+import { findEntities, mergeFound, type FindResult } from '../graph/find';
+import { checkMark, linkSentences, unmarked, type Listed, type Mark } from '../graph/marks';
+import { findIn } from '../graph/shared';
+import type { EntityLookup, KnownEntity } from '../graph/store';
+import type { GraphProposal, GraphSource, ProposedEntity, ProposedMention } from '../graph/types';
 import { asModelError, ModelError, type ChatModel } from '../nim';
 import { mapPool } from '../pool';
 import { applyRoles, type ParsedTranscript } from '../transcript';
@@ -23,19 +26,24 @@ import { clock, linesOf, partsOf, PROFILE_LINE, textOf, type Line } from './line
 import { planPart, type PlannedStory } from './plan';
 import { ageYear, profileBlock, profileLine, saidDate, type Profile } from './profile';
 import type { StoryLookup } from './tools';
-import { writeStory, type StoryDraft } from './write';
+import { writeStory, type Sentence, type StoryDraft } from './write';
 
 /**
  * The story workflow (PRD section 6, phase 1): an interview in, its stories out, as proposals for
  * the review screen. The same steps every time:
  *
  *   1. prepare   who is telling; numbered lines; parts of at most ~200k tokens
- *   2. plan      per part, the AI (with read-only tools) finds the stories and their lines;
+ *   2. find      with the project's graph, per part, the people, places and things in the lines
+ *                (graph/find.ts), before any story is planned (entity design 3)
+ *   3. plan      per part, the AI (with read-only tools) finds the stories and their lines;
  *                a later part may carry on a story from an earlier one
- *   3. write     per story, the AI writes it in the third person, every sentence cited
- *   4. judge     code checks the facts (check.ts), then the AI judge rules on each sentence
- *   5. fix       a failing story is written again with the reasons, at most twice; what still
+ *   4. write     per story, the AI writes it in the third person, every sentence cited, and
+ *                marks the names from the list each sentence uses
+ *   5. judge     code checks the facts (check.ts), then the AI judge rules on each sentence
+ *   6. fix       a failing story is written again with the reasons, at most twice; what still
  *                fails is left out and listed for the reviewer
+ *   7. link      the marks are checked, names the writer missed are found, and the first time a
+ *                story names each one becomes a link (graph/marks.ts)
  *
  * Nothing here touches the archive: the result is saved, or not, by a person (ingest-save.ts).
  * When the stories cannot be written (no AI, a rejected key, out of time) the result says so in
@@ -63,7 +71,7 @@ export interface StoriesDeps {
   subject?: string | null;
   /** the protagonist's profile, and each narrator's (PRD D14): in every step's prompt */
   profiles?: Profile[];
-  /** the project's graph: with it, the Graph step runs after the stories (graph design 4.1) */
+  /** the project's graph: with it, the people, places and things are found first (entity design 3) */
   graph?: { lookup: EntityLookup; known: KnownEntity[] };
 }
 
@@ -79,6 +87,112 @@ const MIN_SENTENCES = 2;
 const SOURCE_CHARS = 600;
 
 class BudgetSpent extends Error {}
+
+/** a story as written: its memory, its sentences as kept, and the names each sentence marks */
+interface Made {
+  memory: ProposedMemory;
+  story: PlannedStory;
+  sentences: Sentence[];
+  marks: Mark[][];
+}
+
+/** what the stories are written with, from what the find step found */
+interface Cast {
+  /** every entity found, the person the project is about too: what the marks are checked against */
+  listed: Listed[];
+  byRef: Map<string, Listed>;
+  /** for the writer, one per line: `ref  Name (type): ways` */
+  forWriter: string;
+  /** for the planner, one per line: `Name (type)` */
+  forPlanner: string;
+  /** names, aliases and note titles of what was found (matchKey): linked only by the marks */
+  taken: Set<string>;
+}
+
+function castOf(found: FindResult | null): Cast {
+  const entities = found?.entities ?? [];
+  const listed: Listed[] = entities.map((e) => ({
+    ref: e.ref,
+    name: e.name,
+    aliases: e.aliases ?? [],
+    ways: e.ways ?? [],
+    ...(e.subject ? { subject: true } : {}),
+  }));
+  const others = entities.filter((e) => !e.subject);
+  return {
+    listed,
+    byRef: new Map(listed.map((l) => [l.ref, l])),
+    forWriter: others
+      .map(
+        (e) => `${e.ref}  ${e.name} (${e.type})${e.ways?.length ? `: ${e.ways.join(', ')}` : ''}`,
+      )
+      .join('\n'),
+    forPlanner: others.map((e) => `${e.name} (${e.type})`).join('\n'),
+    taken: new Set(
+      entities
+        .flatMap((e) => [
+          e.name,
+          ...(e.aliases ?? []),
+          ...(e.note?.kind === 'existing' ? [e.note.title] : []),
+        ])
+        .map(matchKey)
+        .filter(Boolean),
+    ),
+  };
+}
+
+/** a sentence's cites as a proposal's sources: interview lines only, the profile (P) is not one */
+const sourcesOf = (s: Sentence): GraphSource[] =>
+  s.cites.filter((r) => r.from > 0).map((r) => ({ interviewId: null, from: r.from, to: r.to }));
+
+/**
+ * Where a story names an entity: one mention, with every distinct word it uses, and the first
+ * sentence naming it as the line. The person the project is about is never marked: they are
+ * found by their name or a name they go by, so Home still counts the stories they are in.
+ */
+function mentionIn(e: ProposedEntity, m: Made): ProposedMention[] {
+  const names = [e.name, ...(e.aliases ?? [])].sort((a, b) => b.length - a.length);
+  const words = m.sentences.map((s, i) =>
+    e.subject
+      ? names
+          .map((n) => findIn(s.text, n))
+          .filter((w): w is string => w !== null)
+          .slice(0, 1)
+      : m.marks[i]!.filter((k) => k.e === e.ref).map((k) => k.words),
+  );
+  const first = words.findIndex((w) => w.length > 0);
+  if (first < 0) return [];
+  return [
+    {
+      story: m.memory.id!,
+      words: [...new Set(words.flat())],
+      line: m.sentences[first]!.text,
+      sources: sourcesOf(m.sentences[first]!),
+    },
+  ];
+}
+
+/**
+ * The proposal for review: each entity found with its mentions in the stories as written, and
+ * each relationship tied to the first story whose lines hold the first line it cites, or to none.
+ */
+function withStories(found: FindResult, made: readonly Made[]): GraphProposal {
+  const storyOf = (sources: readonly GraphSource[]): string | null => {
+    const lines = sources.flatMap((s) => ('from' in s && s.from > 0 ? [s.from] : []));
+    if (lines.length === 0) return null;
+    const line = Math.min(...lines);
+    const m = made.find((x) => x.story.ranges.some((r) => line >= r.from && line <= r.to));
+    return m?.memory.id ?? null;
+  };
+  return {
+    entities: found.entities.map((e) => ({
+      ...e,
+      mentions: made.flatMap((m) => mentionIn(e, m)),
+    })),
+    relationships: found.relationships.map((r) => ({ ...r, story: storyOf(r.sources) })),
+    stats: found.stats,
+  };
+}
 
 const str = (v: unknown): string | null =>
   typeof v === 'string' && v.trim() !== '' ? v.trim() : null;
@@ -133,7 +247,7 @@ export async function writeStories(
   const profiles = deps.profiles ?? [];
   const profile = profileBlock(profiles);
   // what the checks and the judge read: the transcript, and the profile as line 0 (cited "P")
-  const withProfile: Line[] = profiles.length
+  const asLine: Line[] = profiles.length
     ? [
         {
           n: PROFILE_LINE,
@@ -144,9 +258,9 @@ export async function writeStories(
           end: null,
           text: profileLine(profiles),
         },
-        ...lines,
       ]
-    : lines;
+    : [];
+  const withProfile: Line[] = [...asLine, ...lines];
   const known = [
     ...new Set([
       ...names.map(([, n]) => n),
@@ -170,6 +284,8 @@ export async function writeStories(
   };
   let rounds = 0;
   let retried = 0;
+  /** what the stories are written and linked with; nothing until the find step has run */
+  let cast = castOf(null);
   const result = (
     memories: ProposedMemory[],
     pending?: StoriesPendingReason,
@@ -256,7 +372,21 @@ export async function writeStories(
   };
 
   try {
-    // 2. plan, part by part; a story may carry on from an earlier part
+    // 2. who and what is in the interview, before any story is planned (entity design 3). If
+    // this fails the stories are written as before, without links, and the list waits.
+    let found: FindResult | null = null;
+    let foundPending: StoriesPendingReason | null = null;
+    if (deps.graph) {
+      try {
+        found = await findAll(deps.graph);
+      } catch (e) {
+        foundPending = reasonOf(e);
+        if (foundPending === 'auth') return result([], 'auth');
+      }
+    }
+    cast = castOf(found);
+
+    // 3. plan, part by part; a story may carry on from an earlier part
     const stories: PlannedStory[] = [];
     let interviewName: string | null = str(deps.interviewName);
     for (const part of parts) {
@@ -270,6 +400,7 @@ export async function writeStories(
           maxToolCalls: PLAN_TOOL_CALLS,
           signal,
           profile,
+          cast: cast.forPlanner,
         }));
       } catch (e) {
         const why = reasonOf(e);
@@ -288,7 +419,7 @@ export async function writeStories(
     let done = 0;
     deps.onProgress?.({ done, total: stories.length });
 
-    // 3–5. write, judge and fix each story, a few at a time
+    // 4–7. write, judge, fix and link each story, a few at a time
     const failures: StoriesPendingReason[] = [];
     const made = await mapPool(stories, AT_ONCE, async (story) => {
       try {
@@ -301,96 +432,43 @@ export async function writeStories(
         deps.onProgress?.({ done: ++done, total: stories.length });
       }
     });
-    const memories = made.filter((m): m is ProposedMemory => m !== null);
+    const written = made.filter((m): m is Made => m !== null);
+    const memories = written.map((m) => m.memory);
     counts.written = memories.length;
     if (memories.length === 0 && stories.length > 0 && failures.length > 0) {
       return result([], failures.includes('auth') ? 'auth' : failures[0]!, interviewName);
     }
     memories.forEach((m, i) => (m.id = `m${i + 1}`));
     const out = result(memories, undefined, interviewName);
-    if (deps.graph && memories.length > 0) {
-      const planned = made.flatMap((m, i) => (m ? [{ memory: m, story: stories[i]! }] : []));
-      out.graph = await findGraph(planned, deps.graph);
+    if (deps.graph) {
+      out.graph = found
+        ? withStories(found, written)
+        : { entities: [], relationships: [], pending: { reason: foundPending ?? 'unavailable' } };
     }
     return out;
 
-    /**
-     * 6. the people, places and things in the stories, and the relationships told: one Graph
-     * step per part of the interview. If it cannot run, the stories stand and the graph waits.
-     */
-    async function findGraph(
-      planned: Array<{ memory: ProposedMemory; story: PlannedStory }>,
-      graph: NonNullable<StoriesDeps['graph']>,
-    ): Promise<GraphProposal> {
-      const groups = new Map<number, StoryForGraph[]>();
-      for (const { memory, story } of planned) {
-        const first = Math.min(...story.ranges.map((r) => r.from));
-        const part = Math.max(
-          0,
-          parts.findIndex((p) => p.some((l) => l.n === first)),
-        );
-        const list = groups.get(part) ?? [];
-        list.push({
-          ref: memory.id!,
-          title: memory.title,
-          text: plainWords(
-            memory.body
-              .split('\n\n')
-              .filter((p) => !p.startsWith('>'))
-              .join(' '),
-          ),
-          sentences: (memory.sources ?? []).map((s) => ({
-            text: s.sentence,
-            cites: [{ from: s.from, to: s.to }],
-          })),
-          ranges: story.ranges,
-          tellers: story.tellers,
-        });
-        groups.set(part, list);
-      }
-      const all: GraphProposal = {
-        entities: [],
-        relationships: [],
-        stats: { calls: 0, proposed: 0, dropped: 0, left: [] },
-      };
-      try {
-        for (const list of groups.values()) {
-          const p = await graphStep({
+    /** the find step for each part of the interview, as one list */
+    async function findAll(graph: NonNullable<StoriesDeps['graph']>): Promise<FindResult> {
+      const each: FindResult[] = [];
+      for (const part of parts) {
+        each.push(
+          await findEntities({
             chat: writer,
             judge,
-            stories: list,
-            lines: withProfile,
+            lines: [...asLine, ...part],
             profile,
             known: graph.known,
             names: known,
             lookup: graph.lookup,
             signal,
-          });
-          all.stats!.calls += p.stats?.calls ?? 0;
-          all.stats!.proposed += p.stats?.proposed ?? 0;
-          all.stats!.dropped += p.stats?.dropped ?? 0;
-          all.stats!.left!.push(...(p.stats?.left ?? []));
-          // refs stay unique across parts
-          const shift = all.entities.length;
-          const ref = (r: string) => `e${Number(r.slice(1)) + shift}`;
-          all.entities.push(...p.entities.map((e) => ({ ...e, ref: ref(e.ref) })));
-          all.relationships.push(
-            ...p.relationships.map((r, i) => ({
-              ...r,
-              ref: `r${all.relationships.length + i + 1}`,
-              a: ref(r.a),
-              b: ref(r.b),
-            })),
-          );
-        }
-        return all;
-      } catch (e) {
-        return { entities: [], relationships: [], pending: { reason: reasonOf(e) } };
+          }),
+        );
       }
+      return mergeFound(each);
     }
 
-    /** one story through write → check → judge → fix */
-    async function makeStory(story: PlannedStory): Promise<ProposedMemory | null> {
+    /** one story through write → check → judge → fix, and its names marked */
+    async function makeStory(story: PlannedStory): Promise<Made | null> {
       let feedback: { draft: StoryDraft; problems: Problem[] } | null = null;
       let draft!: StoryDraft;
       let problems: Problem[] = [];
@@ -410,6 +488,7 @@ export async function writeStories(
             maxToolCalls: WRITE_TOOL_CALLS,
             signal,
             profile,
+            cast: cast.forWriter,
           })
         ).draft;
         problems = checkDraft(draft, withProfile, known, story.ranges);
@@ -492,11 +571,40 @@ export async function writeStories(
           dateBasis = `${who.name} was ${draft.age.years}; born ${saidDate(who.born!)}`;
         }
       }
-      return assemble(story, draft, flags, notes, name, dateBasis);
+      const marks = marksOf(draft.sentences);
+      return {
+        memory: assemble(story, draft, marks, flags, notes, name, dateBasis),
+        story,
+        sentences: draft.sentences,
+        marks,
+      };
     }
   } finally {
     clearTimeout(timer);
     deps.signal?.removeEventListener('abort', onCancel);
+  }
+
+  /**
+   * The names each sentence uses (entity design 6.2, 6.3): the writer's marks that hold, and the
+   * name or alias of an entity it did not mark, found in the first sentence holding it. A mark
+   * that does not hold is dropped and counted; one of the person the project is about is only
+   * dropped, as they are never linked.
+   */
+  function marksOf(sentences: readonly Sentence[]): Mark[][] {
+    if (cast.listed.length === 0) return sentences.map(() => []);
+    const marks = sentences.map((s) =>
+      (s.names ?? []).flatMap((m): Mark[] => {
+        if (cast.byRef.get(m.e)?.subject) return [];
+        const words = checkMark(s.text, m, cast.byRef);
+        if (words !== null) return [{ e: m.e, words }];
+        counts.problems.mark = (counts.problems.mark ?? 0) + 1;
+        return [];
+      }),
+    );
+    const marked = new Set(marks.flat().map((m) => m.e));
+    const texts = sentences.map((s) => s.text);
+    for (const u of unmarked(texts, cast.listed, marked)) marks[u.sentence]!.push(u.mark);
+    return marks;
   }
 
   /**
@@ -541,16 +649,26 @@ export async function writeStories(
   function assemble(
     story: PlannedStory,
     draft: StoryDraft,
+    marks: ReadonlyArray<ReadonlyArray<Mark>>,
     flags: string[],
     notes: string[],
     interviewName: string,
     dateBasis?: string,
   ): ProposedMemory {
+    // the first time the story names each one is a link to its note, by its name until saved
+    const linked = linkSentences(
+      draft.sentences.map((s) => s.text),
+      marks,
+      (ref) => cast.byRef.get(ref)!.name,
+    );
     const paragraphs: string[][] = [];
-    for (const s of draft.sentences) {
-      if (s.paragraph || paragraphs.length === 0) paragraphs.push([s.text]);
-      else paragraphs[paragraphs.length - 1]!.push(s.text);
-    }
+    draft.sentences.forEach((s, i) => {
+      if (s.paragraph || paragraphs.length === 0) paragraphs.push([linked[i]!]);
+      else paragraphs[paragraphs.length - 1]!.push(linked[i]!);
+    });
+    // other notes the story names (another story's title): never one of those found, which the
+    // marks link once
+    const others = titles().filter((t) => !cast.taken.has(matchKey(t)));
     // transcript lines only: the profile (line 0) has no time and no turn
     const cited: Line[] = lines.filter((l) =>
       draft.sentences.some((s) => s.cites.some((r) => l.n >= r.from && l.n <= r.to)),
@@ -566,7 +684,7 @@ export async function writeStories(
           ? `, ${clock(start)}`
           : `, ${clock(start)}–${clock(end)}`;
     const body = [
-      ...paragraphs.map((p) => linkKnownTitles(p.join(' '), titles()).body),
+      ...paragraphs.map((p) => linkKnownTitles(p.join(' '), others).body),
       `> Told by ${story.tellers.join(' and ')}, “${interviewName}”${span}`,
     ].join('\n\n');
     const firstTeller = cited.find((l) => l.teller) ?? cited[0]!;

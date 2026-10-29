@@ -1,7 +1,8 @@
 import { randomUUID } from 'node:crypto';
 import { afterAll, describe, expect, it } from 'vitest';
 import { createApp } from '../src/app';
-import { GRAPH_SYSTEM } from '../src/graph/step';
+import { FIND_SYSTEM } from '../src/graph/find';
+import { applyGraphPatch, storiesOf } from '../src/graph/save';
 import type { GraphProposal } from '../src/graph/types';
 import type { ChatModel } from '../src/nim';
 import { PLAN_SYSTEM } from '../src/stories/plan';
@@ -10,7 +11,8 @@ import { testContext, type RealSession } from './helpers';
 
 /**
  * The graph an import proposes, saved with its stories as the reviewer chose, and undone with
- * them (graph design 5.1–5.3). A scripted model plays every step.
+ * them (graph design 5.1–5.3). A scripted model plays every step: it finds the people, places and
+ * things first, and the writer marks the names its sentences use (entity design 3).
  */
 const ctx = testContext();
 const RUN = randomUUID().slice(0, 8);
@@ -39,82 +41,55 @@ const SOUP = {
       text: 'Every birthday his mother made seaweed soup, the way they did in Korea.',
       cites: ['L4'],
       paragraph: true,
+      // "his mother" is only a way to call her: the writer marks it; names are found by code
+      names: [{ e: 'e4', words: 'his mother' }],
     },
     { text: 'They went to Busan.', cites: ['L4'] },
   ],
 };
 
-const m = (story: string, words: string[], line: string, cites: string[]) => ({
-  story,
-  words,
-  line,
-  cites,
-});
-function graphFor(noahId: string) {
+const said = (text: string, cite: string) => ({ text, cites: [cite] });
+/** what the find step answers: the person the project is about by the id it was shown */
+function foundFor(noahId: string) {
+  const entity = (
+    ref: string,
+    name: string,
+    type: string,
+    ways: string[],
+    description = [] as unknown[],
+  ) => ({
+    ref,
+    name,
+    type,
+    match: 'new',
+    ways,
+    description,
+  });
   return {
     entities: [
-      {
-        ref: 'e1',
-        name: 'Noah Kim',
-        type: 'person',
-        match: noahId,
-        mentions: [
-          m('S1', ['Noah'], 'Noah was new at school.', ['L2']),
-          m('S2', ['his mother'], 'His mother made him seaweed soup.', ['L4']),
-        ],
-      },
-      {
-        ref: 'e2',
-        name: 'Sarah',
-        type: 'person',
-        match: 'new',
-        mentions: [m('S1', ['Sarah'], 'Sarah sat next to Noah on the first day.', ['L2'])],
-      },
-      {
-        ref: 'e3',
-        name: 'Tom',
-        type: 'person',
-        match: 'new',
-        mentions: [m('S1', ['her brother Tom'], 'Tom is Sarah’s brother.', ['L2'])],
-      },
-      {
-        ref: 'e4',
-        name: 'Noah Kim’s mother',
-        type: 'person',
-        match: 'new',
-        mentions: [m('S2', ['his mother'], 'She made seaweed soup every birthday.', ['L4'])],
-      },
-      {
-        ref: 'e5',
-        name: 'Korea',
-        type: 'place',
-        match: 'new',
-        mentions: [m('S2', ['Korea'], 'Where the soup is made that way.', ['L4'])],
-      },
-      {
-        ref: 'e6',
-        name: 'Busan',
-        type: 'place',
-        match: 'new',
-        mentions: [m('S2', ['Busan'], 'Where they went.', ['L4'])],
-      },
+      { ...entity('e1', 'Noah Kim', 'person', []), match: noahId },
+      entity(
+        'e2',
+        'Sarah',
+        'person',
+        ['his friend Sarah'],
+        [said('Sarah sat next to Noah on the first day.', 'L2')],
+      ),
+      entity('e3', 'Tom', 'person', ['her brother Tom'], [said('Tom is Sarah’s brother.', 'L2')]),
+      entity(
+        'e4',
+        'Noah Kim’s mother',
+        'person',
+        ['his mother'],
+        [said('She always made seaweed soup.', 'L4')],
+      ),
+      entity('e5', 'Korea', 'place', []),
+      entity('e6', 'Busan', 'place', []),
     ],
     relationships: [
-      {
-        a: 'e2',
-        b: 'e1',
-        description: 'Sarah — Noah’s friend from school',
-        story: 'S1',
-        cites: ['L2'],
-      },
-      { a: 'e3', b: 'e2', description: 'Tom — Sarah’s brother', story: 'S1', cites: ['L2'] },
-      {
-        a: 'e4',
-        b: 'e1',
-        description: 'Noah Kim’s mother — his mother',
-        story: 'S2',
-        cites: ['L4'],
-      },
+      { a: 'e2', b: 'e1', description: 'Sarah — Noah’s friend from school', cites: ['L2'] },
+      { a: 'e3', b: 'e2', description: 'Tom — Sarah’s brother', cites: ['L2'] },
+      { a: 'e4', b: 'e1', description: 'Noah Kim’s mother — his mother', cites: ['L4'] },
     ],
   };
 }
@@ -132,9 +107,9 @@ const chat: ChatModel = {
       });
     }
     if (system.startsWith(WRITE_SYSTEM)) return answer(user.includes(SCHOOL.title) ? SCHOOL : SOUP);
-    if (system.startsWith(GRAPH_SYSTEM)) {
+    if (system.startsWith(FIND_SYSTEM)) {
       const noah = /Noah Kim[^\n]*\(person, id ([0-9a-f-]{36})\)/.exec(user)?.[1] ?? 'new';
-      return answer(graphFor(noah));
+      return answer(foundFor(noah));
     }
     const n = (user.match(/^\d+\. /gm) ?? []).length;
     return answer({
@@ -248,8 +223,9 @@ describe('an import’s graph', () => {
       aliases: ['Noah Kim’s mother'],
     });
     expect(got.find((e) => e.name === 'Tommy Lee')!.aliases).toEqual(['Tom']);
+    // a mention's line is the story's sentence that names her
     expect(got.find((e) => e.name === 'Sarah')!.description).toContain(
-      'Sarah sat next to Noah on the first day.',
+      'Noah met his friend Sarah on his first day.',
     );
     expect(await relationships()).toEqual([
       {
@@ -333,5 +309,42 @@ describe('an import’s graph', () => {
     expect(names).toContain('Busan');
     expect(names).toContain(`Noah Kim undo ${RUN}`);
     expect(await relationships()).toEqual([]);
+  });
+});
+
+describe('a relationship no story tells', () => {
+  const mention = (story: string) => ({ story, words: ['x'], line: 'x.', sources: [] });
+  it('stays when both its ends do, and names no story', () => {
+    const p: GraphProposal = {
+      entities: [
+        {
+          ref: 'e1',
+          name: 'Minho',
+          type: 'person',
+          match: { kind: 'new' },
+          mentions: [mention('m1')],
+        },
+        {
+          ref: 'e2',
+          name: 'Busan',
+          type: 'place',
+          match: { kind: 'new' },
+          mentions: [mention('m1')],
+        },
+      ],
+      relationships: [
+        {
+          ref: 'r1',
+          a: 'e1',
+          b: 'e2',
+          description: 'Minho — lived in Busan',
+          story: null,
+          sources: [],
+        },
+      ],
+    };
+    const kept = applyGraphPatch(p, {}, new Set(['m1']));
+    expect(kept.relationships.map((r) => [r.ref, r.story])).toEqual([['r1', null]]);
+    expect(storiesOf(kept)).toEqual(['m1']);
   });
 });
