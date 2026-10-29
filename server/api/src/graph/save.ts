@@ -39,12 +39,15 @@ export function applyGraphPatch(
       next.name = name;
     }
     const same = patch.same?.[e.ref];
-    if (same && UUID_RE.test(same)) {
+    const isSame = !!same && UUID_RE.test(same);
+    // a paragraph for a note already here, or for the note of the entity it is the same as
+    if (noParagraph.has(e.ref) && e.note && (e.note.kind === 'existing' || isSame))
+      next.description = [];
+    if (isSame) {
       next.match = { kind: 'existing', entityId: same, name: '' };
       // the note that entity has is looked up at save (notePlan)
       if (e.note) next.note = { kind: 'new' };
     }
-    if (noParagraph.has(e.ref) && next.note?.kind === 'existing') next.description = [];
     entities.push(next);
   }
   const live = new Map(entities.map((e) => [e.ref, e]));

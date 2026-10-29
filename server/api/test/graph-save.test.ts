@@ -484,6 +484,20 @@ describe('the reviewer’s choices on an import’s people, places and things', 
     ]);
   });
 
+  it('leaving out a paragraph for one the same as one already here drops it', () => {
+    const tom = '00000000-0000-4000-8000-000000000001';
+    const out = applyGraphPatch(
+      { entities: [NOTED('e1', 'Tom', 'm1'), NOTED('e2', 'Sarah', 'm1')], relationships: [] },
+      { same: { e1: tom, e2: 'not an id' }, leaveParagraph: ['e1', 'e2'] },
+      new Set(['m1']),
+    );
+    expect(out.entities.map((e) => [e.name, e.note, e.description])).toEqual([
+      ['Tom', { kind: 'new' }, []],
+      // not the same as anyone: its text is a new note's, not a paragraph
+      ['Sarah', { kind: 'new' }, [{ text: 'Sarah came.', sources: [] }]],
+    ]);
+  });
+
   it('a relationship from a story left out is tied to a note instead', () => {
     const p: GraphProposal = {
       entities: [NOTED('e1', 'Minho'), NOTED('e2', 'Busan')],
