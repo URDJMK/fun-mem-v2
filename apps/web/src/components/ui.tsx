@@ -1,4 +1,4 @@
-import { useEffect, useState, type ReactNode } from 'react';
+import { useEffect, useState, type ReactNode, type RefObject } from 'react';
 import { Link, useNavigate } from 'react-router';
 import { supabase } from '../lib/supabase';
 import { DEMO_NAME, setDemoSignedIn, SKIP_LOGIN } from '../lib/demo';
@@ -74,6 +74,10 @@ const PATHS = {
   phone: (
     <path d="M5 4h4l2 5-2.5 1.5a11 11 0 0 0 5 5L15 13l5 2v4a2 2 0 0 1-2 2A16 16 0 0 1 3 6a2 2 0 0 1 2-2z" />
   ),
+  /* three dots in a row: a thing's own actions */
+  more: <path d="M5 12h.01M12 12h.01M19 12h.01" />,
+  trash: <path d="M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13M10 11v6M14 11v6" />,
+  leave: <path d="M14 4h5v16h-5M10 8l-4 4 4 4M6 12h9" />,
 } as const;
 
 export type IconName = keyof typeof PATHS;
@@ -180,6 +184,35 @@ export function useAccountName(): string {
 }
 
 /** Signing out, from wherever it is offered. */
+/**
+ * A menu that is open closes on Escape (focus going back to what opened it) or a press anywhere
+ * outside it. `root` holds the trigger and the panel.
+ */
+export function useDismiss(
+  open: boolean,
+  close: () => void,
+  root: RefObject<HTMLElement | null>,
+  trigger: RefObject<HTMLElement | null>,
+) {
+  useEffect(() => {
+    if (!open) return;
+    const outside = (e: PointerEvent) => {
+      if (!root.current?.contains(e.target as Node)) close();
+    };
+    const escape = (e: KeyboardEvent) => {
+      if (e.key !== 'Escape') return;
+      close();
+      trigger.current?.focus();
+    };
+    document.addEventListener('pointerdown', outside);
+    document.addEventListener('keydown', escape);
+    return () => {
+      document.removeEventListener('pointerdown', outside);
+      document.removeEventListener('keydown', escape);
+    };
+  }, [open, close, root, trigger]);
+}
+
 export function useSignOut(): () => Promise<void> {
   const navigate = useNavigate();
   return async function signOut() {

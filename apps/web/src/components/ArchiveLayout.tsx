@@ -1,10 +1,10 @@
-import { useEffect, useRef, useState, type ReactNode } from 'react';
+import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
 import { Link, NavLink, useLocation } from 'react-router';
 import { inArchive, useArchive, type Archive } from '../lib/archive';
 import { SKIP_LOGIN } from '../lib/demo';
-import { Avatar, Brand, Icon, useAccountName, useSignOut, type IconName } from './ui';
+import { Avatar, Brand, Icon, useAccountName, useDismiss, useSignOut, type IconName } from './ui';
 
-/** The five places a family goes most: the top bar on a computer, the tabs on a phone. */
+/** The five places a family goes most: the rail on a computer, the tabs on a phone. */
 const NAV: Array<{ path: string; label: string; icon: IconName; end?: boolean }> = [
   { path: '', label: 'Home', icon: 'home', end: true },
   { path: '/stories', label: 'Stories', icon: 'book' },
@@ -22,8 +22,10 @@ const MORE: Array<{ path: string; label: string; icon: IconName; writer?: boolea
 ];
 
 /**
- * Every page inside one project: a slim top bar (the five places, and the project's menu), the
- * page, and on a phone the five places again as tabs along the bottom (DESIGN.md).
+ * Every page inside one project (DESIGN.md). On a computer, a rail down the left: the mark, the
+ * five places as icons, and the project's menu at the bottom; it widens to show their names while
+ * the pointer or the keyboard is in it. On a phone, a slim top bar (the project's menu, the mark)
+ * and the five places as tabs along the bottom.
  */
 export function ArchiveLayout({
   title,
@@ -48,7 +50,8 @@ export function ArchiveLayout({
         <nav aria-label="Project" className="appnav">
           {NAV.map((n) => (
             <NavLink key={n.path} to={inArchive(archive.id, n.path)} end={n.end ?? false}>
-              {n.label}
+              <Icon name={n.icon} size={22} stroke={1.8} />
+              <span className="appnav-label">{n.label}</span>
             </NavLink>
           ))}
         </nav>
@@ -82,24 +85,12 @@ function ProjectMenu({ archive }: { archive: Archive }) {
   const signOut = useSignOut();
 
   useEffect(() => setOpen(false), [pathname]);
-
-  useEffect(() => {
-    if (!open) return;
-    const outside = (e: PointerEvent) => {
-      if (!root.current?.contains(e.target as Node)) setOpen(false);
-    };
-    const escape = (e: KeyboardEvent) => {
-      if (e.key !== 'Escape') return;
-      setOpen(false);
-      trigger.current?.focus();
-    };
-    document.addEventListener('pointerdown', outside);
-    document.addEventListener('keydown', escape);
-    return () => {
-      document.removeEventListener('pointerdown', outside);
-      document.removeEventListener('keydown', escape);
-    };
-  }, [open]);
+  useDismiss(
+    open,
+    useCallback(() => setOpen(false), []),
+    root,
+    trigger,
+  );
 
   return (
     <div className="project-menu" ref={root}>

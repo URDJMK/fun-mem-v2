@@ -246,16 +246,24 @@ The page ground is Canvas, with the working surface on Paper. Spacing uses a 4px
 
 ### Desktop and tablet (640px and up)
 
-No sidebar. A family has one or two projects and five places they go; the screen goes to the page.
+Inside a project, a rail down the left, like Supabase's. A family has one or two projects and five
+places they go; the rail keeps them one click away without taking the page's width.
 
-- **Slim top bar, 56px, on Canvas, sticky.** The Firepit wordmark on the left, then the five places
-  as text links: **Home, Stories, People, Timeline, Ask**. The current one is Ink, underlined in Rose.
-- **The project menu** is on the right: the project's avatar and name, opening a floating menu with
-  **Interviews**, **Add an interview** (for anyone who can add), **Members**, **Settings**, then
-  **Switch project**, then the account and **Sign out**. Escape, a click outside, or choosing an
-  item closes it.
-- Content is centred on Canvas, up to 960px (1200px for wide pages). Reading pages (a story, a
-  person, Ask) keep a 720px column.
+- **The rail, 64px, on Canvas, fixed.** The mark at the top, then the five places as icons:
+  **Home, Stories, People, Timeline, Ask**, then the project's menu (its avatar) at the foot. The
+  current place is Ink on Paper, its icon in Rose.
+- **It widens to 232px over the page** while the pointer or the keyboard is in it, showing the five
+  names, the wordmark and the project's name, with a floating shadow; it narrows again when they
+  leave. The labels are always in the page for screen readers.
+- **The project menu** opens beside the rail, from its foot: **Interviews**, **Add an interview**
+  (for anyone who can add), **Members**, **Settings**, then **Switch project**, then the account
+  and **Sign out**. Escape, a click outside, or choosing an item closes it.
+- Content is centred to the right of the rail, up to 960px (1200px for wide pages). Reading pages
+  (a story, a person, Ask) keep a 720px column.
+- **The projects page** (signed in, before a project) keeps a slim top bar: the wordmark, the
+  account, Sign out. Its projects are compact cards (avatar, name, your part in it), each with a
+  ⋯ menu: Open, Members, Settings, and Delete (the owner, confirmed by typing the name) or Leave.
+  "New project" is a small primary button above the list, on the right.
 
 ### Mobile (under 640px, designed at 390px)
 
@@ -327,10 +335,9 @@ The app is flat. Depth comes from Canvas against Paper, not from shadows.
 
 ### Navigation
 
-- The top bar's five links on a computer, the bottom tabs on a phone, and the project menu on both
-  (see Layout).
-- The current place is Ink with a 2px Rose underline (a Rose line along the top of its tab on a
-  phone). No filled tab, no coloured side bar.
+- The rail on a computer, the bottom tabs on a phone, and the project menu on both (see Layout).
+- The current place is Ink on Paper with its icon in Rose in the rail, and Ink with a Rose line
+  along the top of its tab on a phone. No coloured side bar.
 
 ### Voice line (signature)
 
