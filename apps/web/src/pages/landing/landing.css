@@ -1,6 +1,6 @@
 /*
- * The landing page redesign (dev only, directions/landing/): the interview, as objects. Shared
- * pieces first (lpx-), then the page (ob-).
+ * The landing page (pages/Landing.tsx): one interview, as objects. Shared pieces first (lpx-),
+ * then the page (ob-).
  * Type comes only from the five roles; the objects are paper on paper, lifted by a soft shadow.
  */
 
@@ -222,15 +222,18 @@
   color: var(--graphite);
 }
 
-/* a stage is one screen to arrive and leave, plus 80svh of scrolling for each unit it holds */
+/* one stage to a screen, and the page snaps to each: scroll-snap-stop keeps a hard flick from
+   carrying past the next one. Only while the landing page is showing. */
+html:has(.ob) {
+  scroll-snap-type: y mandatory;
+}
 .ob-stage {
   position: relative;
-  height: calc(100svh * (1 + var(--hold, 1) * 0.8));
+  scroll-snap-align: start;
+  scroll-snap-stop: always;
 }
 .ob-frame {
-  position: sticky;
-  top: 0;
-  height: 100svh;
+  min-height: 100svh;
   display: grid;
   place-items: center;
   padding: 88px 24px;
@@ -455,14 +458,17 @@
   }
 }
 
-/* reduced motion: every scene is already finished, and the objects simply stack */
-@media (prefers-reduced-motion: reduce) {
-  .ob-stage {
-    height: auto;
-  }
+/* short screens (a small phone): every stage still fits one screen */
+@media (max-height: 700px) {
   .ob-frame {
-    position: static;
-    height: auto;
-    padding: 96px 24px;
+    padding-top: 64px;
+    padding-bottom: 56px;
+  }
+  .ob-object {
+    gap: 20px;
+  }
+  .ob-mark {
+    width: 112px;
+    height: 112px;
   }
 }

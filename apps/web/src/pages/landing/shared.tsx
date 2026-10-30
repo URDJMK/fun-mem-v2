@@ -1,9 +1,9 @@
 /**
- * The pieces of the landing page (dev only, until it replaces pages/Landing.tsx): the example
- * interview, the organic shapes, the turn strip, a story, the people, and the motion hook. Every scene is written in its finished
+ * The pieces of the landing page (pages/Landing.tsx): the example interview, the organic shapes,
+ * the turn strip, a story, the people, and the motion hook. Every scene is written in its finished
  * state; motion, when the visitor allows it, starts from there and plays toward it again.
  */
-import { useLayoutEffect, type RefObject } from 'react';
+import { useEffect, useLayoutEffect, type RefObject } from 'react';
 import { Link } from 'react-router';
 import { gsap } from 'gsap';
 import { ScrollTrigger } from 'gsap/ScrollTrigger';
@@ -207,4 +207,62 @@ export function useMotion(root: RefObject<HTMLElement | null>, build: () => void
     return () => ctx.revert();
     // the scenes are built once per page
   }, []);
+}
+
+/**
+ * One stage per wheel gesture. CSS scroll snap stops a single flick at the next stage, but a mouse
+ * wheel sends a separate scroll for every notch, and a trackpad keeps sending momentum after the
+ * finger lifts, so a hard spin would still run through several. Here a burst of wheel input (events
+ * less than GAP apart) is one step to the next or previous stage, and nothing more is taken until
+ * that move has finished and the wheel has gone quiet.
+ *
+ * Only the wheel: the keyboard, touch, the scrollbar and find-in-page stay native (each already
+ * snaps one stage at a time). Pinch zoom (ctrl + wheel) and sideways scrolling pass through, and
+ * when a stage is taller than the window (a very small screen) the wheel scrolls as usual, so
+ * nothing can be skipped.
+ */
+export function useWheelPaging(root: RefObject<HTMLElement | null>, selector: string) {
+  useEffect(() => {
+    const GAP = 200;
+    let moving = false;
+    let lastWheel = 0;
+    const smooth = !window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+    const onWheel = (e: WheelEvent) => {
+      if (e.ctrlKey || Math.abs(e.deltaX) > Math.abs(e.deltaY)) return;
+      const stages = [...(root.current?.querySelectorAll<HTMLElement>(selector) ?? [])];
+      if (!stages.length || stages.some((s) => s.offsetHeight > window.innerHeight + 2)) return;
+      e.preventDefault();
+
+      const now = performance.now();
+      const fresh = now - lastWheel > GAP;
+      lastWheel = now;
+      if (moving || !fresh || Math.abs(e.deltaY) < 2) return;
+
+      const here = stages.reduce(
+        (best, s, i) =>
+          Math.abs(s.offsetTop - window.scrollY) <
+          Math.abs(stages[best]!.offsetTop - window.scrollY)
+            ? i
+            : best,
+        0,
+      );
+      const next = Math.min(stages.length - 1, Math.max(0, here + Math.sign(e.deltaY)));
+      if (next === here) return;
+
+      moving = true;
+      const done = () => {
+        window.removeEventListener('scrollend', done);
+        window.clearTimeout(fallback);
+        moving = false;
+      };
+      // scrollend where the browser has it; a timeout where it doesn't
+      const fallback = window.setTimeout(done, 1200);
+      window.addEventListener('scrollend', done);
+      window.scrollTo({ top: stages[next]!.offsetTop, behavior: smooth ? 'smooth' : 'auto' });
+    };
+
+    window.addEventListener('wheel', onWheel, { passive: false });
+    return () => window.removeEventListener('wheel', onWheel);
+  }, [root, selector]);
 }

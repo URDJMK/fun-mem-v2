@@ -109,12 +109,13 @@ components:
 
 # Design System: Firepit
 
-> **Status: foundation and brand built, pages not yet.** Written on 2026-10-28; the foundation
-> (tokens, type, the app shell, and the old look's effects removed) was built the same day, in
-> `apps/web/src`. On 2026-10-29 the brand was chosen: black and white with Rose as the one point
-> colour (it replaced Voice green), Ronzino for titles and the logo, and a strict scale of five type
-> roles. The new landing page (see Landing page) is being built behind `?landing=16` in
-> `src/directions/landing/`. App page layouts are still the old ones inside the new system;
+> **Status: foundation, brand and landing page built; app pages not yet.** Written on 2026-10-28;
+> the foundation (tokens, type, the app shell, and the old look's effects removed) was built the
+> same day, in `apps/web/src`. On 2026-10-29 the brand was chosen: black and white with Rose as the
+> one point colour (it replaced Voice green), Ronzino for titles and the logo, and a strict scale of
+> five type roles. On 2026-10-30 the new landing page (see Landing page) replaced the old one, in
+> `src/pages/Landing.tsx` and `src/pages/landing/`. App page layouts are still the old ones inside
+> the new system;
 > `design-baseline/` shows the look this replaces and `design-after/` the foundation. Rules below
 > that a page still breaks (dot-separated meta lines, large years, the voice line) are waiting for
 > that page's rebuild.
@@ -371,17 +372,23 @@ The example is fiction and says so. There is no audio: the demonstration is sile
 
 - **GSAP** (with ScrollTrigger, SplitText, MorphSVG, DrawSVG and TextPlugin, all free) for anything
   more than a hover. No second animation library.
-- **Native scrolling.** No smooth-scroll library and no scroll-jacking: the landing page's stages
-  are tall sections with a CSS `position: sticky` frame, and the motion is scrubbed to the scroll,
-  so scrolling back plays it backwards.
-- **One authored moment per object.** Each does its one thing while it holds the centre, arrives
-  out of a blur and leaves into one. No identical entrance on every section, and no idle loops.
+- **One stage to a screen, snapped.** The landing page's stages are one screen each, with CSS scroll
+  snap (`scroll-snap-type: y mandatory`, `scroll-snap-stop: always`), so a flick moves one stage.
+  A mouse wheel sends a scroll per notch and a trackpad keeps sending momentum, so on the wheel
+  alone a burst of input is one step, and nothing more is taken until the move has finished. The
+  keyboard, touch, the scrollbar and find-in-page stay native; pinch zoom passes through; a stage
+  taller than the window scrolls normally. No smooth-scroll library.
+- **Scenes play by time, not by scroll.** A stage's scene starts once the stage has settled and
+  plays at its own pace, so a fast scroll never rushes it; leave and come back, and it plays again.
+  The opening (the glow catching) plays a moment after the page opens.
+- **One authored moment per object.** Each does its one thing once it has arrived out of a blur.
+  No identical entrance on every section, and no idle loops.
 - **Organic shapes are hand-cut,** the same family as the logo's glow: smooth closed curves with the
   same number of points, so any two morph cleanly. They move only when something happens (someone
   talks, something is kept), never as decoration.
 - **Ease out, never bounce.** Exponential or power ease-out; no `back` or elastic eases.
 - **Reduced motion:** every scene is written in its finished state, and motion only runs when the
-  visitor allows it. With reduced motion the stages simply stack, each finished.
+  visitor allows it. With reduced motion the stages still snap, each already finished.
 
 ## Do's and Don'ts
 
