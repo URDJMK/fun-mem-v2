@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react';
+import { lazy, Suspense, useEffect, useRef } from 'react';
 import { Link } from 'react-router';
 import { gsap } from 'gsap';
 import { ScrollTrigger } from 'gsap/ScrollTrigger';
@@ -48,7 +48,22 @@ const GRAPH = [
   { label: 'Agnes', x: 50, y: 39, kind: 'person' },
 ];
 
+/* dev only: the redesign's prototypes, behind `?landing=` (src/directions/preview.ts) */
+const Prototype = import.meta.env.DEV ? lazy(() => import('../directions/landing')) : null;
+
 export function Landing() {
+  const variant = import.meta.env.DEV ? document.documentElement.dataset.landing : undefined;
+  if (Prototype && variant) {
+    return (
+      <Suspense fallback={null}>
+        <Prototype />
+      </Suspense>
+    );
+  }
+  return <LandingNow />;
+}
+
+function LandingNow() {
   const root = useRef<HTMLDivElement>(null);
 
   useEffect(() => {

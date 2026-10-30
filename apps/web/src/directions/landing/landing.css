@@ -1,0 +1,468 @@
+/*
+ * The landing page redesign (dev only, directions/landing/): the interview, as objects. Shared
+ * pieces first (lpx-), then the page (ob-).
+ * Type comes only from the five roles; the objects are paper on paper, lifted by a soft shadow.
+ */
+
+.lpx {
+  --shadow-object: 0 1px 2px rgb(21 24 26 / 0.06), 0 18px 40px -18px rgb(21 24 26 / 0.24);
+  background: var(--paper);
+  overflow-x: clip;
+}
+.lpx ::selection {
+  background: var(--marker);
+  color: var(--ink);
+}
+.lpx h1,
+.lpx h2 {
+  margin: 0;
+  text-wrap: balance;
+}
+.lpx p {
+  margin: 0;
+}
+/* a headline set as its own lines, one sentence to a line */
+.lpx-lines span {
+  display: block;
+}
+
+/* the marker: only ever behind the words someone actually said */
+.lpx-mark {
+  color: inherit;
+  background-color: transparent;
+  background-image: linear-gradient(var(--marker), var(--marker));
+  background-repeat: no-repeat;
+  background-size: 100% 100%;
+  border-radius: 4px;
+  padding: 1px 2px;
+  box-decoration-break: clone;
+  -webkit-box-decoration-break: clone;
+}
+
+.lpx-said b {
+  margin-right: 4px;
+}
+.lpx-said[data-who='Theo'] {
+  color: var(--graphite);
+}
+.lpx-meta {
+  color: var(--graphite);
+}
+
+/* the turn strip: a bar per turn, as long as the turn */
+.lpx-strip {
+  display: flex;
+  gap: 4px;
+  height: 10px;
+}
+.lpx-seg {
+  position: relative;
+  min-width: 6px;
+  border-radius: 999px;
+  background: var(--line);
+  overflow: hidden;
+}
+.lpx-fill {
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background: var(--interviewer);
+  transform-origin: left center;
+  transform: scaleX(var(--p, 1));
+}
+.lpx-seg[data-who='Nell'] .lpx-fill {
+  background: var(--voice);
+}
+.lpx-strip.is-vertical {
+  flex-direction: column;
+  width: 10px;
+  height: 100%;
+}
+.lpx-strip.is-vertical .lpx-fill {
+  transform-origin: center top;
+  transform: scaleY(var(--p, 1));
+}
+
+/* objects */
+.lpx-sheet,
+.lpx-story,
+.lpx-a {
+  background: var(--paper);
+  box-shadow:
+    var(--shadow-object),
+    0 0 0 1px var(--line);
+}
+.lpx-sheet {
+  border-radius: 22px;
+  padding: 28px 32px;
+  display: grid;
+  gap: 12px;
+  text-align: left;
+}
+.lpx-story {
+  display: grid;
+  gap: 6px;
+  width: 100%;
+  max-width: 340px;
+  padding: 18px 20px;
+  border-radius: 18px;
+  text-align: left;
+}
+.lpx-when {
+  color: var(--graphite);
+}
+.lpx-own {
+  justify-self: start;
+  margin-top: 4px;
+  padding: 2px 10px;
+  border-radius: 6px;
+  background: var(--canvas);
+}
+
+/* asking: the question on the right, the answer under it, and the one it cannot give */
+.lpx-ask {
+  display: grid;
+  gap: 12px;
+  width: 100%;
+  max-width: 540px;
+  text-align: left;
+}
+.lpx-q {
+  justify-self: end;
+  min-height: 1.55em;
+  padding: 10px 16px;
+  border-radius: 18px 18px 4px 18px;
+  background: var(--canvas);
+}
+.lpx-a {
+  display: grid;
+  gap: 10px;
+  justify-items: start;
+  padding: 16px 18px;
+  border-radius: 18px;
+}
+.lpx-a.lpx-none {
+  background: transparent;
+  box-shadow: none;
+  border: 1px dashed var(--edge);
+}
+
+/* people: Nell in the middle, threads out to who and what she named */
+.lpx-people {
+  position: relative;
+  width: 100%;
+  max-width: 580px;
+  aspect-ratio: 16 / 10;
+}
+.lpx-people svg {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+}
+.lpx-thread {
+  fill: none;
+  stroke: var(--edge);
+  stroke-width: 0.45;
+}
+.lpx-node {
+  font: var(--type-small);
+  position: absolute;
+  translate: -50% -50%;
+  max-width: 200px;
+  padding: 8px 16px;
+  text-align: center;
+  background: var(--paper);
+  box-shadow:
+    var(--shadow-object),
+    0 0 0 1px var(--line);
+  /* hand-cut, like the pebbles: no two sides the same */
+  border-radius: 58% 42% 52% 48% / 50% 56% 44% 50%;
+}
+.lpx-node.is-centre {
+  padding: 14px 24px;
+  background: var(--ink);
+  color: var(--paper);
+  box-shadow: var(--shadow-object);
+}
+.lpx-node.is-story {
+  background: var(--canvas);
+  box-shadow: none;
+}
+
+/* ── 1 + 6 · The interview, as objects ────────────────── */
+
+.ob-corner {
+  position: fixed;
+  z-index: 5;
+  margin: 0;
+  padding: 14px max(24px, env(safe-area-inset-right)) 14px max(24px, env(safe-area-inset-left));
+}
+.ob-tl {
+  top: 0;
+  left: 0;
+}
+.ob-tr {
+  top: 0;
+  right: 0;
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+.ob-bl {
+  bottom: 0;
+  left: 0;
+  padding-bottom: max(16px, env(safe-area-inset-bottom));
+}
+.ob-br {
+  bottom: 0;
+  right: 0;
+  padding-bottom: max(16px, env(safe-area-inset-bottom));
+  color: var(--graphite);
+}
+
+/* a stage is one screen to arrive and leave, plus 80svh of scrolling for each unit it holds */
+.ob-stage {
+  position: relative;
+  height: calc(100svh * (1 + var(--hold, 1) * 0.8));
+}
+.ob-frame {
+  position: sticky;
+  top: 0;
+  height: 100svh;
+  display: grid;
+  place-items: center;
+  padding: 88px 24px;
+}
+.ob-object {
+  margin: 0;
+  width: 100%;
+  max-width: 720px;
+  display: grid;
+  justify-items: center;
+  gap: 32px;
+  text-align: center;
+}
+.ob-caption {
+  max-width: 34ch;
+  color: var(--graphite);
+}
+
+/* scenes that change in place stack their states in one cell, while motion plays them */
+@media (prefers-reduced-motion: no-preference) {
+  .ob-layered {
+    display: grid;
+    justify-items: center;
+    align-items: center;
+  }
+  .ob-layered > * {
+    grid-area: 1 / 1;
+  }
+}
+
+.ob-intro {
+  gap: 24px;
+}
+.ob-mark {
+  width: 176px;
+  height: 176px;
+  overflow: visible;
+}
+.ob-glow {
+  fill: var(--brand-mark);
+}
+.ob-ember,
+.ob-mark.is-lit .ob-glow {
+  fill: var(--voice);
+}
+/* the ember waits, unseen, until the opening scene grows it */
+.ob-ember {
+  opacity: 0;
+}
+.ob-bowl {
+  fill: var(--ink);
+}
+
+.ob-slip {
+  display: grid;
+  gap: 10px;
+  max-width: 520px;
+  padding: 32px 36px 36px;
+  border-radius: 10px;
+  text-align: left;
+  background: var(--paper);
+  box-shadow:
+    var(--shadow-object),
+    0 0 0 1px var(--line);
+  rotate: -1.5deg;
+}
+
+/* two voices: whoever is talking comes forward */
+.ob-pebbles {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.ob-pv {
+  overflow: visible;
+}
+.ob-pv[data-who='Theo'] {
+  width: 120px;
+  height: 120px;
+}
+.ob-pv[data-who='Theo'] path {
+  fill: var(--graphite);
+}
+.ob-pv[data-who='Nell'] {
+  width: 220px;
+  height: 220px;
+}
+.ob-pv[data-who='Nell'] path {
+  fill: var(--voice);
+}
+.ob-strip {
+  width: min(460px, 80vw);
+}
+.ob-subs {
+  display: grid;
+  gap: 12px;
+}
+.ob-sub {
+  max-width: 34ch;
+}
+.ob-sub[data-who='Theo'] {
+  color: var(--graphite);
+}
+.ob-sub b {
+  margin-right: 6px;
+}
+
+/* the words worth keeping, and the story the first of them becomes */
+.ob-keep {
+  display: grid;
+  gap: 24px;
+  width: 100%;
+  justify-items: center;
+}
+.ob-transcript {
+  max-width: 600px;
+}
+.ob-story {
+  max-width: 380px;
+}
+
+/* the timeline: a drawn line, its decades, a story pinned above or below */
+.ob-time {
+  width: min(600px, 86vw);
+  padding: 96px 0 104px;
+}
+.ob-time svg {
+  display: block;
+  width: 100%;
+  height: auto;
+  overflow: visible;
+}
+.ob-rod {
+  fill: none;
+  stroke: var(--ink);
+  stroke-width: 2;
+  stroke-linecap: round;
+}
+.ob-decades {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  margin: 12px 0 0;
+  padding: 0;
+  list-style: none;
+  color: var(--graphite);
+}
+.ob-decades li {
+  position: relative;
+}
+.ob-pin {
+  position: absolute;
+  bottom: calc(100% + 44px);
+  left: 50%;
+  translate: -50% 0;
+  display: grid;
+  justify-items: center;
+  gap: 10px;
+  width: 200px;
+  color: var(--ink);
+}
+.ob-pin:not(.is-below) .ob-pin-title {
+  order: -1;
+}
+.ob-pin.is-below {
+  bottom: auto;
+  top: -38px;
+}
+.ob-dot {
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: var(--ink);
+  box-shadow: 0 0 0 4px var(--paper);
+}
+.ob-pin.is-below .ob-pin-title {
+  margin-top: 30px;
+}
+
+.ob-ask {
+  max-width: 560px;
+}
+.ob-people {
+  width: min(640px, 92vw);
+}
+.ob-end {
+  gap: 24px;
+}
+
+@media (max-width: 720px) {
+  .ob-br {
+    display: none;
+  }
+  .ob-tr .btn-quiet {
+    display: none;
+  }
+  .ob-frame {
+    padding: 80px 16px;
+  }
+  .ob-object {
+    gap: 24px;
+  }
+  .ob-mark {
+    width: 128px;
+    height: 128px;
+  }
+  .ob-slip {
+    padding: 24px;
+  }
+  .ob-pv[data-who='Theo'] {
+    width: 80px;
+    height: 80px;
+  }
+  .ob-pv[data-who='Nell'] {
+    width: 150px;
+    height: 150px;
+  }
+  .ob-pin {
+    width: 150px;
+  }
+  .lpx-sheet {
+    padding: 20px;
+  }
+}
+
+/* reduced motion: every scene is already finished, and the objects simply stack */
+@media (prefers-reduced-motion: reduce) {
+  .ob-stage {
+    height: auto;
+  }
+  .ob-frame {
+    position: static;
+    height: auto;
+    padding: 96px 24px;
+  }
+}
