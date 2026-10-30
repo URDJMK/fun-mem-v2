@@ -9,7 +9,7 @@ privacy or legal consequence, an input that fails without it, or why a control i
 disabled. **Cut** = everything else (restates the label, reassures, explains a concept, fills an
 empty space).
 
-**Totals: 101 sentences. Keep 59, cut 42.** Nothing has been changed yet.
+**Totals: 101 sentences. Keep 59, cut 42.** Applied on 2026-10-30: every cut is made (a few short states stay where a sentence was, e.g. "Kept", "None yet"), along with later wordy lines ("Press it again to carry on", the reading-status explanations). Line numbers below are from before.
 
 ## Starting a project (`pages/NewArchive.tsx`, `components/ProfileInputs.tsx`)
 

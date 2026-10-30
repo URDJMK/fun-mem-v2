@@ -33,14 +33,11 @@ export const sameDraft = (a: ProfileDraft, b: ProfileDraft) =>
 export function ProfileInputs({
   value,
   onChange,
-  name,
   idPrefix,
   disabled,
 }: {
   value: ProfileDraft;
   onChange: (d: ProfileDraft) => void;
-  /** their name, for the hints; empty while it is being typed */
-  name: string;
   idPrefix: string;
   disabled?: boolean;
 }) {
@@ -89,10 +86,6 @@ export function ProfileInputs({
           value={value.aliases}
           onChange={set('aliases')}
         />
-        <span className="hint">
-          A year is enough, and every field can wait. With a birth year, “when I was seven” in{' '}
-          {name ? `${name}’s` : 'their'} stories becomes a year.
-        </span>
       </label>
     </div>
   );

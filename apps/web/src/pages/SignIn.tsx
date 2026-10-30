@@ -134,13 +134,6 @@ export function SignIn() {
         >
           <div className="stack" style={{ gap: 4, textAlign: 'center' }}>
             <h1 className="t-heading">Welcome</h1>
-            <p className="muted">
-              {mode === 'signup'
-                ? 'Create an account. It only takes a moment.'
-                : mode === 'forgot'
-                  ? 'We’ll email you a link to reset it.'
-                  : 'Sign in or create an account. It only takes a moment.'}
-            </p>
           </div>
           {ended && (
             <p role="status" data-testid="welcome-ended" className="notice notice-sage small">

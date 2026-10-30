@@ -22,11 +22,6 @@ export function NewNote() {
     <ArchiveLayout title="Write a memory">
       <div className="stack" style={{ gap: 4 }}>
         <h1 className="page-title">Write a memory</h1>
-        <p className="muted">
-          {archive.kind === 'family'
-            ? 'Something you remember about the family, or something one of them told you.'
-            : `Something you remember about ${archive.subjectName}, or something they told you.`}
-        </p>
       </div>
       {archive.writer ? (
         <div className="card" style={{ borderRadius: 8 }}>

@@ -151,7 +151,6 @@ function Answer({
   archiveId: string;
 }) {
   const byId = new Map(notes.map((n) => [n.id, n]));
-  const read = answer.evidence.relevant;
 
   if (answer.abstained) {
     return (
@@ -164,11 +163,6 @@ function Answer({
         <p className="t-small">
           {answer.message ?? 'There is not enough in the records to answer this.'}
         </p>
-        <span className="small muted">
-          {read === 0
-            ? 'No record spoke to this.'
-            : `${read} ${read === 1 ? 'record was' : 'records were'} read. None of their sentences answers this.`}
-        </span>
       </div>
     );
   }

@@ -63,9 +63,6 @@ function Years({ archiveId, notes }: { archiveId: string; notes: NoteSummary[] }
     <>
       <section aria-label="Memories by decade" className="card">
         <Decades decades={decades} hrefFor={(d) => `#d${d}`} />
-        <p className="small muted" style={{ marginTop: 10 }}>
-          Each dot is a memory. The dashed decades haven’t come up yet.
-        </p>
       </section>
 
       {decades.map((d) => (
@@ -82,21 +79,7 @@ function Years({ archiveId, notes }: { archiveId: string; notes: NoteSummary[] }
               · {d.items.length === 0 ? 'nothing yet' : count(d.items.length, 'memory', 'memories')}
             </span>
           </h2>
-          {d.items.length === 0 ? (
-            <div className="when-row">
-              <span className="when muted">
-                {d.start} – {String(d.start + 9).slice(2)}
-              </span>
-              <div
-                className="when-card"
-                style={{ border: '1.5px dashed var(--line)', background: 'none' }}
-              >
-                <span style={{ color: 'var(--graphite)' }}>
-                  Nothing here yet. These years might be a lovely next conversation.
-                </span>
-              </div>
-            </div>
-          ) : (
+          {d.items.length > 0 && (
             <ol className="stack" style={{ margin: 0, padding: 0, listStyle: 'none', gap: 8 }}>
               {d.items.map((n) => (
                 <li key={n.id} className="when-row">

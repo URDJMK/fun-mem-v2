@@ -296,7 +296,6 @@ function Story({ archive, data, onEdit }: { archive: Archive; data: Loaded; onEd
               <h2 id="differ-h" className="t-small">
                 Remembered a little differently
               </h2>
-              <p className="muted">We keep both. No one has to be right.</p>
               <div className="differ">
                 {parts.differs.map((d, i) => (
                   <div key={i}>
@@ -338,7 +337,7 @@ function Story({ archive, data, onEdit }: { archive: Archive; data: Loaded; onEd
           <section data-testid="backlinks" className="stack" style={{ gap: 6 }}>
             <h2 className="label-heading t-small">Mentioned in</h2>
             {backlinks.occurrences.length === 0 ? (
-              <p className="muted">No other memory links here yet.</p>
+              <p className="muted t-small">None yet</p>
             ) : (
               backlinks.occurrences.map((o, i) => (
                 <Link

@@ -65,12 +65,8 @@ export const THANKS = 'Thank {name} for sharing these memories with you.';
 
 /** Short reminders shown one at a time while the interview runs. */
 export const TIPS = [
-  'Let a silence sit for a few seconds. The best part often comes after it.',
-  'Follow the story they want to tell, even if it leaves your topics.',
   'Ask roughly when it happened. A year puts the memory on the timeline.',
-  'Ask who else was there. Each name becomes a person in the project.',
   'Keep your “mm-hm”s quiet: a nod records nothing over their voice.',
-  'If something is hard to talk about, let it go. You can come back another day.',
 ];
 
 export function fill(text: string, name: string): string {

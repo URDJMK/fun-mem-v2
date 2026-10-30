@@ -630,7 +630,7 @@ function EntityNote({ archive, noteId, name }: { archive: Archive; noteId: strin
         )}
       </div>
       {parts.paragraphs.length === 0 ? (
-        <p className="muted">Nothing written about {name} yet.</p>
+        <p className="muted t-small">Nothing yet</p>
       ) : (
         parts.paragraphs.map((p, i) => (
           <p key={i} style={{ whiteSpace: 'pre-wrap' }}>
@@ -730,7 +730,7 @@ function EntityView({
           </h2>
           <div data-testid="note-text" className="stack" style={{ gap: 6 }}>
             {parts.paragraphs.length === 0 ? (
-              <p className="muted">Nothing written about {note.title} yet.</p>
+              <p className="muted t-small">Nothing yet</p>
             ) : (
               parts.paragraphs.map((p, i) => (
                 <p key={i} style={{ whiteSpace: 'pre-wrap' }}>
@@ -755,7 +755,7 @@ function EntityView({
             Where {note.type === 'place' ? 'it' : 'they'} come{note.type === 'place' ? 's' : ''} up
           </h2>
           {backlinks.occurrences.length === 0 ? (
-            <p className="muted">No memory links here yet.</p>
+            <p className="muted t-small">None yet</p>
           ) : (
             backlinks.occurrences.map((o, i) => (
               <Link

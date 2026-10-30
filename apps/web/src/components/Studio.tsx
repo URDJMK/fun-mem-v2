@@ -537,17 +537,8 @@ export function Studio({
                       );
                     })}
                   </div>
-                  {reading !== null ? (
+                  {reading !== null && (
                     <p className="assist-note">Reading the topics out of what you said…</p>
-                  ) : (
-                    aboutWords >= ABOUT_WORDS &&
-                    free.length === 0 &&
-                    setup.topics.length === 0 && (
-                      <p className="assist-note">
-                        Nothing in particular: a life story, from childhood on. Tap a topic to
-                        choose one.
-                      </p>
-                    )
                   )}
                 </>
               )}
@@ -559,10 +550,6 @@ export function Studio({
                     “{script}”
                   </h2>
                   <Hearing quiet={quiet} what="the opening" />
-                  <p className="assist-note">
-                    Oral historians start every recording this way: who is speaking, when, and who
-                    is being interviewed, said by you, so {call} is not quizzed for it.
-                  </p>
                 </>
               )}
 
@@ -622,9 +609,6 @@ export function Studio({
           <span className={`live-dot live-dot-${recording.status}`} aria-hidden="true" />
           <span>{STATUS[recording.status]}</span>
           {rec && <Clock elapsed={() => rec.elapsed()} />}
-          {recording.status === 'paused' && (
-            <span className="muted">Press it again to carry on</span>
-          )}
         </p>
         <div className="row studio-bar-end">
           {confirmEnd ? (

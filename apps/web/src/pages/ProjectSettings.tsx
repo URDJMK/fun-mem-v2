@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Link, useNavigate } from 'react-router';
+import { useNavigate } from 'react-router';
 import {
   ApiError,
   deleteProject,
@@ -9,7 +9,7 @@ import {
   removeMember,
   updateProject,
 } from '../lib/api';
-import { canManage, inArchive, useArchive } from '../lib/archive';
+import { canManage, useArchive } from '../lib/archive';
 import { ArchiveLayout } from '../components/ArchiveLayout';
 import { countryName } from '../components/CountryPicker';
 import { writeDraft } from '../lib/interview';
@@ -36,12 +36,6 @@ export function ProjectSettings() {
     <ArchiveLayout title="Settings">
       <div className="stack" style={{ gap: 4 }}>
         <h1 className="page-title">Settings</h1>
-        <p className="muted">
-          {canManage(archive.role)
-            ? 'The project’s name and kind. Who’s in it is on the '
-            : 'About this project. Who’s in it is on the '}
-          <Link to={inArchive(archive.id, '/members')}>Members</Link> page.
-        </p>
       </div>
 
       <section className="card stack settings-card">
@@ -50,11 +44,7 @@ export function ProjectSettings() {
         <div className="settings-row">
           <div className="stack settings-what">
             <span className="row-title">Kind</span>
-            <span className="small muted">
-              {family
-                ? 'Family: everyone in it. Each person is added the first time they are interviewed.'
-                : 'Personal: one person’s life.'}
-            </span>
+            <span className="small muted">{family ? 'Family' : 'Personal'}</span>
           </div>
           {owner && !family && <MakeFamily />}
         </div>
@@ -116,11 +106,6 @@ function ProjectName() {
     >
       <label className="stack settings-what" htmlFor="project-name">
         <span className="row-title">Name</span>
-        <span className="small muted">
-          {archive.kind === 'family'
-            ? 'What the family is called, e.g. The Marsh family.'
-            : 'How their name shows up around the project.'}
-        </span>
       </label>
       <div className="row settings-control">
         <input
@@ -194,9 +179,7 @@ function AboutThem() {
       >
         <div className="stack settings-what">
           <span className="row-title">About {archive.subjectName}</span>
-          <span className="small muted">
-            Every story is written knowing this. Nobody outside the project sees it.
-          </span>
+          <span className="small muted">Every story is written knowing this.</span>
         </div>
         <ProfileInputs
           value={draft}
@@ -205,7 +188,6 @@ function AboutThem() {
             setDone(false);
             setFailed(null);
           }}
-          name={archive.subjectName}
           idPrefix="settings-profile"
           disabled={!archive.writer || saved === null}
         />

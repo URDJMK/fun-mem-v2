@@ -206,13 +206,10 @@ export function InterviewReview({
     <div className="review">
       <div className="stack" style={{ gap: 4 }}>
         <h1 className="page-title">Interview with {name}</h1>
-        <p className="muted">
-          {clock(segments[segments.length - 1]?.end ?? 0)} recorded. Next, Firepit writes its
-          stories for you to read over.
-        </p>
+        <p className="muted">{clock(segments[segments.length - 1]?.end ?? 0)} recorded</p>
       </div>
 
-      {pass !== 'none' && (
+      {pass !== 'none' && pass !== 'done' && (
         <p className="review-pass" data-state={pass}>
           {pass === 'working' && (
             <>
@@ -231,7 +228,6 @@ export function InterviewReview({
               </button>
             </>
           )}
-          {pass === 'done' && 'Transcribed again from the full recording.'}
           {pass === 'failed' &&
             'The full recording couldn’t be transcribed again, so this is the live transcript.'}
         </p>
@@ -322,7 +318,6 @@ export function InterviewReview({
           value={source}
           onChange={(e) => setSource(e.target.value)}
         />
-        <span className="hint">Shown under each memory it adds.</span>
       </label>
 
       <div className="row">

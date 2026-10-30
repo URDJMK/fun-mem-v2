@@ -71,10 +71,6 @@ export function NewArchive() {
       <main className="page page-narrow" style={{ paddingTop: 21 }}>
         <div className="stack" style={{ gap: 5 }}>
           <h1 className="t-heading">Whose stories are we keeping?</h1>
-          <p className="muted t-small">
-            A project holds the interviews, stories, people and places, all in one spot. You can
-            invite family to help once it’s made.
-          </p>
         </div>
 
         <form
@@ -118,11 +114,6 @@ export function NewArchive() {
               value={subjectName}
               onChange={(e) => setSubjectName(e.target.value)}
             />
-            <span className="hint">
-              {family
-                ? 'The name of the project. The people in it are added as you interview them.'
-                : 'This is how their name shows up around the project. You can change it later.'}
-            </span>
           </label>
 
           {!family && (
@@ -132,7 +123,6 @@ export function NewArchive() {
                 setProfile(d);
                 setError(null);
               }}
-              name={name}
               idPrefix="new-profile"
             />
           )}
@@ -168,7 +158,7 @@ export function NewArchive() {
           {error && <Failed>{error}</Failed>}
 
           <div className="spread" style={{ paddingTop: 3 }}>
-            <span className="small muted">Private to you and the people you invite.</span>
+            <span />
             <button
               type="submit"
               className="btn btn-primary btn-lg"

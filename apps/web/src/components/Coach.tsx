@@ -410,9 +410,6 @@ export function Coach({
               {offer!.s.reason}
             </p>
           )}
-          {state === 'ask' && current.move === 'open' && (
-            <p className="coach-reason">Read it out, then let {call} take it wherever they like.</p>
-          )}
 
           <div className="coach-moves" role="group" aria-label="Next move">
             <MoveButton
@@ -519,9 +516,7 @@ export function Coach({
                 </li>
               ))}
             </ul>
-          ) : (
-            <p className="small muted">Things {call} mentions in passing collect here.</p>
-          )}
+          ) : null}
         </section>
         <div className="stack" style={{ gap: 10 }}>
           {minutes >= 60 && (

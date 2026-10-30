@@ -107,7 +107,6 @@ export function Archives() {
             {greeting()}
             {first ? `, ${first}` : ''}
           </h1>
-          <p className="muted t-small">Whose stories would you like to spend time with?</p>
         </div>
 
         {invites.length > 0 && (

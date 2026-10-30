@@ -205,9 +205,7 @@ export function Running({
     <div className="stack" style={{ gap: 12 }}>
       <h1 className="page-title">{graph ? 'Reading the stories…' : 'Reading the interview…'}</h1>
       <p className="muted t-small">
-        {graph
-          ? 'Finding the people, places and things in them, and how they relate. It takes a few minutes; nothing is saved until you’ve read it over.'
-          : 'A long conversation takes a few minutes. You can leave this page — it keeps going, and you can come back to it; nothing is saved until you’ve read it over.'}
+        A few minutes. You can leave this page; nothing is saved until you’ve read it over.
       </p>
       <div className="card stack" style={{ gap: 8 }} role="status">
         <span>
@@ -572,9 +570,7 @@ export function Review({
         )}
         {decided[at] && !editing && (
           <p role="status" style={{ color: 'var(--ink)' }}>
-            {decided[at] === 'ok'
-              ? 'This one will be kept.'
-              : 'Left out. You can change your mind until you save.'}
+            {decided[at] === 'ok' ? 'Kept' : 'Left out'}
           </p>
         )}
       </article>

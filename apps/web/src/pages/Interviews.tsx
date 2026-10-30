@@ -99,7 +99,6 @@ export function Interviews() {
       <div className="spread" style={{ alignItems: 'flex-end' }}>
         <div className="stack" style={{ gap: 3 }}>
           <h1 className="page-title">Interviews</h1>
-          <span className="muted">Every conversation brought into {archive.subjectName}</span>
         </div>
         {archive.writer && (
           <Link to={inArchive(archive.id, '/interviews/new')} className="btn btn-primary">
