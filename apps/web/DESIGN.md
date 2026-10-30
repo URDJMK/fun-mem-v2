@@ -6,61 +6,37 @@ colors:
   canvas: "#F1F3F2"
   ink: "#15181A"
   graphite: "#585E64"
-  voice: "#0A7A5A"
+  rose: "#D6336C"
   marker: "#FFE14A"
 typography:
   display:
-    fontFamily: "Familjen Grotesk, system-ui, sans-serif"
-    fontSize: "clamp(2.75rem, 6vw, 4.5rem)"
-    fontWeight: 700
-    lineHeight: 1.02
-    letterSpacing: "-0.02em"
-  page-title:
-    fontFamily: "Familjen Grotesk, system-ui, sans-serif"
-    fontSize: "2.1875rem"
-    fontWeight: 600
-    lineHeight: 1.15
-    letterSpacing: "-0.01em"
-  section-title:
-    fontFamily: "Familjen Grotesk, system-ui, sans-serif"
-    fontSize: "1.8125rem"
-    fontWeight: 600
-    lineHeight: 1.2
-    letterSpacing: "-0.01em"
-  item-title:
-    fontFamily: "Familjen Grotesk, system-ui, sans-serif"
-    fontSize: "1.5rem"
-    fontWeight: 600
-    lineHeight: 1.3
-    letterSpacing: "0em"
-  story:
-    fontFamily: "Atkinson Hyperlegible Next, system-ui, sans-serif"
-    fontSize: "1.3125rem"
-    fontWeight: 400
-    lineHeight: 1.6
-    letterSpacing: "0em"
-  quote:
-    fontFamily: "Atkinson Hyperlegible Next, system-ui, sans-serif"
-    fontSize: "1.25rem"
+    fontFamily: "Ronzino, system-ui, sans-serif"
+    fontSize: "2.75rem"
     fontWeight: 500
-    lineHeight: 1.5
+    lineHeight: 1.05
+    letterSpacing: "0em"
+  title:
+    fontFamily: "Ronzino, system-ui, sans-serif"
+    fontSize: "2rem"
+    fontWeight: 500
+    lineHeight: 1.15
+    letterSpacing: "0em"
+  heading:
+    fontFamily: "Ronzino, system-ui, sans-serif"
+    fontSize: "1.375rem"
+    fontWeight: 500
+    lineHeight: 1.3
     letterSpacing: "0em"
   body:
     fontFamily: "Atkinson Hyperlegible Next, system-ui, sans-serif"
-    fontSize: "1.125rem"
+    fontSize: "1.25rem"
     fontWeight: 400
     lineHeight: 1.55
     letterSpacing: "0em"
-  label:
+  small:
     fontFamily: "Atkinson Hyperlegible Next, system-ui, sans-serif"
     fontSize: "1rem"
-    fontWeight: 600
-    lineHeight: 1.3
-    letterSpacing: "0em"
-  caption:
-    fontFamily: "Atkinson Hyperlegible Next, system-ui, sans-serif"
-    fontSize: "1rem"
-    fontWeight: 400
+    fontWeight: 500
     lineHeight: 1.4
     letterSpacing: "0em"
 rounded:
@@ -82,21 +58,21 @@ components:
   button-primary:
     backgroundColor: "{colors.ink}"
     textColor: "{colors.paper}"
-    typography: "{typography.label}"
+    typography: "{typography.small}"
     rounded: "{rounded.md}"
     padding: "12px 18px"
     height: "44px"
   button-secondary:
     backgroundColor: "{colors.paper}"
     textColor: "{colors.ink}"
-    typography: "{typography.label}"
+    typography: "{typography.small}"
     rounded: "{rounded.md}"
     padding: "12px 18px"
     height: "44px"
   button-record:
-    backgroundColor: "{colors.voice}"
+    backgroundColor: "{colors.rose}"
     textColor: "{colors.paper}"
-    typography: "{typography.label}"
+    typography: "{typography.small}"
     rounded: "{rounded.full}"
     padding: "16px 32px"
     height: "64px"
@@ -108,23 +84,24 @@ components:
     padding: "12px 14px"
     height: "48px"
   nav-item:
-    backgroundColor: "{colors.canvas}"
+    backgroundColor: "transparent"
     textColor: "{colors.graphite}"
-    typography: "{typography.label}"
+    typography: "{typography.small}"
     rounded: "{rounded.md}"
     padding: "12px 14px"
     height: "44px"
   nav-item-selected:
-    backgroundColor: "{colors.paper}"
+    backgroundColor: "transparent"
     textColor: "{colors.ink}"
-    typography: "{typography.label}"
+    underline: "2px {colors.rose}"
+    typography: "{typography.small}"
     rounded: "{rounded.md}"
     padding: "12px 14px"
     height: "44px"
   chip:
     backgroundColor: "{colors.canvas}"
     textColor: "{colors.ink}"
-    typography: "{typography.caption}"
+    typography: "{typography.small}"
     rounded: "{rounded.sm}"
     padding: "4px 14px"
     height: "44px"
@@ -132,11 +109,15 @@ components:
 
 # Design System: Firepit
 
-> **Status: foundation built, pages not yet.** Written on 2026-10-28; the foundation (tokens, type,
-> the app shell, and the old look's effects removed) was built the same day, in `apps/web/src`.
-> Page layouts are still the old ones inside the new system; `design-baseline/` shows the look this
-> replaces and `design-after/` the foundation. Rules below that a page still breaks (dot-separated
-> meta lines, large years, the voice line) are waiting for that page's rebuild.
+> **Status: foundation and brand built, pages not yet.** Written on 2026-10-28; the foundation
+> (tokens, type, the app shell, and the old look's effects removed) was built the same day, in
+> `apps/web/src`. On 2026-10-29 the brand was chosen: black and white with Rose as the one point
+> colour (it replaced Voice green), Ronzino for titles and the logo, and a strict scale of five type
+> roles. The new landing page (see Landing page) is being built behind `?landing=16` in
+> `src/directions/landing/`. App page layouts are still the old ones inside the new system;
+> `design-baseline/` shows the look this replaces and `design-after/` the foundation. Rules below
+> that a page still breaks (dot-separated meta lines, large years, the voice line) are waiting for
+> that page's rebuild.
 
 ## Overview
 
@@ -145,7 +126,7 @@ The design shows that chain, so a reader can always see that a sentence came fro
 
 **The signature is the voice line**: a horizontal trace of the interview that runs through the app.
 
-- **While recording:** a live waveform from the microphone, the teller's voice in Voice green and the
+- **While recording:** a live waveform from the microphone, the teller's voice in Rose and the
   interviewer's in a quiet grey. It replaces the current fire glow as the centre of the screen.
 - **After recording:** the audio is gone (Firepit stores neither audio nor volume levels), so the line
   becomes a **turn strip**, drawn from the transcript's real timings: one bar per stretch of speech,
@@ -174,20 +155,20 @@ How the other materials take part:
 
 - **App screens (Operate):** quiet and dense, with a light Canvas around a white Paper working
   surface, like a well-made messaging app.
-- **Landing page (Persuade):** the same parts at full scale. The first viewport is a recording
-  turning into a story: the voice line, the transcript beside it, a quoted line highlighted, and the
-  story it became. This follows Google Recorder's way of showing the mechanism. The chrome is as quiet
-  as dmcg.co's: a small wordmark and links at the edges, and nothing else above the demonstration.
+- **Landing page (Persuade):** one interview, shown as objects (see Landing page). The chrome is as
+  quiet as dmcg.co's: a small wordmark and links at the corners, and nothing else around the object.
 
 ## Colors
 
-Restrained: two neutral surfaces, one ink, one quiet grey, and two colours that each mean exactly one
-thing.
+Black and white, with one point colour. Two neutral surfaces, one ink and one quiet grey carry
+everything; Rose and Marker yellow each mean exactly one thing.
 
-### Primary
+### Point colour
 
-- **Voice `#0A7A5A`** is the teller's voice: their part of the live waveform and the turn strip, the Start
-  interview button, the current position in a recording, and the focus ring. 5.3:1 on Paper.
+- **Rose `#D6336C`** is the teller's voice and anything live, and the brand's one accent: their part
+  of the live waveform and the turn strip, the Start interview button, the current place in the nav
+  (a 2px underline), the focus ring, and on the landing page the glow once it is lit. 4.6:1 on Paper,
+  so it can carry Paper text. In CSS it is `--rose`, with `--voice` pointing at it.
 
 ### Secondary
 
@@ -196,10 +177,11 @@ thing.
 
 ### Neutral
 
-- **Paper `#FFFFFF`** is the working surface: content panels, inputs and dialogs.
-- **Canvas `#F1F3F2`** is the page ground: the top bar, the space around panels, and the tab bar. It is
-  a cool, barely green grey, never cream.
-- **Ink `#15181A`** is text, primary buttons and icons. 17.8:1 on Paper.
+- **Paper `#FFFFFF`** is the working surface: content panels, inputs and dialogs, and the landing
+  page's open field.
+- **Canvas `#F1F3F2`** is the app's page ground: the top bar, the space around panels, and the tab
+  bar. It is a cool, barely green grey, never cream.
+- **Ink `#15181A`** is text, primary buttons, links, icons and the logo. 17.8:1 on Paper.
 - **Graphite `#585E64`** is secondary text: meta lines, captions and the interviewer's voice. 6.6:1 on
   Paper and 5.9:1 on Canvas.
 
@@ -214,46 +196,45 @@ Derived values, which are the only allowed variations:
 ### State colours (outside the palette)
 
 - **Recording and error:** `#C22F26`, 5.6:1 on Paper and 5.05:1 on Canvas. Use it for the recording
-  dot, destructive actions and error text, and nowhere else.
-- **Success:** Voice green with a check icon.
+  dot, destructive actions and error text, and nowhere else. It sits near Rose in hue, so it never
+  appears without its words ("Recording", "Delete").
+- **Success:** Ink with a check icon.
 - **Warning:** Ink text with a warning icon, on Canvas with a Line border.
 
 ### Named Rules
 
-- **One meaning per colour.** Green means the teller's voice or "this is live", and yellow means "they
-  said these exact words". If a new use doesn't fit those meanings, use Ink.
+- **Black and white, one point.** The brand is Ink and Paper: buttons, links and the logo are Ink.
+  Rose means the teller's voice, "this is live", or "you are here", and yellow means "they said these
+  exact words". If a new use doesn't fit those meanings, use Ink.
 
 ## Typography
 
-- **Atkinson Hyperlegible Next** (UI, body, transcripts, quotes) was drawn by the Braille Institute
-  for low-vision readers. Its I, l and 1 can't be confused, and its open shapes stay clear at small
-  sizes, which is what an 80-year-old reading their own story needs. It has a wide weight range and is
-  free on Google Fonts.
-- **Familjen Grotesk** (display, page and item titles, years) is a compact grotesk with a firm,
-  slightly cut character, so titles read as titles, like a film's title card. It has good tabular
-  figures for years, and it is not one of the faces every generated site uses.
+- **Ronzino** (titles, the logo) is a grotesk from Collletttivo, free under the SIL Open Font
+  License and self-hosted in `public/fonts/ronzino/`. It keeps an information-led plainness without
+  the coldness of the faces every generated site uses, and at Medium weight titles read as titles
+  without shouting. Its zero carries a dot, which keeps years and dates unambiguous.
+- **Atkinson Hyperlegible Next** (reading, the interface, transcripts, quotes) was drawn by the
+  Braille Institute for low-vision readers. Its I, l and 1 can't be confused, and its open shapes
+  stay clear at small sizes, which is what an 80-year-old reading their own story needs.
 - **No serif and no monospace anywhere.** Timecodes and years use `font-variant-numeric:
   tabular-nums`.
 
 ### Hierarchy
 
-The scale is fixed rem on app screens, with a ratio of about 1.2. The landing page alone uses the fluid
-display size.
+Five roles, each exactly one family, size, weight and line height, set as `--type-*` tokens in
+`src/styles.css`. Nothing else sets type: every rule takes a role (`font: var(--type-body)`) or
+inherits one, and `apps/web/test/type-scale.test.ts` fails the build on anything else.
 
-| Token | Size | Face / weight | Use |
+| Role | Size / line | Face / weight | Use |
 |---|---|---|---|
-| display | 44–72px fluid | Familjen 700 | Landing headlines only |
-| page-title | 35px | Familjen 600 | One per screen |
-| section-title | 29px | Familjen 600 | Sections; years on the timeline |
-| item-title | 24px | Familjen 600 | Story titles, person names |
-| story | 21px | Atkinson 400 | A story's own text, at most 65 characters a line |
-| quote | 20px | Atkinson 500 | The teller's words quoted in answers |
-| body | 18px | Atkinson 400 | Everything else |
-| label | 16px | Atkinson 600 | Buttons, nav, speaker names, field labels |
-| caption | 16px | Atkinson 400 | Meta lines, timecodes, hints |
+| display | 44px / 1.05 | Ronzino 500 | Landing headlines only |
+| title | 32px / 1.15 | Ronzino 500 | One per screen |
+| heading | 22px / 1.3 | Ronzino 500 | Sections, story titles, person names, the wordmark |
+| body | 20px / 1.55 | Atkinson 400 | A story's own text (at most 65 characters a line), quotes, everything else |
+| small | 16px / 1.4 | Atkinson 500 | Buttons, nav, labels, meta lines, timecodes, hints |
 
 **Nothing is set below 16px**, in any stylesheet or component: `apps/web/test/type-floor.test.ts`
-fails the build on a smaller size. On a phone the page title steps down to 29px.
+fails the build on a smaller size.
 
 Labels are sentence case. Emphasis comes from weight and size, never from capitals or letter-spacing.
 
@@ -267,7 +248,7 @@ The page ground is Canvas, with the working surface on Paper. Spacing uses a 4px
 No sidebar. A family has one or two projects and five places they go; the screen goes to the page.
 
 - **Slim top bar, 56px, on Canvas, sticky.** The Firepit wordmark on the left, then the five places
-  as text links: **Home, Stories, People, Timeline, Ask**. The current one is Paper on Canvas, in Ink.
+  as text links: **Home, Stories, People, Timeline, Ask**. The current one is Ink, underlined in Rose.
 - **The project menu** is on the right: the project's avatar and name, opening a floating menu with
   **Interviews**, **Add an interview** (for anyone who can add), **Members**, **Settings**, then
   **Switch project**, then the account and **Sign out**. Escape, a click outside, or choosing an
@@ -282,7 +263,7 @@ The nav never stacks above content.
 - **Slim top bar, 56px, on Canvas.** The project menu (avatar and name) is on the left, the Firepit
   mark on the right. The page's own title follows directly below, so the bar doesn't repeat it.
 - **Bottom tab bar, 64px plus the safe area, on Canvas.** The same five places, each an icon with a
-  visible 16px label. Interviews, Members and Settings are in the project menu.
+  visible 16px label; the current one is Ink with a Rose line along its top edge. Interviews, Members and Settings are in the project menu.
 - Content scrolls between the two bars, full width with 16px side gutters.
 - **During a live interview,** both bars give way to the recording bar (the voice line, time, Pause,
   End). Nothing else competes with the conversation.
@@ -300,7 +281,10 @@ The app is flat. Depth comes from Canvas against Paper, not from shadows.
 
 - **`--shadow-float`:** `0 1px 2px rgb(21 24 26 / 0.08), 0 8px 24px rgb(21 24 26 / 0.12)`. It goes on
   floating layers only: menus, popovers, dialogs, the caption bar and toasts.
-- Nothing that sits in the flow of the page has a shadow.
+- Nothing that sits in the flow of an app page has a shadow.
+- **The landing page's objects** (the question slip, the transcript sheet, a story, an answer) are
+  paper on paper, so they carry `--shadow-object`, `0 1px 2px rgb(21 24 26 / 0.06), 0 18px 40px
+  -18px rgb(21 24 26 / 0.24)`, plus a 1px Line ring. Nowhere else.
 
 ## Shapes
 
@@ -318,15 +302,15 @@ The app is flat. Depth comes from Canvas against Paper, not from shadows.
 - **Secondary:** Paper with a 1px Line border.
 - **Destructive:** recording-red text on Paper. Confirm by typing the name, as Settings already does.
 - **Sizing:** every button and every other tap target is at least 44×44px. States: hover darkens 6%,
-  focus shows a 2px Voice ring
+  focus shows a 2px Rose ring
   offset 2px, disabled is Graphite at 60% on Canvas, and loading shows a spinner in place of the label
   at the same width.
 
 ### Record button
 
-- Voice green, 64px tall, a full pill: "Start interview".
-- While recording, it gives way to the recording bar. The red dot means "recording" and the
-  green line means "who is speaking".
+- Rose, 64px tall, a full pill: "Start interview".
+- While recording, it gives way to the recording bar. The red dot, always beside the word
+  "Recording", means "recording"; the Rose line means "who is speaking".
 
 ### Cards / Containers
 
@@ -344,12 +328,13 @@ The app is flat. Depth comes from Canvas against Paper, not from shadows.
 
 - The top bar's five links on a computer, the bottom tabs on a phone, and the project menu on both
   (see Layout).
-- The current place is Paper on Canvas, in Ink at weight 600, with no coloured edge bar.
+- The current place is Ink with a 2px Rose underline (a Rose line along the top of its tab on a
+  phone). No filled tab, no coloured side bar.
 
 ### Voice line (signature)
 
 - **Live:** bars 3px wide with a 2px gap, heights from the microphone level, full radius caps.
-  The teller is Voice and the interviewer is interviewer-grey. The line scrolls right to left at a
+  The teller is Rose and the interviewer is interviewer-grey. The line scrolls right to left at a
   constant speed.
 - **Turn strip:** one bar per segment, its width proportional to the segment's duration, at one
   height, coloured by speaker. It is clickable on a story and jumps to that place in the transcript.
@@ -362,6 +347,41 @@ The app is flat. Depth comes from Canvas against Paper, not from shadows.
 - The teller's words in the quote style, with Marker behind the exact quoted span
   (`box-decoration-break: clone`). It is followed by a caption naming the interview and the time,
   such as "From Her twenties in Duluth, at 12:40".
+
+## Landing page
+
+One interview, from the first question to the finished stories, shown one object at a time on an
+open Paper field, after dmcg.co. The type is kept small in the corners: the wordmark top left, Sign
+in and Start top right, the current stage's name bottom left, and "A silent example" bottom right.
+
+The stages, in order: the mark (the headline, and Start); the question, on a paper slip; two voices,
+Theo's small and grey, Nell's large and Rose, taking turns over the turn strip; the words worth
+keeping, marked on the transcript, the first of them rising off the sheet to become a story; the
+timeline, where the stories drop onto their decades; asking later, with an answer and an honest "Not
+in the records"; the people she named, linked; and Start.
+
+**The mark is the thread.** The page opens on the logo at full size. As it begins, the glow lifts
+out of the bowl and catches: an Ember grows from its middle until the glow is lit Rose, a clean
+change, never a blend through a muddy dark red. It becomes Nell's voice. On the last screen it
+settles back into the bowl, still lit, beside "Start with one afternoon."
+
+The example is fiction and says so. There is no audio: the demonstration is silent.
+
+## Motion
+
+- **GSAP** (with ScrollTrigger, SplitText, MorphSVG, DrawSVG and TextPlugin, all free) for anything
+  more than a hover. No second animation library.
+- **Native scrolling.** No smooth-scroll library and no scroll-jacking: the landing page's stages
+  are tall sections with a CSS `position: sticky` frame, and the motion is scrubbed to the scroll,
+  so scrolling back plays it backwards.
+- **One authored moment per object.** Each does its one thing while it holds the centre, arrives
+  out of a blur and leaves into one. No identical entrance on every section, and no idle loops.
+- **Organic shapes are hand-cut,** the same family as the logo's glow: smooth closed curves with the
+  same number of points, so any two morph cleanly. They move only when something happens (someone
+  talks, something is kept), never as decoration.
+- **Ease out, never bounce.** Exponential or power ease-out; no `back` or elastic eases.
+- **Reduced motion:** every scene is written in its finished state, and motion only runs when the
+  visitor allows it. With reduced motion the stages simply stack, each finished.
 
 ## Do's and Don'ts
 
@@ -379,13 +399,15 @@ Each rule can be checked against the code or a screenshot.
 1. **Don't use colours outside this file.** Any hex or `rgb()` in the CSS that isn't a token or a
    listed derivation is a bug. There are no cream, beige or warm-tinted surfaces: every surface is
    Paper or Canvas.
-2. **Don't use a serif or monospace `font-family`, `text-transform: uppercase`, or positive
-   `letter-spacing` on labels.** Only Atkinson Hyperlegible Next and Familjen Grotesk, with system
-   fallbacks, and no tracked-caps eyebrows.
-3. **Don't use `linear-gradient`, `radial-gradient`, blur or glow on surfaces.** The voice line and
-   photos are the only imagery.
-4. **Don't add depth in the page flow.** No `box-shadow` except `--shadow-float` on floating layers,
-   and no card inside a card (a bordered box inside a bordered panel fails).
+2. **Don't set type outside the five roles, or use a serif or monospace face,
+   `text-transform: uppercase`, or `letter-spacing`.** Only Ronzino and Atkinson Hyperlegible Next,
+   with system fallbacks, and no tracked-caps eyebrows.
+3. **Don't use `linear-gradient`, `radial-gradient`, blur or glow on surfaces.** The voice line, the
+   mark and photos are the only imagery. Blur appears only in motion, as a landing-page object
+   arrives or leaves, never at rest. (The Marker sweep is a solid fill drawn as a gradient image.)
+4. **Don't add depth in the page flow.** No `box-shadow` except `--shadow-float` on floating layers
+   and `--shadow-object` on the landing page's objects, and no card inside a card (a bordered box
+   inside a bordered panel fails).
 5. **Don't add arrows (→, ›, ↗) to link or button text.** A chevron belongs only on a row that opens a
    page.
 6. **Don't write dot-separated meta strings.** No `·`, `•` or `|` joining fields anywhere ("1959 ·

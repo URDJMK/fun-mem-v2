@@ -107,8 +107,8 @@ export function Icon({
 /**
  * The mark: a hand-cut glow held in a hand-cut bowl. Two drawings of it: the full one, and a
  * rounder, heavier cut for 24 px and below so it still reads at favicon size (public/favicon.svg).
- * In the app it is drawn in Ink alone (DESIGN.md: colour is kept for the teller's voice); the
- * favicon keeps the logo's own colours.
+ * In the app it is drawn in Ink alone, black and white; the favicon is the mark lit, its glow in
+ * Rose, as the landing page leaves it.
  */
 const MARK = {
   full: {
