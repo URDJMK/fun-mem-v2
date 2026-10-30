@@ -4,12 +4,13 @@
  * corners (after dmcg.co). It opens and closes on the mark: the glow lifts out of
  * the bowl to become a voice, and settles back in at the end, when the story is kept.
  *
- * One stage to a screen. Scrolling is the visitor's own: the page only settles onto a stage when
- * they stop near one (CSS scroll snap, proximity), and never holds them. Each object arrives out
- * of a blur and does its one thing at its own pace once its stage is in view, so a fast scroll
- * never rushes a scene; leave a stage and come back, and it plays again.
+ * The motion follows the scroll: each object holds the centre while you scroll through it and does
+ * its one thing as you go, arriving out of a blur and leaving into one; scroll back and it plays
+ * backwards. Each stage is a tall section with a sticky frame, as tall as its scene needs (`hold`).
+ * Scrolling stays the visitor's own: the page is only nudged, when they stop near the point where
+ * a scene has just finished (proximity scroll snap), onto that point.
  */
-import { useEffect, useRef, type ReactNode } from 'react';
+import { useEffect, useRef, type CSSProperties, type ReactNode } from 'react';
 import { Link } from 'react-router';
 import { Brand } from '../components/ui';
 import './landing/landing.css';
@@ -19,7 +20,6 @@ import {
   MARK_GLOW,
   People,
   Said,
-  ScrollTrigger,
   SplitText,
   Start,
   STORIES,
@@ -30,20 +30,17 @@ import {
   VOICE_SHAPES,
 } from './landing/shared';
 
-/** each stage: its corner label, and how long its scene plays, in seconds */
+/** each stage: its corner label, and how long it holds the centre (in 80svh of scrolling) */
 const STAGES = [
-  { label: 'Firepit', play: 2.6 },
-  { label: 'The question', play: 1.8 },
-  { label: 'Two voices', play: 6 },
-  { label: 'The words worth keeping', play: 4.2 },
-  { label: 'Its place in time', play: 2.8 },
-  { label: 'Asking later', play: 4 },
-  { label: 'The people in it', play: 2.4 },
-  { label: 'Start', play: 1.6 },
+  { label: 'Firepit', hold: 1 },
+  { label: 'The question', hold: 1 },
+  { label: 'Two voices', hold: 2.2 },
+  { label: 'The words worth keeping', hold: 2 },
+  { label: 'Its place in time', hold: 1.2 },
+  { label: 'Asking later', hold: 1.2 },
+  { label: 'The people in it', hold: 1 },
+  { label: 'Start', hold: 1 },
 ];
-
-/** how long an object takes to arrive out of its blur, before its scene starts */
-const ARRIVE = 0.7;
 
 const DECADES = ['1940s', '1950s', '1960s', '1970s'];
 const PINS: Record<string, { story: (typeof STORIES)[number]; below?: boolean }> = {
@@ -231,9 +228,17 @@ export function Landing() {
 }
 
 function Stage({ at, children }: { at: number; children: ReactNode }) {
+  const first = at === 0;
+  const last = at === STAGES.length - 1;
   return (
-    <section className="ob-stage" data-stage={at}>
+    <section
+      className={`ob-stage ${first ? 'is-first' : ''} ${last ? 'is-last' : ''}`}
+      data-stage={at}
+      style={{ '--hold': STAGES[at]!.hold } as CSSProperties}
+    >
       <div className="ob-frame">{children}</div>
+      {/* where its scene has just finished: the point the page settles on, if you stop near it */}
+      <span className="ob-rest" aria-hidden="true" />
     </section>
   );
 }
@@ -259,50 +264,47 @@ const token = (name: string) =>
   getComputedStyle(document.documentElement).getPropertyValue(name).trim();
 
 /**
- * One timeline per stage, played by time, not by scroll: the object arrives out of a blur, then its
- * scene plays at its own pace. It starts when the stage has (nearly) settled in the window, and is
- * set back to the start only once the stage is out of sight, so coming back plays it again. The
- * first stage plays a moment after the page opens: the glow catching is the first thing you see.
+ * One scrubbed timeline per stage, across the whole time it is on screen: 1 to arrive, its scene
+ * while it holds the centre (0.8 for each unit of `hold`, the same scroll distance), 1 to leave.
+ * Scrolling back plays it backwards. The scrub lags the scroll by a second, so even a fast scroll
+ * shows the motion catching up rather than jumping to its end.
  */
 function stageScenes() {
   const stages = gsap.utils.toArray<HTMLElement>('.ob-stage');
 
   stages.forEach((stage, i) => {
     const first = i === 0;
+    const last = i === stages.length - 1;
     const obj = stage.querySelector('.ob-object')!;
-    const tl = gsap.timeline({ paused: true, defaults: { ease: 'none' } });
+    const span = (STAGES[i]?.hold ?? 1) * 0.8;
+    const tl = gsap.timeline({
+      defaults: { ease: 'none' },
+      scrollTrigger: {
+        trigger: stage,
+        start: first ? 'top top' : 'top bottom',
+        end: last ? 'bottom bottom' : 'bottom top',
+        scrub: 1,
+        invalidateOnRefresh: true,
+      },
+    });
 
     if (!first) {
       tl.fromTo(
         obj,
-        { autoAlpha: 0, y: 60, scale: 0.96, filter: 'blur(14px)' },
-        { autoAlpha: 1, y: 0, scale: 1, filter: 'blur(0px)', duration: ARRIVE, ease: 'expo.out' },
+        { autoAlpha: 0, y: 90, scale: 0.94, filter: 'blur(14px)' },
+        { autoAlpha: 1, y: 0, scale: 1, filter: 'blur(0px)', duration: 1, ease: 'power2.out' },
       );
     }
     const scene = SCENES[i]?.(gsap.utils.selector(stage));
-    // every scene is written from 0 to 1; played here over the stage's own length
-    if (scene)
-      tl.add(scene.set({}, {}, 1).duration(STAGES[i]?.play ?? 2), first ? 0 : ARRIVE * 0.6);
-
-    if (first) {
-      tl.delay(0.6).play();
+    // every scene is written from 0 to 1; stretched here to the stage's hold
+    if (scene) tl.add(scene.set({}, {}, 1).duration(span), first ? 0 : 1);
+    if (!last) {
+      tl.to(
+        obj,
+        { autoAlpha: 0, y: -70, scale: 0.97, filter: 'blur(14px)', duration: 1, ease: 'power2.in' },
+        (first ? 0 : 1) + span,
+      );
     }
-    // arrived: play, from wherever it is (a stage half seen and come back to just carries on)
-    ScrollTrigger.create({
-      trigger: stage,
-      start: 'top 35%',
-      end: 'bottom 65%',
-      onEnter: () => tl.play(),
-      onEnterBack: () => tl.play(),
-    });
-    // out of sight: back to the start, ready to play again
-    ScrollTrigger.create({
-      trigger: stage,
-      start: 'top bottom',
-      end: 'bottom top',
-      onLeave: () => tl.pause(0),
-      onLeaveBack: () => tl.pause(0),
-    });
   });
 }
 

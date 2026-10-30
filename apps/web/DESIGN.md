@@ -372,21 +372,22 @@ The example is fiction and says so. There is no audio: the demonstration is sile
 
 - **GSAP** (with ScrollTrigger, SplitText, MorphSVG, DrawSVG and TextPlugin, all free) for anything
   more than a hover. No second animation library.
-- **Scrolling is the visitor's own: a nudge, never a hold.** The landing page's stages are one
-  screen each, with proximity scroll snap (`scroll-snap-type: y proximity`): when the visitor stops
-  near a stage, the page settles onto it; a scroll of any speed or length goes where it was going.
-  Nothing intercepts the wheel, touch or keyboard, and there is no smooth-scroll library.
-- **Scenes play by time, not by scroll.** A stage's scene starts once the stage has settled and
-  plays at its own pace, so a fast scroll never rushes it; leave and come back, and it plays again.
-  The opening (the glow catching) plays a moment after the page opens.
-- **One authored moment per object.** Each does its one thing once it has arrived out of a blur.
-  No identical entrance on every section, and no idle loops.
+- **The motion follows the scroll.** Each landing stage is a tall section with a CSS
+  `position: sticky` frame; its scene is scrubbed to the scroll (with a second of lag, so a fast
+  scroll shows the motion catching up), and scrolling back plays it backwards. Never replace this
+  with motion that plays by itself: the interaction is the point.
+- **Scrolling is the visitor's own: a nudge, never a hold.** Each stage has one resting point, where
+  its scene has just finished, and proximity scroll snap (`scroll-snap-type: y proximity`) settles
+  the page there when the visitor stops near it. A scroll of any speed or length goes where it was
+  going. Nothing intercepts the wheel, touch or keyboard, and there is no smooth-scroll library.
+- **One authored moment per object.** Each does its one thing while it holds the centre, arrives
+  out of a blur and leaves into one. No identical entrance on every section, and no idle loops.
 - **Organic shapes are hand-cut,** the same family as the logo's glow: smooth closed curves with the
   same number of points, so any two morph cleanly. They move only when something happens (someone
   talks, something is kept), never as decoration.
 - **Ease out, never bounce.** Exponential or power ease-out; no `back` or elastic eases.
 - **Reduced motion:** every scene is written in its finished state, and motion only runs when the
-  visitor allows it. With reduced motion each stage is simply shown finished.
+  visitor allows it. With reduced motion the stages simply stack, each finished.
 
 ## Do's and Don'ts
 

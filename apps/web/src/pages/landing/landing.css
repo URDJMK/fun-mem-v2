@@ -222,21 +222,32 @@
   color: var(--graphite);
 }
 
-/* one stage to a screen. A nudge, not a hold: the page settles onto a stage only when the visitor
-   stops scrolling near one, and a scroll of any speed or length goes where it was going. Only
-   while the landing page is showing. */
-html:has(.ob) {
-  scroll-snap-type: y proximity;
-}
+/* a stage is one screen to arrive and leave, plus 80svh of scrolling for each unit it holds */
 .ob-stage {
   position: relative;
-  scroll-snap-align: start;
+  height: calc(100svh * (1 + var(--hold, 1) * 0.8));
 }
 .ob-frame {
-  min-height: 100svh;
+  position: sticky;
+  top: 0;
+  height: 100svh;
   display: grid;
   place-items: center;
   padding: 88px 24px;
+}
+/* A nudge, not a hold: when the visitor stops scrolling near the point where a stage's scene has
+   just finished, the page settles there; any scroll goes where it was going. Only while the
+   landing page is showing. */
+html:has(.ob) {
+  scroll-snap-type: y proximity;
+}
+.ob-rest {
+  position: absolute;
+  top: calc(100svh * var(--hold, 1) * 0.78);
+  left: 0;
+  width: 1px;
+  height: 1px;
+  scroll-snap-align: start;
 }
 .ob-object {
   margin: 0;
@@ -470,5 +481,20 @@ html:has(.ob) {
   .ob-mark {
     width: 112px;
     height: 112px;
+  }
+}
+
+/* reduced motion: every scene is already finished, and the objects simply stack */
+@media (prefers-reduced-motion: reduce) {
+  .ob-stage {
+    height: auto;
+  }
+  .ob-frame {
+    position: static;
+    height: auto;
+    padding: 96px 24px;
+  }
+  .ob-rest {
+    display: none;
   }
 }
