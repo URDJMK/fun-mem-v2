@@ -76,6 +76,7 @@ export function Studio({
   startedAt,
   flipFrom,
   onEnd,
+  onLive,
   project = null,
 }: {
   archiveId: string;
@@ -89,6 +90,8 @@ export function Studio({
   flipFrom: Flip.FlipState | null;
   /** `audio` is each source's whole recording, for the second transcription at the end */
   onEnd: (d: Draft, failed: StartFailure | null, audio: Blob[]) => void;
+  /** how the recording is doing and how long it has run, for the signs of it on other pages */
+  onLive?: (status: LiveStatus, elapsed: () => number) => void;
 }) {
   const [setup, setSetup] = useState<Setup>(() => ({
     about: '',
@@ -157,6 +160,9 @@ export function Studio({
     },
   });
   const rec = recording.rec;
+  useEffect(() => {
+    onLive?.(recording.status, () => rec?.elapsed() ?? 0);
+  }, [recording.status, rec]);
   const segments = rec?.segments ?? [];
   const partials = (rec?.partials ?? []).filter((p) => p !== null);
 

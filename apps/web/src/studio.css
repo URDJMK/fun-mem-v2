@@ -97,7 +97,8 @@
 
 /* ── the interview: the assistant in the middle ───────── */
 .studio {
-  min-height: calc(100vh - 48px);
+  /* the screen the page leaves it (its own padding, and on a phone the tabs) */
+  min-height: calc(100dvh - var(--appbar) - 96px);
   display: flex;
   flex-direction: column;
   gap: 16px;
@@ -939,7 +940,12 @@
 }
 
 @media (max-width: 639px) {
-  .home-start {
+  .home-start,
+  .studio {
     min-height: calc(100dvh - var(--appbar) - var(--tabbar) - env(safe-area-inset-bottom) - 56px);
+  }
+  /* the tabs stay during an interview, so the transcript floats above them */
+  .float-transcript {
+    bottom: calc(var(--tabbar) + env(safe-area-inset-bottom) + 12px);
   }
 }

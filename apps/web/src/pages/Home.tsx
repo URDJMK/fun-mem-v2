@@ -10,34 +10,22 @@ import {
   type PersonSummary,
 } from '../lib/api';
 import { inArchive, useArchive } from '../lib/archive';
-import {
-  FAILURE,
-  readDraft,
-  SHARE_HOW,
-  writeDraft,
-  type Draft,
-  type Mode,
-  type StartFailure,
-} from '../lib/interview';
+import { FAILURE, readDraft, SHARE_HOW, writeDraft, type Draft, type Mode } from '../lib/interview';
 import { liveSupported } from '../lib/live';
 import { ArchiveLayout } from '../components/ArchiveLayout';
 import { InterviewReview } from '../components/InterviewReview';
 import { Review, Running, Saved, useImportRun, WhoIsTelling } from '../components/ImportRun';
-import { Studio } from '../components/Studio';
-import { WhoAndWhere } from '../components/WhoAndWhere';
+import { StudioSlot, useLiveInterview } from '../components/LiveInterview';
 import { Avatar, Failed, Icon, useAccountName } from '../components/ui';
 import { readProfileDraft } from '../components/ProfileInputs';
 
+/**
+ * What Home shows when no interview is going on. The interview itself is kept above the pages
+ * (components/LiveInterview.tsx), so it goes on while you look at other ones; Home shows it in its
+ * page while it runs, and takes it to the read-over when it ends.
+ */
 type Phase =
   | { kind: 'idle' }
-  | {
-      kind: 'studio';
-      /** who is being interviewed: the project's person, or one of its family */
-      narrator: string;
-      mode: Mode;
-      startedAt: string;
-      flip: Flip.FlipState | null;
-    }
   /** `audio`: the whole recording, held in memory for the second transcription; gone on reload */
   | { kind: 'review'; narrator: string; draft: Draft; audio?: Blob[] }
   /** "Write the stories" is running right here: leaving and coming back resumes the same job. */
@@ -51,10 +39,11 @@ const narratorOf = (d: Draft, fallback: string) =>
   d.setup?.people.find((p) => p.role === 'teller')?.name ?? fallback;
 
 /**
- * A project, and one thing to do: sit down and talk. In a personal project Start interview turns
- * straight into the interview (components/Studio.tsx); in a family one it first asks who you are
- * talking with, from the family recorded so far or someone new, who then becomes one of its
- * people. Ending an interview leads to reading it over.
+ * A project, and one thing to do: sit down and talk. The whole page is for interviewing. In a
+ * personal project Start interview turns straight into the interview (components/Studio.tsx), in
+ * this page, with the rail still there; in a family one it first asks who you are talking with,
+ * from the family recorded so far or someone new, who then becomes one of its people. The
+ * interview goes on if you open another page, and ending it leads to reading it over.
  */
 export function Home() {
   const archive = useArchive();
@@ -75,6 +64,26 @@ export function Home() {
   // which draft the running job belongs to, read fresh (never stale) when the job starts
   const activeDraft = useRef<Draft | null>(left?.submittedJobId ? left : null);
   const resumed = useRef(false);
+  const live = useLiveInterview();
+  // an interview going on: this project's is shown here; another project's keeps this one waiting
+  const here = live?.session?.archiveId === archive.id;
+  const elsewhere = !!live?.session && !here;
+
+  // an interview that ended (here, or while another page was showing) goes to its read-over
+  const ended = live?.ended?.archiveId === archive.id ? live.ended : null;
+  useEffect(() => {
+    if (!ended) return;
+    live?.takeEnded();
+    setError(ended.failed ? FAILURE[ended.failed] : null);
+    if (ended.draft.segments.length > 0)
+      setPhase({
+        kind: 'review',
+        narrator: ended.narrator,
+        draft: ended.draft,
+        audio: ended.audio,
+      });
+    else setPhase({ kind: 'idle' });
+  }, [ended]);
 
   const importRun = useImportRun(archive.id, {
     onStarted: (jobId) => {
@@ -106,19 +115,21 @@ export function Home() {
   function begin(narrator: string, from: Element | null) {
     setError(null);
     setChoosing(false);
-    setPhase({
-      kind: 'studio',
+    live?.start({
+      archiveId: archive.id,
       narrator,
+      project: family ? name : null,
+      interviewer,
       mode,
       startedAt: new Date().toISOString(),
       flip: flipFrom(from),
     });
   }
 
-  const studio = phase.kind === 'studio';
   return (
-    <ArchiveLayout title="Home" wide focus={studio}>
-      {phase.kind === 'idle' && (
+    <ArchiveLayout title="Home" wide>
+      {here && <StudioSlot />}
+      {!here && phase.kind === 'idle' && (
         <section className="home-start">
           <header className="home-caption">
             <Avatar name={name} size={28} />
@@ -175,8 +186,14 @@ export function Home() {
                   data-testid="start-interview"
                   // one unfinished interview is kept per project: pick it up or discard it first,
                   // so a new one never takes its place unasked
-                  disabled={!liveSupported() || left !== null}
-                  title={left ? 'Pick up or discard the unfinished interview first' : undefined}
+                  disabled={!liveSupported() || left !== null || elsewhere}
+                  title={
+                    elsewhere
+                      ? 'An interview is going on in another project: end it first'
+                      : left
+                        ? 'Pick up or discard the unfinished interview first'
+                        : undefined
+                  }
                   onClick={() => (family ? setChoosing(true) : begin(name, start.current))}
                 >
                   <Icon name="mic" size={20} />
@@ -212,31 +229,7 @@ export function Home() {
           )}
         </section>
       )}
-      {phase.kind === 'idle' && (
-        <div className="home-graph">
-          <WhoAndWhere archiveId={archive.id} />
-        </div>
-      )}
-
-      {phase.kind === 'studio' && (
-        <Studio
-          archiveId={archive.id}
-          name={phase.narrator}
-          project={family ? name : null}
-          interviewer={interviewer}
-          mode={phase.mode}
-          startedAt={phase.startedAt}
-          flipFrom={phase.flip}
-          onEnd={(draft, failed: StartFailure | null, audio) => {
-            setError(failed ? FAILURE[failed] : null);
-            if (draft.segments.length > 0)
-              setPhase({ kind: 'review', narrator: phase.narrator, draft, audio });
-            else setPhase({ kind: 'idle' });
-          }}
-        />
-      )}
-
-      {phase.kind === 'review' && (
+      {!here && phase.kind === 'review' && (
         <InterviewReview
           archiveId={archive.id}
           name={phase.narrator}
@@ -251,7 +244,7 @@ export function Home() {
         />
       )}
 
-      {phase.kind === 'processing' && importRun.step && (
+      {!here && phase.kind === 'processing' && importRun.step && (
         <div className="page" style={{ maxWidth: 640 }}>
           {(() => {
             const runStep = importRun.step;

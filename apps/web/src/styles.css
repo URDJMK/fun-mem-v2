@@ -743,6 +743,65 @@ nav[aria-label='Breadcrumb'] a {
   }
 }
 
+/* while a project's interview goes on: a Rose dot on its Home, in the rail and the tabs */
+.appnav-icon {
+  position: relative;
+  display: inline-flex;
+  flex: none;
+}
+.live-badge {
+  position: absolute;
+  top: -2px;
+  right: -4px;
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: var(--rose);
+  box-shadow: 0 0 0 2px var(--canvas);
+}
+
+/* the sign, on any other page, that the interview is still going: a floating layer */
+.still-recording {
+  font: var(--type-small);
+  position: fixed;
+  left: 50%;
+  bottom: calc(20px + env(safe-area-inset-bottom));
+  translate: -50% 0;
+  z-index: 30;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  max-width: calc(100vw - 32px);
+  padding: 6px 6px 6px 16px;
+  border-radius: 999px;
+  background: var(--ink);
+  color: var(--paper);
+  box-shadow: var(--shadow-float);
+  white-space: nowrap;
+}
+.still-recording .live-clock {
+  min-width: 0;
+}
+.still-recording-back {
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
+  padding: 0 16px;
+  border-radius: 999px;
+  background: var(--paper);
+  color: var(--ink);
+  text-decoration: none;
+}
+.still-recording-back:hover {
+  color: var(--ink);
+  background: var(--canvas);
+}
+@media (max-width: 639px) {
+  .still-recording {
+    bottom: calc(var(--tabbar) + env(safe-area-inset-bottom) + 12px);
+  }
+}
+
 /* the tabs: a phone only */
 .tabbar {
   display: none;
@@ -1627,9 +1686,6 @@ a.when-card:hover {
   flex-direction: column;
   gap: 3px;
   font: var(--type-small);
-}
-.home-graph {
-  margin-top: 8px;
 }
 
 /* a name in a story that opens its person, place or thing */

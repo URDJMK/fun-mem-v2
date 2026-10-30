@@ -3,6 +3,7 @@ import { Link, NavLink, useLocation } from 'react-router';
 import { inArchive, useArchive, type Archive } from '../lib/archive';
 import { SKIP_LOGIN } from '../lib/demo';
 import { Avatar, Brand, Icon, useAccountName, useDismiss, useSignOut, type IconName } from './ui';
+import { useLiveInterview } from './LiveInterview';
 
 /** The five places a family goes most: the rail on a computer, the tabs on a phone. */
 const NAV: Array<{ path: string; label: string; icon: IconName; end?: boolean }> = [
@@ -41,6 +42,14 @@ export function ArchiveLayout({
   children: ReactNode;
 }) {
   const archive = useArchive();
+  // Home carries a Rose dot while this project's interview goes on, wherever you are
+  const recording = useLiveInterview()?.session?.archiveId === archive.id;
+  const badge = (path: string) =>
+    recording && path === '' ? (
+      <span className="live-badge">
+        <span className="visually-hidden">, interview going on</span>
+      </span>
+    ) : null;
 
   return (
     <div className={focus ? 'app app-focus' : 'app'}>
@@ -50,7 +59,10 @@ export function ArchiveLayout({
         <nav aria-label="Project" className="appnav">
           {NAV.map((n) => (
             <NavLink key={n.path} to={inArchive(archive.id, n.path)} end={n.end ?? false}>
-              <Icon name={n.icon} size={22} stroke={1.8} />
+              <span className="appnav-icon">
+                <Icon name={n.icon} size={22} stroke={1.8} />
+                {badge(n.path)}
+              </span>
               <span className="appnav-label">{n.label}</span>
             </NavLink>
           ))}
@@ -63,7 +75,10 @@ export function ArchiveLayout({
       <nav aria-label="Project, tabs" className="tabbar" inert={focus}>
         {NAV.map((n) => (
           <NavLink key={n.path} to={inArchive(archive.id, n.path)} end={n.end ?? false}>
-            <Icon name={n.icon} size={22} stroke={1.8} />
+            <span className="appnav-icon">
+              <Icon name={n.icon} size={22} stroke={1.8} />
+              {badge(n.path)}
+            </span>
             {n.label}
           </NavLink>
         ))}

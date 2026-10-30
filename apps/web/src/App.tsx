@@ -11,6 +11,7 @@ import {
 import { returnPath, supabase } from './lib/supabase';
 import { demoSignedIn, onDemoSession, SKIP_LOGIN } from './lib/demo';
 import { ArchiveRoute } from './lib/archive';
+import { LiveInterviewProvider } from './components/LiveInterview';
 import { ErrorBoundary } from './components/ErrorBoundary';
 import { Landing } from './pages/Landing';
 import { SignIn } from './pages/SignIn';
@@ -80,7 +81,12 @@ function Shell() {
   }
   if (where.pathname === '/sign-in')
     return <Navigate to={returnPath(where.search) || '/'} replace />;
-  return <Outlet />;
+  // an interview, once begun, goes on across every signed-in page (components/LiveInterview.tsx)
+  return (
+    <LiveInterviewProvider>
+      <Outlet />
+    </LiveInterviewProvider>
+  );
 }
 
 /**

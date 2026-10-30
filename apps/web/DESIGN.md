@@ -278,8 +278,12 @@ The nav never stacks above content.
 - **Bottom tab bar, 64px plus the safe area, on Canvas.** The same five places, each an icon with a
   visible 14px label; the current one is Ink with a Rose line along its top edge. Interviews, Members and Settings are in the project menu.
 - Content scrolls between the two bars, full width with 16px side gutters.
-- **During a live interview,** both bars give way to the recording bar (the voice line, time, Pause,
-  End). Nothing else competes with the conversation.
+- **During a live interview** the rail (or the bar and tabs) stays. The interview is Home's whole
+  page, and it goes on while you look at any other page: it is kept above the pages
+  (`components/LiveInterview.tsx`), so leaving Home never stops the microphone or the
+  transcription. Elsewhere, a floating sign says so ("Recording 12:03", with Back to the
+  interview), and Home carries a Rose dot in the rail and the tabs. Once it has ended, the sign
+  offers the read-over until Home shows it.
 - **Floating layers** (the live caption bar, menus, toasts) sit at least 16px from both screen edges.
 
 ### Full-height backgrounds
@@ -321,7 +325,8 @@ The app is flat. Depth comes from Canvas against Paper, not from shadows.
 
 ### Record button
 
-- Rose, 64px tall, a full pill: "Start interview".
+- Rose, 64px tall, a full pill: "Start interview". Home is the project's name and this, and nothing
+  else: the whole page is for interviewing.
 - While recording, it gives way to the recording bar. The red dot, always beside the word
   "Recording", means "recording"; the Rose line means "who is speaking".
 
