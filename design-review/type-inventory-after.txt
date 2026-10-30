@@ -1,0 +1,10 @@
+distinct styles: 5
+families: Atkinson Hyperlegible Next, Familjen Grotesk
+sizes (5): 16px, 20px, 22px, 32px, 44px
+weights (4): 400, 500, 600, 700
+
+ 752  Atkinson Hyperlegible Next | 16px | 500 | lh 1.40     landing, sign-in, projects, new-project, home +14  — a.btn "Sign in"
+ 102  Atkinson Hyperlegible Next | 20px | 400 | lh 1.55     landing, sign-in, projects, new-project, /interviews +13  — p "At the telephone exchange, from 1959."
+  95  Familjen Grotesk | 22px | 600 | lh 1.30               landing, sign-in, projects, new-project, home +12  — span.brand-name "Firepit"
+  38  Familjen Grotesk | 32px | 700 | lh 1.15               landing, home, /interviews, /interviews/new, /stories +8  — h2.lp-word "Ask."
+   2  Familjen Grotesk | 44px | 700 | lh 1.05               landing  — h1.display "Their stories, in their own words."
