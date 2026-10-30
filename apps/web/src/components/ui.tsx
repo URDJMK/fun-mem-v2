@@ -258,7 +258,8 @@ export function Account({ withName = false }: { withName?: boolean }) {
 export function TopBar({ left }: { left?: ReactNode }) {
   return (
     <header className="topbar">
-      {left ?? <Brand />}
+      {/* the same mark, in the same place, as the rail inside a project */}
+      {left ?? <Brand small />}
       <Account />
     </header>
   );

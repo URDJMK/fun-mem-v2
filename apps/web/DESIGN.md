@@ -253,7 +253,8 @@ The page ground is Canvas, with the working surface on Paper. Spacing uses a 4px
 Inside a project, a rail down the left, like Supabase's. A family has one or two projects and five
 places they go; the rail keeps them one click away without taking the page's width.
 
-- **The rail, 64px, on Canvas, fixed.** The mark at the top, then the five places as icons:
+- **The rail, 64px, on Canvas, fixed.** The mark at the top, in the same place and size as on
+  the projects page's top bar (19px in, its middle 28px down, 26px), then the five places as icons:
   **Home, Stories, People, Timeline, Ask**, then the project's menu (its avatar) at the foot. The
   current place is Ink on Paper, its icon in Rose.
 - **It widens to 232px over the page** while the pointer or the keyboard is in it, showing the five
@@ -273,8 +274,9 @@ places they go; the rail keeps them one click away without taking the page's wid
 
 The nav never stacks above content.
 
-- **Slim top bar, 56px, on Canvas.** The project menu (avatar and name) is on the left, the Firepit
-  mark on the right. The page's own title follows directly below, so the bar doesn't repeat it.
+- **Slim top bar, 56px, on Canvas.** The Firepit mark on the left, in the same place as on the
+  projects page, and the project menu (avatar and name) on the right. The page's own title follows
+  directly below, so the bar doesn't repeat it.
 - **Bottom tab bar, 64px plus the safe area, on Canvas.** The same five places, each an icon with a
   visible 14px label; the current one is Ink with a Rose line along its top edge. Interviews, Members and Settings are in the project menu.
 - Content scrolls between the two bars, full width with 16px side gutters.

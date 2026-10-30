@@ -621,6 +621,9 @@ nav[aria-label='Breadcrumb'] a {
    as icons, the project's menu at the bottom. It widens over the page to show their names while
    the pointer or the keyboard is in it, and narrows again when they leave. ── */
 @media (min-width: 640px) {
+  .topbar {
+    padding-left: max(19px, env(safe-area-inset-left));
+  }
   :root {
     --rail: 64px;
     --rail-open: 232px;
@@ -634,7 +637,8 @@ nav[aria-label='Breadcrumb'] a {
     flex-direction: column;
     align-items: stretch;
     gap: 8px;
-    padding: 12px 10px max(12px, env(safe-area-inset-bottom));
+    /* the mark sits where the projects page's top bar puts it: 19px in, its middle 28px down */
+    padding: 6px 10px max(12px, env(safe-area-inset-bottom));
     border-bottom: 0;
     border-right: 1px solid var(--line);
     transition:
@@ -649,7 +653,7 @@ nav[aria-label='Breadcrumb'] a {
   /* the mark always shows, in the rail's width; its wordmark comes in beside it as the rail opens */
   .appbar .brand {
     padding: 0 9px;
-    margin-bottom: 8px;
+    margin-bottom: 14px;
     overflow: hidden;
     white-space: nowrap;
   }
@@ -818,23 +822,15 @@ nav[aria-label='Breadcrumb'] a {
     padding-left: max(16px, env(safe-area-inset-left));
     padding-right: max(16px, env(safe-area-inset-right));
   }
-  /* the project's menu on the left, the mark on the right; the five places move to the tabs */
+  /* the mark on the left, as on the projects page; the project's menu on the right; the five
+     places move to the tabs */
   .appnav,
   .appbar .brand-name {
     display: none;
   }
-  .appbar .brand {
-    order: 2;
-    margin-left: auto;
-  }
   .appbar .project-menu {
-    order: 1;
-    margin-left: 0;
+    margin-left: auto;
     min-width: 0;
-  }
-  .project-menu-panel {
-    left: 0;
-    right: auto;
   }
   .tabbar {
     position: fixed;
