@@ -63,6 +63,7 @@ export class SimulatedRecorder implements Recorder {
   private t0 = performance.now();
   private banked = 0;
   private held = false;
+  private isPaused = false;
   private timer: ReturnType<typeof setInterval> | null = null;
   private line = 0;
   private word = 0;
@@ -118,10 +119,25 @@ export class SimulatedRecorder implements Recorder {
     return this.banked + (this.timer ? (performance.now() - this.t0) / 1000 : 0);
   }
   paused(): boolean {
-    return false;
+    return this.isPaused;
   }
-  pause(): void {}
-  resume(): void {}
+  /** as the real one does: the clock and the words stop, and the status says so */
+  pause(): void {
+    if (this.isPaused || !this.timer) return;
+    this.banked = this.elapsed();
+    clearInterval(this.timer);
+    this.timer = null;
+    this.partials[0] = null;
+    this.isPaused = true;
+    this.onStatus('paused');
+  }
+  resume(): void {
+    if (!this.isPaused) return;
+    this.isPaused = false;
+    this.t0 = performance.now();
+    this.timer = setInterval(() => this.tick(), 260);
+    this.onStatus('live');
+  }
   async stop(): Promise<void> {
     if (this.timer) clearInterval(this.timer);
     this.banked = this.elapsed();

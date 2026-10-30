@@ -23,10 +23,11 @@ import { asks, nameIn, sameName, topicsIn, wordCount } from '../lib/listen';
 import { labelScript, TOPICS } from '../lib/questions';
 import { useRecording } from '../lib/useRecording';
 import { Coach } from './Coach';
+import { VoiceOrb } from './VoiceOrb';
 import { Notes } from './Notes';
 import { FloatingTranscript } from './FloatingTranscript';
 import { Avatar, Icon } from './ui';
-import { Clock, Level } from './Transcript';
+import { Clock } from './Transcript';
 
 gsap.registerPlugin(Flip);
 
@@ -344,14 +345,14 @@ export function Studio({
     askedEnd.current = confirmEnd;
   }, [confirmEnd]);
 
-  /* ── the button becomes the assistant ─────────────────── */
+  /* ── the button becomes the mark, which runs the interview ─ */
   const root = useRef<HTMLDivElement>(null);
-  const card = useRef<HTMLElement>(null);
+  const orb = useRef<HTMLButtonElement>(null);
   useLayoutEffect(() => {
-    if (!flipFrom || !card.current || reduceMotion()) return;
+    if (!flipFrom || !orb.current || reduceMotion()) return;
     const ctx = gsap.context(() => {
       Flip.from(flipFrom, {
-        targets: card.current,
+        targets: orb.current,
         duration: 0.9,
         ease: 'power3.inOut',
         scale: false,
@@ -365,7 +366,7 @@ export function Studio({
         stagger: 0.07,
         delay: 0.55,
       });
-      gsap.from('.studio-bar-live > *, .float-transcript', {
+      gsap.from('.studio-control > :not(.voice-orb), .float-transcript', {
         opacity: 0,
         y: 8,
         duration: 0.5,
@@ -408,64 +409,6 @@ export function Studio({
           <span>{project ?? name}</span>
           {project && <small className="studio-with">with {name}</small>}
         </div>
-        <div className="row studio-bar-live">
-          <span className={`live-dot live-dot-${recording.status}`} aria-hidden="true" />
-          {rec && <Clock elapsed={() => rec.elapsed()} />}
-          <span className="small muted">{STATUS[recording.status]}</span>
-          {recording.mic && <Level stream={recording.mic} />}
-          <button
-            type="button"
-            className="btn btn-outline btn-sm"
-            disabled={!rec || recording.status === 'connecting' || recording.status === 'stopping'}
-            onClick={() => (rec?.paused() ? rec.resume() : rec?.pause())}
-          >
-            <Icon name={rec?.paused() ? 'play' : 'pause'} size={14} />
-            {rec?.paused() ? 'Resume' : 'Pause'}
-          </button>
-        </div>
-        {/* apart from Pause, so one can't be pressed for the other */}
-        <div className="row studio-bar-end">
-          {confirmEnd ? (
-            <div
-              className="row studio-end-confirm"
-              role="group"
-              aria-labelledby="end-question"
-              onKeyDown={(e) => {
-                if (e.key === 'Escape') setConfirmEnd(false);
-              }}
-            >
-              <span id="end-question" className="small">
-                End the interview?
-              </span>
-              <button
-                ref={keepButton}
-                type="button"
-                className="btn btn-outline btn-sm"
-                onClick={() => setConfirmEnd(false)}
-              >
-                Keep recording
-              </button>
-              <button
-                type="button"
-                className="btn btn-ink btn-sm"
-                disabled={recording.status === 'stopping'}
-                onClick={() => void finish()}
-              >
-                <Icon name="stop" size={12} /> End and review
-              </button>
-            </div>
-          ) : (
-            <button
-              ref={endButton}
-              type="button"
-              className={ending ? 'btn btn-primary btn-sm coach-end' : 'btn btn-ink btn-sm'}
-              disabled={recording.status === 'stopping'}
-              onClick={() => setConfirmEnd(true)}
-            >
-              <Icon name="stop" size={12} /> End interview
-            </button>
-          )}
-        </div>
       </header>
 
       <main className="assist">
@@ -492,7 +435,7 @@ export function Studio({
             }
           />
         ) : (
-          <section className="assist-card" data-flip-id="start" ref={card} aria-live="polite">
+          <section className="assist-card" aria-live="polite">
             <div className="assist-inner">
               <div className="assist-step">
                 <span>{stepLabel}</span>
@@ -663,6 +606,68 @@ export function Studio({
           </section>
         )}
       </main>
+
+      {/* the interview's controls, around the mark: press it to pause; the time; End */}
+      <div className="studio-control">
+        <VoiceOrb
+          ref={orb}
+          status={recording.status}
+          stream={recording.mic}
+          talking={quiet < 1.2}
+          disabled={!rec || recording.status === 'connecting' || recording.status === 'stopping'}
+          onToggle={() => (rec?.paused() ? rec.resume() : rec?.pause())}
+        />
+        <p className="studio-state">
+          <span className={`live-dot live-dot-${recording.status}`} aria-hidden="true" />
+          <span>{STATUS[recording.status]}</span>
+          {rec && <Clock elapsed={() => rec.elapsed()} />}
+          {recording.status === 'paused' && (
+            <span className="muted">Press it again to carry on</span>
+          )}
+        </p>
+        <div className="row studio-bar-end">
+          {confirmEnd ? (
+            <div
+              className="row studio-end-confirm"
+              role="group"
+              aria-labelledby="end-question"
+              onKeyDown={(e) => {
+                if (e.key === 'Escape') setConfirmEnd(false);
+              }}
+            >
+              <span id="end-question" className="small">
+                End the interview?
+              </span>
+              <button
+                ref={keepButton}
+                type="button"
+                className="btn btn-outline btn-sm"
+                onClick={() => setConfirmEnd(false)}
+              >
+                Keep recording
+              </button>
+              <button
+                type="button"
+                className="btn btn-ink btn-sm"
+                disabled={recording.status === 'stopping'}
+                onClick={() => void finish()}
+              >
+                <Icon name="stop" size={12} /> End and review
+              </button>
+            </div>
+          ) : (
+            <button
+              ref={endButton}
+              type="button"
+              className={ending ? 'btn btn-primary btn-sm coach-end' : 'btn btn-ink btn-sm'}
+              disabled={recording.status === 'stopping'}
+              onClick={() => setConfirmEnd(true)}
+            >
+              <Icon name="stop" size={12} /> End interview
+            </button>
+          )}
+        </div>
+      </div>
 
       <FloatingTranscript
         segments={heard}
