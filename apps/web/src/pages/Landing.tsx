@@ -6,7 +6,9 @@
  *
  * The motion follows the scroll: each object holds the centre while you scroll through it and does
  * its one thing as you go, arriving out of a blur and leaving into one; scroll back and it plays
- * backwards. Each stage is a tall section with a sticky frame, as tall as its scene needs (`hold`).
+ * backwards. Each stage is a tall section with a sticky frame, as tall as its scene needs (`hold`),
+ * and then a still stretch (`DWELL`) where scrolling changes nothing, so a finished scene can be
+ * looked at before the next one comes.
  * Scrolling stays the visitor's own: the page is only nudged, when they stop near the point where
  * a scene has just finished (proximity scroll snap), onto that point.
  */
@@ -41,6 +43,9 @@ const STAGES = [
   { label: 'The people in it', hold: 1 },
   { label: 'Start', hold: 1 },
 ];
+
+/** the still stretch after each scene, in screens of scrolling: nothing moves until it is passed */
+const DWELL = 0.6;
 
 const DECADES = ['1940s', '1950s', '1960s', '1970s'];
 const PINS: Record<string, { story: (typeof STORIES)[number]; below?: boolean }> = {
@@ -234,10 +239,10 @@ function Stage({ at, children }: { at: number; children: ReactNode }) {
     <section
       className={`ob-stage ${first ? 'is-first' : ''} ${last ? 'is-last' : ''}`}
       data-stage={at}
-      style={{ '--hold': STAGES[at]!.hold } as CSSProperties}
+      style={{ '--hold': STAGES[at]!.hold, '--dwell': last ? 0 : DWELL } as CSSProperties}
     >
       <div className="ob-frame">{children}</div>
-      {/* where its scene has just finished: the point the page settles on, if you stop near it */}
+      {/* the middle of the still stretch after its scene: where the page settles if you stop near it */}
       <span className="ob-rest" aria-hidden="true" />
     </section>
   );
@@ -265,7 +270,8 @@ const token = (name: string) =>
 
 /**
  * One scrubbed timeline per stage, across the whole time it is on screen: 1 to arrive, its scene
- * while it holds the centre (0.8 for each unit of `hold`, the same scroll distance), 1 to leave.
+ * while it holds the centre (0.8 for each unit of `hold`, the same scroll distance), `DWELL` with
+ * nothing moving, 1 to leave.
  * Scrolling back plays it backwards. The scrub lags the scroll by a second, so even a fast scroll
  * shows the motion catching up rather than jumping to its end.
  */
@@ -302,7 +308,7 @@ function stageScenes() {
       tl.to(
         obj,
         { autoAlpha: 0, y: -70, scale: 0.97, filter: 'blur(14px)', duration: 1, ease: 'power2.in' },
-        (first ? 0 : 1) + span,
+        (first ? 0 : 1) + span + DWELL,
       );
     }
   });

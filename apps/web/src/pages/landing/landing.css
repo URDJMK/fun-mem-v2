@@ -222,10 +222,11 @@
   color: var(--graphite);
 }
 
-/* a stage is one screen to arrive and leave, plus 80svh of scrolling for each unit it holds */
+/* a stage is one screen to arrive and leave, 80svh of scrolling for each unit it holds, and a
+   still stretch (--dwell screens) after its scene */
 .ob-stage {
   position: relative;
-  height: calc(100svh * (1 + var(--hold, 1) * 0.8));
+  height: calc(100svh * (1 + var(--hold, 1) * 0.8 + var(--dwell, 0)));
 }
 .ob-frame {
   position: sticky;
@@ -235,15 +236,15 @@
   place-items: center;
   padding: 88px 24px;
 }
-/* A nudge, not a hold: when the visitor stops scrolling near the point where a stage's scene has
-   just finished, the page settles there; any scroll goes where it was going. Only while the
+/* A nudge, not a hold: when the visitor stops scrolling in or near the still stretch after a
+   stage's scene, the page settles in its middle; any scroll goes where it was going. Only while the
    landing page is showing. */
 html:has(.ob) {
   scroll-snap-type: y proximity;
 }
 .ob-rest {
   position: absolute;
-  top: calc(100svh * var(--hold, 1) * 0.78);
+  top: calc(100svh * (var(--hold, 1) * 0.8 + var(--dwell, 0) * 0.5));
   left: 0;
   width: 1px;
   height: 1px;

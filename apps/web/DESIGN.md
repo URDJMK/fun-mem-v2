@@ -376,8 +376,10 @@ The example is fiction and says so. There is no audio: the demonstration is sile
   `position: sticky` frame; its scene is scrubbed to the scroll (with a second of lag, so a fast
   scroll shows the motion catching up), and scrolling back plays it backwards. Never replace this
   with motion that plays by itself: the interaction is the point.
-- **Scrolling is the visitor's own: a nudge, never a hold.** Each stage has one resting point, where
-  its scene has just finished, and proximity scroll snap (`scroll-snap-type: y proximity`) settles
+- **A still stretch after every scene.** Once a scene has finished, the next 60% of a screen of
+  scrolling changes nothing, so the finished object can be looked at before the next one comes.
+- **Scrolling is the visitor's own: a nudge, never a hold.** Each stage has one resting point, in
+  the middle of its still stretch, and proximity scroll snap (`scroll-snap-type: y proximity`) settles
   the page there when the visitor stops near it. A scroll of any speed or length goes where it was
   going. Nothing intercepts the wheel, touch or keyboard, and there is no smooth-scroll library.
 - **One authored moment per object.** Each does its one thing while it holds the centre, arrives
