@@ -327,13 +327,13 @@ The app is flat. Depth comes from Canvas against Paper, not from shadows.
 
 - Rose, 64px tall, a full pill: "Start interview". Home is the project's name and this, and nothing
   else: the whole page is for interviewing.
-- **Pressed, it becomes the mark** (`components/VoiceOrb.tsx`), in the same place: the button
-  turns into the logo's glow in its bowl, and that is the interview's control. While it records,
-  the glow is lifted out of the bowl and lit Rose (an ember grows from its middle, as on the
-  landing page), and it moves with the voice: it changes shape only while someone is talking,
-  faster the louder they are (the microphone's level), and holds still in a silence. Pressing it
-  pauses: the glow settles back into the bowl and goes out, Ink. Pressing again lights it.
-- Under the mark, the state in words ("Recording 3:12", "Paused"), and End interview, which asks
+- **Pressed, it becomes the logo's glow** (`components/VoiceOrb.tsx`), alone, without the bowl,
+  in the same place, and that is the interview's control. While it records it is lit Rose (an
+  ember grows from its middle, as on the landing page), and it moves with the voice: it changes
+  shape only while someone is talking, faster the louder they are (the microphone's level), and
+  holds still in a silence. Pressing it pauses: it goes back to the glow's own shape and goes
+  out, Ink. Pressing again lights it.
+- Under the glow, the state in words ("Recording 3:12", "Paused"), and End interview, which asks
   first. The red dot always stands beside the word "Recording".
 
 ### Cards / Containers

@@ -2,7 +2,7 @@ import { forwardRef, useEffect, useLayoutEffect, useRef } from 'react';
 import { gsap } from 'gsap';
 import { MorphSVGPlugin } from 'gsap/MorphSVGPlugin';
 import type { LiveStatus } from '../lib/live';
-import { MARK_BOWL, MARK_GLOW, VOICE_SHAPES } from '../lib/mark';
+import { GLOW_CENTRED, VOICE_SHAPES } from '../lib/mark';
 
 gsap.registerPlugin(MorphSVGPlugin);
 
@@ -10,11 +10,11 @@ const reduceMotion = () =>
   typeof window !== 'undefined' && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 
 /**
- * The interview's control: the mark, at scale, as a button. While it records, the glow is lifted
- * out of the bowl and lit Rose (an ember grows from its middle, as on the landing page), and it
- * moves with the voice: it changes shape only while someone is talking, faster the louder they
- * are, and holds still in a silence. Pressing it pauses: the glow settles back into the bowl and
- * goes out, Ink; pressing again lights it and lifts it again.
+ * The interview's control: the logo's glow, alone and at scale, as a button. While it records it
+ * is lit Rose (an ember grows from its middle, as on the landing page), and it moves with the
+ * voice: it changes shape only while someone is talking, faster the louder they are, and holds
+ * still in a silence. Pressing it pauses: it goes back to the glow's own shape and goes out, Ink;
+ * pressing again lights it.
  *
  * How loud comes from the microphone when there is one; otherwise (a call's other side, the
  * simulation) from whether words are being heard.
@@ -43,18 +43,12 @@ export const VoiceOrb = forwardRef<
       gsap.set(svg.current.querySelector('.orb-ember'), { scale: 0, transformOrigin: '50% 50%' });
   }, []);
 
-  // lit and lifted while it records; settled and out while paused, starting or finishing
+  // lit while it records; out, in the glow's own shape, while paused, starting or finishing
   useLayoutEffect(() => {
     const el = svg.current;
     if (!el) return;
     const q = gsap.utils.selector(el);
     const now = reduceMotion();
-    gsap.to(q('.orb-flame'), {
-      y: lit ? -56 : 0,
-      duration: now ? 0 : 0.9,
-      ease: 'power3.inOut',
-      overwrite: 'auto',
-    });
     gsap.to(q('.orb-ember'), {
       scale: lit ? 1.03 : 0,
       transformOrigin: '50% 50%',
@@ -65,7 +59,7 @@ export const VoiceOrb = forwardRef<
     });
     if (!lit)
       gsap.to(q('.orb-glow, .orb-ember'), {
-        morphSVG: MARK_GLOW,
+        morphSVG: GLOW_CENTRED,
         duration: now ? 0 : 0.6,
         overwrite: 'auto',
       });
@@ -105,13 +99,13 @@ export const VoiceOrb = forwardRef<
       loop.to(q('.orb-glow, .orb-ember'), { morphSVG: shape });
     loop.timeScale(0);
     let smooth = 0;
-    // a voice's pebbles are larger than the logo's glow: drawn a little smaller, eased in, so the
-    // lit glow floats just above the bowl's rim
+    // a voice's pebbles are larger than the logo's glow: drawn a little smaller, eased in, so it
+    // keeps the glow's size as it starts to move
     let size = 1;
     const tick = () => {
       const heard = stream ? level.current : talkingRef.current ? 0.55 : 0;
       smooth += (heard - smooth) * 0.12;
-      size += (0.8 - size) * 0.06;
+      size += (0.68 - size) * 0.06;
       loop.timeScale(smooth < 0.04 ? 0 : 0.3 + smooth * 2.4);
       gsap.set(q('.orb-pulse'), { scale: size + smooth * 0.1, transformOrigin: '50% 50%' });
     };
@@ -141,14 +135,11 @@ export const VoiceOrb = forwardRef<
       disabled={disabled}
       onClick={onToggle}
     >
-      <svg ref={svg} viewBox="0 0 256 256" aria-hidden="true">
-        <g className="orb-flame">
-          <g className="orb-pulse">
-            <path className="orb-glow" d={MARK_GLOW} />
-            <path className="orb-ember" d={MARK_GLOW} />
-          </g>
+      <svg ref={svg} viewBox="48 48 160 160" aria-hidden="true">
+        <g className="orb-pulse">
+          <path className="orb-glow" d={GLOW_CENTRED} />
+          <path className="orb-ember" d={GLOW_CENTRED} />
         </g>
-        <path className="orb-bowl" d={MARK_BOWL} />
       </svg>
     </button>
   );

@@ -129,7 +129,7 @@
   padding: 12px 0 24px;
 }
 
-/* ── the controls: the mark, which pauses; the time; End ─ */
+/* ── the controls: the glow, which pauses; the time; End ─ */
 /* below the transcript's floating box, whatever its size */
 .studio-control {
   display: flex;
@@ -156,8 +156,7 @@
   height: 100%;
   overflow: visible;
 }
-.orb-glow,
-.orb-bowl {
+.orb-glow {
   fill: var(--ink);
 }
 .orb-ember {
