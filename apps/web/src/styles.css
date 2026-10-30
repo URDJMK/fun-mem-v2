@@ -646,10 +646,15 @@ nav[aria-label='Breadcrumb'] a {
     width: var(--rail-open);
     box-shadow: var(--shadow-float);
   }
+  /* the mark always shows, in the rail's width; its wordmark comes in beside it as the rail opens */
   .appbar .brand {
     padding: 0 9px;
     margin-bottom: 8px;
     overflow: hidden;
+    white-space: nowrap;
+  }
+  .appbar .brand .mark {
+    flex: none;
   }
   .appnav {
     flex: 1;
