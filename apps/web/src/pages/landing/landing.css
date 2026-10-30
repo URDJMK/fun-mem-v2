@@ -226,7 +226,7 @@
    still stretch (--dwell screens) after its scene */
 .ob-stage {
   position: relative;
-  height: calc(100svh * (1 + var(--hold, 1) * 0.8 + var(--dwell, 0)));
+  height: calc(100svh * (1 + var(--hold, 1) * var(--pace, 0.8) + var(--dwell, 0)));
 }
 .ob-frame {
   position: sticky;
@@ -244,7 +244,7 @@ html:has(.ob) {
 }
 .ob-rest {
   position: absolute;
-  top: calc(100svh * (var(--hold, 1) * 0.8 + var(--dwell, 0) * 0.5));
+  top: calc(100svh * var(--rest, 1));
   left: 0;
   width: 1px;
   height: 1px;
@@ -367,12 +367,15 @@ html:has(.ob) {
   max-width: 380px;
 }
 
-/* the timeline: a drawn line, its decades, a story pinned above or below */
+/* the timeline: a drawn line, its decades under it, each story a dot exactly on the line */
 .ob-time {
-  width: min(600px, 86vw);
-  padding: 96px 0 104px;
+  width: min(640px, 92vw);
+  padding: 120px 0 24px;
 }
-.ob-time svg {
+.ob-rodbox {
+  position: relative;
+}
+.ob-rodbox svg {
   display: block;
   width: 100%;
   height: auto;
@@ -386,42 +389,35 @@ html:has(.ob) {
 }
 .ob-decades {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   margin: 12px 0 0;
   padding: 0;
   list-style: none;
   color: var(--graphite);
 }
-.ob-decades li {
-  position: relative;
-}
+/* a pin is a point on the line; the dot is centred on it, the title stands above */
 .ob-pin {
   position: absolute;
-  bottom: calc(100% + 44px);
-  left: 50%;
-  translate: -50% 0;
-  display: grid;
-  justify-items: center;
-  gap: 10px;
-  width: 200px;
-  color: var(--ink);
-}
-.ob-pin:not(.is-below) .ob-pin-title {
-  order: -1;
-}
-.ob-pin.is-below {
-  bottom: auto;
-  top: -38px;
+  width: 0;
+  height: 0;
 }
 .ob-dot {
+  position: absolute;
+  left: -8px;
+  top: -8px;
   width: 16px;
   height: 16px;
   border-radius: 50%;
   background: var(--ink);
   box-shadow: 0 0 0 4px var(--paper);
 }
-.ob-pin.is-below .ob-pin-title {
-  margin-top: 30px;
+.ob-pin-title {
+  position: absolute;
+  bottom: 20px;
+  left: 0;
+  translate: -50% 0;
+  width: min(180px, 28vw);
+  color: var(--ink);
 }
 
 .ob-ask {
@@ -461,9 +457,6 @@ html:has(.ob) {
   .ob-pv[data-who='Nell'] {
     width: 150px;
     height: 150px;
-  }
-  .ob-pin {
-    width: 150px;
   }
   .lpx-sheet {
     padding: 20px;

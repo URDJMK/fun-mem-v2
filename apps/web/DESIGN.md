@@ -378,6 +378,11 @@ The example is fiction and says so. There is no audio: the demonstration is sile
   with motion that plays by itself: the interaction is the point.
 - **A still stretch after every scene.** Once a scene has finished, the next 60% of a screen of
   scrolling changes nothing, so the finished object can be looked at before the next one comes.
+  The last stage has its still stretch first, so the lit glow is seen before it settles.
+- **One speed control.** `PACE` in `src/pages/Landing.tsx` is how many screens of scrolling one
+  beat of motion takes, and each stage's `hold` is how many beats its scene has (the two voices
+  take about a screen per turn). Slow the page with PACE, a scene with its hold; never by
+  intercepting the scroll.
 - **Scrolling is the visitor's own: a nudge, never a hold.** Each stage has one resting point, in
   the middle of its still stretch, and proximity scroll snap (`scroll-snap-type: y proximity`) settles
   the page there when the visitor stops near it. A scroll of any speed or length goes where it was

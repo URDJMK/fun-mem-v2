@@ -32,26 +32,47 @@ import {
   VOICE_SHAPES,
 } from './landing/shared';
 
-/** each stage: its corner label, and how long it holds the centre (in 80svh of scrolling) */
+/**
+ * The page's speed, in one place. PACE is how many screens of scrolling one beat of motion takes;
+ * each stage's `hold` is how many beats its scene has. Raise PACE to slow the whole page, or a
+ * stage's hold to slow that scene alone.
+ */
+const PACE = 0.8;
+
+/** each stage: its corner label, and how many beats its scene holds the centre */
 const STAGES = [
   { label: 'Firepit', hold: 1 },
   { label: 'The question', hold: 1 },
-  { label: 'Two voices', hold: 2.2 },
-  { label: 'The words worth keeping', hold: 2 },
+  { label: 'Two voices', hold: 4 },
+  { label: 'The words worth keeping', hold: 2.4 },
   { label: 'Its place in time', hold: 1.2 },
   { label: 'Asking later', hold: 1.2 },
   { label: 'The people in it', hold: 1 },
-  { label: 'Start', hold: 1 },
+  { label: 'Start', hold: 1.8 },
 ];
 
-/** the still stretch after each scene, in screens of scrolling: nothing moves until it is passed */
+/**
+ * The still stretch, in screens of scrolling, where nothing moves: after each scene, so a finished
+ * one can be looked at; and on the last stage before its scene, so the glow is seen lit before it
+ * settles.
+ */
 const DWELL = 0.6;
 
-const DECADES = ['1940s', '1950s', '1960s', '1970s'];
-const PINS: Record<string, { story: (typeof STORIES)[number]; below?: boolean }> = {
-  '1950s': { story: STORIES[0]! },
-  '1960s': { story: STORIES[1]!, below: true },
+const DECADES = ['1940s', '1950s', '1960s'];
+const PINS: Record<string, (typeof STORIES)[number]> = {
+  '1950s': STORIES[0]!,
+  '1960s': STORIES[1]!,
 };
+
+/** the timeline's line: a gentle wave, drawn from a formula so the stories sit exactly on it */
+const ROD = { w: 400, h: 60 };
+const rodY = (x: number) => 34 + 9 * Math.sin((x / ROD.w) * Math.PI * 1.7 + 0.5);
+const ROD_PATH = `M${Array.from({ length: 49 }, (_, k) => {
+  const x = 4 + (k / 48) * (ROD.w - 8);
+  return `${x.toFixed(1)} ${rodY(x).toFixed(1)}`;
+}).join(' L')}`;
+/** where a decade's story sits on the line: the middle of its column */
+const decadeX = (i: number) => ((i + 0.5) / DECADES.length) * ROD.w;
 
 /** what Nell and Theo say in the two-voices scene, after the first question */
 const ANSWERS = TURNS.slice(1);
@@ -167,24 +188,32 @@ export function Landing() {
       <Stage at={4}>
         <figure className="ob-object">
           <div className="ob-time">
-            <svg viewBox="0 0 400 60" aria-hidden="true">
-              <path className="ob-rod" d="M4 40 C 90 22, 150 50, 210 34 S 330 22, 396 36" />
-            </svg>
-            <ol className="ob-decades">
-              {DECADES.map((d) => {
-                const pin = PINS[d];
+            <div className="ob-rodbox">
+              <svg viewBox={`0 0 ${ROD.w} ${ROD.h}`} aria-hidden="true">
+                <path className="ob-rod" d={ROD_PATH} />
+              </svg>
+              {DECADES.map((d, i) => {
+                const story = PINS[d];
+                if (!story) return null;
+                const x = decadeX(i);
                 return (
-                  <li key={d} className="t-small">
-                    {d}
-                    {pin && (
-                      <span className={`ob-pin ${pin.below ? 'is-below' : ''}`}>
-                        <span className="ob-dot" />
-                        <span className="ob-pin-title t-small">{pin.story.title}</span>
-                      </span>
-                    )}
-                  </li>
+                  <span
+                    key={d}
+                    className="ob-pin"
+                    style={{ left: `${(x / ROD.w) * 100}%`, top: `${(rodY(x) / ROD.h) * 100}%` }}
+                  >
+                    <span className="ob-pin-title t-small">{story.title}</span>
+                    <span className="ob-dot" />
+                  </span>
                 );
               })}
+            </div>
+            <ol className="ob-decades">
+              {DECADES.map((d) => (
+                <li key={d} className="t-small">
+                  {d}
+                </li>
+              ))}
             </ol>
           </div>
           <figcaption className="ob-caption">Stories line up by year.</figcaption>
@@ -239,10 +268,18 @@ function Stage({ at, children }: { at: number; children: ReactNode }) {
     <section
       className={`ob-stage ${first ? 'is-first' : ''} ${last ? 'is-last' : ''}`}
       data-stage={at}
-      style={{ '--hold': STAGES[at]!.hold, '--dwell': last ? 0 : DWELL } as CSSProperties}
+      style={
+        {
+          '--pace': PACE,
+          '--hold': STAGES[at]!.hold,
+          '--dwell': DWELL,
+          // settle in the middle of the still stretch; on the last stage, once its scene is done
+          '--rest': STAGES[at]!.hold * PACE + (last ? DWELL : DWELL / 2),
+        } as CSSProperties
+      }
     >
       <div className="ob-frame">{children}</div>
-      {/* the middle of the still stretch after its scene: where the page settles if you stop near it */}
+      {/* where the page settles if you stop near it: the scene finished, nothing moving */}
       <span className="ob-rest" aria-hidden="true" />
     </section>
   );
@@ -270,8 +307,8 @@ const token = (name: string) =>
 
 /**
  * One scrubbed timeline per stage, across the whole time it is on screen: 1 to arrive, its scene
- * while it holds the centre (0.8 for each unit of `hold`, the same scroll distance), `DWELL` with
- * nothing moving, 1 to leave.
+ * while it holds the centre (PACE for each beat of `hold`, the same scroll distance), `DWELL` with
+ * nothing moving, 1 to leave. The last stage has its still stretch first, and does not leave.
  * Scrolling back plays it backwards. The scrub lags the scroll by a second, so even a fast scroll
  * shows the motion catching up rather than jumping to its end.
  */
@@ -282,7 +319,7 @@ function stageScenes() {
     const first = i === 0;
     const last = i === stages.length - 1;
     const obj = stage.querySelector('.ob-object')!;
-    const span = (STAGES[i]?.hold ?? 1) * 0.8;
+    const span = (STAGES[i]?.hold ?? 1) * PACE;
     const tl = gsap.timeline({
       defaults: { ease: 'none' },
       scrollTrigger: {
@@ -303,12 +340,14 @@ function stageScenes() {
     }
     const scene = SCENES[i]?.(gsap.utils.selector(stage));
     // every scene is written from 0 to 1; stretched here to the stage's hold
-    if (scene) tl.add(scene.set({}, {}, 1).duration(span), first ? 0 : 1);
+    // after arriving; on the last stage, after a still stretch too
+    const start = first ? 0 : last ? 1 + DWELL : 1;
+    if (scene) tl.add(scene.set({}, {}, 1).duration(span), start);
     if (!last) {
       tl.to(
         obj,
         { autoAlpha: 0, y: -70, scale: 0.97, filter: 'blur(14px)', duration: 1, ease: 'power2.in' },
-        (first ? 0 : 1) + span + DWELL,
+        start + span + DWELL,
       );
     }
   });
@@ -465,7 +504,7 @@ const SCENES: ((q: Q) => gsap.core.Timeline)[] = [
       )
       .fromTo(
         q('.ob-dot'),
-        { scale: 0, y: -70 },
+        { scale: 0, y: -60 },
         { scale: 1, y: 0, stagger: 0.25, duration: 0.22, ease: 'power2.in' },
         0.42,
       )
