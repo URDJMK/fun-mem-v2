@@ -372,12 +372,10 @@ The example is fiction and says so. There is no audio: the demonstration is sile
 
 - **GSAP** (with ScrollTrigger, SplitText, MorphSVG, DrawSVG and TextPlugin, all free) for anything
   more than a hover. No second animation library.
-- **One stage to a screen, snapped.** The landing page's stages are one screen each, with CSS scroll
-  snap (`scroll-snap-type: y mandatory`, `scroll-snap-stop: always`), so a flick moves one stage.
-  A mouse wheel sends a scroll per notch and a trackpad keeps sending momentum, so on the wheel
-  alone a burst of input is one step, and nothing more is taken until the move has finished. The
-  keyboard, touch, the scrollbar and find-in-page stay native; pinch zoom passes through; a stage
-  taller than the window scrolls normally. No smooth-scroll library.
+- **Scrolling is the visitor's own: a nudge, never a hold.** The landing page's stages are one
+  screen each, with proximity scroll snap (`scroll-snap-type: y proximity`): when the visitor stops
+  near a stage, the page settles onto it; a scroll of any speed or length goes where it was going.
+  Nothing intercepts the wheel, touch or keyboard, and there is no smooth-scroll library.
 - **Scenes play by time, not by scroll.** A stage's scene starts once the stage has settled and
   plays at its own pace, so a fast scroll never rushes it; leave and come back, and it plays again.
   The opening (the glow catching) plays a moment after the page opens.
@@ -388,7 +386,7 @@ The example is fiction and says so. There is no audio: the demonstration is sile
   talks, something is kept), never as decoration.
 - **Ease out, never bounce.** Exponential or power ease-out; no `back` or elastic eases.
 - **Reduced motion:** every scene is written in its finished state, and motion only runs when the
-  visitor allows it. With reduced motion the stages still snap, each already finished.
+  visitor allows it. With reduced motion each stage is simply shown finished.
 
 ## Do's and Don'ts
 

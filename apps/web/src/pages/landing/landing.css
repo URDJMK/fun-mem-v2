@@ -222,15 +222,15 @@
   color: var(--graphite);
 }
 
-/* one stage to a screen, and the page snaps to each: scroll-snap-stop keeps a hard flick from
-   carrying past the next one. Only while the landing page is showing. */
+/* one stage to a screen. A nudge, not a hold: the page settles onto a stage only when the visitor
+   stops scrolling near one, and a scroll of any speed or length goes where it was going. Only
+   while the landing page is showing. */
 html:has(.ob) {
-  scroll-snap-type: y mandatory;
+  scroll-snap-type: y proximity;
 }
 .ob-stage {
   position: relative;
   scroll-snap-align: start;
-  scroll-snap-stop: always;
 }
 .ob-frame {
   min-height: 100svh;

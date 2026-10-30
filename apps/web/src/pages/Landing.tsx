@@ -4,10 +4,10 @@
  * corners (after dmcg.co). It opens and closes on the mark: the glow lifts out of
  * the bowl to become a voice, and settles back in at the end, when the story is kept.
  *
- * One stage to a screen, and the page snaps to each (native CSS scroll snap, with
- * scroll-snap-stop, so a hard flick moves one stage, never several). Each object arrives out of a
- * blur and does its one thing at its own pace once its stage has settled; however fast you scroll,
- * a scene is never rushed. Leave a stage and come back, and it plays again.
+ * One stage to a screen. Scrolling is the visitor's own: the page only settles onto a stage when
+ * they stop near one (CSS scroll snap, proximity), and never holds them. Each object arrives out
+ * of a blur and does its one thing at its own pace once its stage is in view, so a fast scroll
+ * never rushes a scene; leave a stage and come back, and it plays again.
  */
 import { useEffect, useRef, type ReactNode } from 'react';
 import { Link } from 'react-router';
@@ -27,7 +27,6 @@ import {
   TURNS,
   TurnStrip,
   useMotion,
-  useWheelPaging,
   VOICE_SHAPES,
 } from './landing/shared';
 
@@ -58,7 +57,6 @@ const ANSWERS = TURNS.slice(1);
 export function Landing() {
   const root = useRef<HTMLDivElement>(null);
   useMotion(root, stageScenes);
-  useWheelPaging(root, '.ob-stage');
 
   // the corner names the stage in view, with or without motion
   useEffect(() => {
