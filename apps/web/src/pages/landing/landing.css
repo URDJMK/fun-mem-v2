@@ -210,17 +210,6 @@
   gap: 8px;
   align-items: center;
 }
-.ob-bl {
-  bottom: 0;
-  left: 0;
-  padding-bottom: max(16px, env(safe-area-inset-bottom));
-}
-.ob-br {
-  bottom: 0;
-  right: 0;
-  padding-bottom: max(16px, env(safe-area-inset-bottom));
-  color: var(--graphite);
-}
 
 /* a stage is one screen to arrive and leave, 80svh of scrolling for each unit it holds, and a
    still stretch (--dwell screens) after its scene */
@@ -431,9 +420,6 @@ html:has(.ob) {
 }
 
 @media (max-width: 720px) {
-  .ob-br {
-    display: none;
-  }
   .ob-tr .btn-quiet {
     display: none;
   }

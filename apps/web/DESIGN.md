@@ -352,8 +352,8 @@ The app is flat. Depth comes from Canvas against Paper, not from shadows.
 ## Landing page
 
 One interview, from the first question to the finished stories, shown one object at a time on an
-open Paper field, after dmcg.co. The type is kept small in the corners: the wordmark top left, Sign
-in and Start top right, the current stage's name bottom left, and "A silent example" bottom right.
+open Paper field, after dmcg.co. The only chrome is small, in the top corners: the wordmark top
+left, Sign in and Start top right. The bottom corners stay empty.
 
 The stages, in order: the mark (the headline, and Start); the question, on a paper slip; two voices,
 Theo's small and grey, Nell's large and Rose, taking turns over the turn strip; the words worth
@@ -366,7 +366,8 @@ out of the bowl and catches: an Ember grows from its middle until the glow is li
 change, never a blend through a muddy dark red. It becomes Nell's voice. On the last screen it
 settles back into the bowl, still lit, beside "Start with one afternoon."
 
-The example is fiction and says so. There is no audio: the demonstration is silent.
+The example (Theo and his grandmother Nell) is fiction, and the demonstration is silent: there is no
+audio. Since 2026-10-30 the page no longer labels it as an example.
 
 ## Motion
 

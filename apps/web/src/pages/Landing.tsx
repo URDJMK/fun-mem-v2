@@ -1,8 +1,8 @@
 /**
  * The first page, for someone who is not signed in: one interview, from the first question to the
- * finished stories, shown one object at a time on an open field, with the type kept small in the
- * corners (after dmcg.co). It opens and closes on the mark: the glow lifts out of
- * the bowl to become a voice, and settles back in at the end, when the story is kept.
+ * finished stories, shown one object at a time on an open field, with the wordmark and the way in
+ * kept small in the top corners (after dmcg.co). It opens and closes on the mark: the glow lifts
+ * out of the bowl to become a voice, and settles back in at the end, when the story is kept.
  *
  * The motion follows the scroll: each object holds the centre while you scroll through it and does
  * its one thing as you go, arriving out of a blur and leaving into one; scroll back and it plays
@@ -12,7 +12,7 @@
  * Scrolling stays the visitor's own: the page is only nudged, when they stop near the point where
  * a scene has just finished (proximity scroll snap), onto that point.
  */
-import { useEffect, useRef, type CSSProperties, type ReactNode } from 'react';
+import { useRef, type CSSProperties, type ReactNode } from 'react';
 import { Link } from 'react-router';
 import { Brand } from '../components/ui';
 import './landing/landing.css';
@@ -39,16 +39,16 @@ import {
  */
 const PACE = 0.8;
 
-/** each stage: its corner label, and how many beats its scene holds the centre */
+/** each stage: its name, and how many beats its scene holds the centre */
 const STAGES = [
-  { label: 'Firepit', hold: 1 },
-  { label: 'The question', hold: 1 },
-  { label: 'Two voices', hold: 4 },
-  { label: 'The words worth keeping', hold: 2.4 },
-  { label: 'Its place in time', hold: 1.2 },
-  { label: 'Asking later', hold: 1.2 },
-  { label: 'The people in it', hold: 1 },
-  { label: 'Start', hold: 1.8 },
+  { name: 'Firepit', hold: 1 },
+  { name: 'The question', hold: 1 },
+  { name: 'Two voices', hold: 4 },
+  { name: 'The words worth keeping', hold: 2.4 },
+  { name: 'Its place in time', hold: 1.2 },
+  { name: 'Asking later', hold: 1.2 },
+  { name: 'The people in it', hold: 1 },
+  { name: 'Start', hold: 1.8 },
 ];
 
 /**
@@ -81,23 +81,6 @@ export function Landing() {
   const root = useRef<HTMLDivElement>(null);
   useMotion(root, stageScenes);
 
-  // the corner names the stage in view, with or without motion
-  useEffect(() => {
-    const label = root.current?.querySelector<HTMLElement>('.ob-label');
-    const stages = root.current?.querySelectorAll<HTMLElement>('.ob-stage') ?? [];
-    const seen = new IntersectionObserver(
-      (entries) => {
-        for (const e of entries) {
-          const at = Number((e.target as HTMLElement).dataset.stage);
-          if (e.isIntersecting && label) label.textContent = STAGES[at]?.label ?? '';
-        }
-      },
-      { rootMargin: '-50% 0px -50% 0px' },
-    );
-    stages.forEach((s) => seen.observe(s));
-    return () => seen.disconnect();
-  }, []);
-
   return (
     <div ref={root} className="lpx ob">
       <title>Firepit — sit down with them, keep what they say</title>
@@ -110,10 +93,6 @@ export function Landing() {
         </Link>
         <Start />
       </div>
-      <p className="ob-corner ob-bl t-small" aria-hidden="true">
-        <span className="ob-label">{STAGES[0]!.label}</span>
-      </p>
-      <p className="ob-corner ob-br t-small">A silent example: Theo and his grandmother Nell</p>
 
       <Stage at={0}>
         <div className="ob-object ob-intro">
