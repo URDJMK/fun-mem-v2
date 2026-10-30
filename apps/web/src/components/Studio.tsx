@@ -351,12 +351,12 @@ export function Studio({
   useLayoutEffect(() => {
     if (!flipFrom || !orb.current || reduceMotion()) return;
     const ctx = gsap.context(() => {
+      // the button is stretched into the control's place as its pill becomes the glow (VoiceOrb)
       Flip.from(flipFrom, {
         targets: orb.current,
         duration: 0.9,
         ease: 'power3.inOut',
-        scale: false,
-        props: 'borderRadius,backgroundColor',
+        scale: true,
       });
       gsap.from('.assist-inner > *', {
         opacity: 0,
@@ -614,6 +614,7 @@ export function Studio({
           status={recording.status}
           stream={recording.mic}
           talking={quiet < 1.2}
+          grow={flipFrom !== null}
           disabled={!rec || recording.status === 'connecting' || recording.status === 'stopping'}
           onToggle={() => (rec?.paused() ? rec.resume() : rec?.pause())}
         />

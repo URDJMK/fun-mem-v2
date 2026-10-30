@@ -328,7 +328,8 @@ The app is flat. Depth comes from Canvas against Paper, not from shadows.
 - Rose, 64px tall, a full pill: "Start interview". Home is the project's name and this, and nothing
   else: the whole page is for interviewing.
 - **Pressed, it becomes the logo's glow** (`components/VoiceOrb.tsx`), alone, without the bowl,
-  in the same place, and that is the interview's control. While it records it is lit Rose (an
+  96px, and that is the interview's control. It is one shape changing, not a swap: the rose pill
+  is stretched from where the button was into the control's place as it turns into the glow. While it records it is lit Rose (an
   ember grows from its middle, as on the landing page), and it moves with the voice: it changes
   shape only while someone is talking, faster the louder they are (the microphone's level), and
   holds still in a silence. Pressing it pauses: it goes back to the glow's own shape and goes

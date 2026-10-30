@@ -6,6 +6,14 @@ import { GLOW_CENTRED, VOICE_SHAPES } from '../lib/mark';
 
 gsap.registerPlugin(MorphSVGPlugin);
 
+/**
+ * The Start button's rose pill, filling the box: what the control begins as, when it was pressed.
+ * The page stretches the control from the button's shape (about 188 by 64 against its 96 by 96),
+ * so the ends are drawn as narrow ellipses, which that stretch makes round.
+ */
+const PILL =
+  'M75 48H181A27 80 0 0 1 208 128A27 80 0 0 1 181 208H75A27 80 0 0 1 48 128A27 80 0 0 1 75 48Z';
+
 const reduceMotion = () =>
   typeof window !== 'undefined' && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 
@@ -15,6 +23,9 @@ const reduceMotion = () =>
  * voice: it changes shape only while someone is talking, faster the louder they are, and holds
  * still in a silence. Pressing it pauses: it goes back to the glow's own shape and goes out, Ink;
  * pressing again lights it.
+ *
+ * When it has just been the Start button (`grow`), it begins as that button's rose pill, which
+ * the page stretches from where the button was, and becomes the glow: one shape, not a swap.
  *
  * How loud comes from the microphone when there is one; otherwise (a call's other side, the
  * simulation) from whether words are being heard.
@@ -28,19 +39,32 @@ export const VoiceOrb = forwardRef<
     /** words are being heard just now: the stand-in for loudness without a microphone */
     talking: boolean;
     disabled?: boolean;
+    /** it was the Start button a moment ago: it grows out of it */
+    grow?: boolean;
     onToggle: () => void;
   }
->(function VoiceOrb({ status, stream, talking, disabled = false, onToggle }, ref) {
+>(function VoiceOrb({ status, stream, talking, disabled = false, grow = false, onToggle }, ref) {
   const svg = useRef<SVGSVGElement>(null);
   const level = useRef(0);
   const talkingRef = useRef(talking);
   talkingRef.current = talking;
-  const lit = status === 'live' || status === 'reconnecting';
+  // lit from the moment it is pressed; out only while paused or finishing
+  const lit = status === 'live' || status === 'reconnecting' || status === 'connecting';
 
-  // the ember starts unseen, inside an unlit glow
+  // it begins as the Start button's rose pill and becomes the glow; or, shown afresh, an unlit glow
   useLayoutEffect(() => {
-    if (svg.current)
-      gsap.set(svg.current.querySelector('.orb-ember'), { scale: 0, transformOrigin: '50% 50%' });
+    const el = svg.current;
+    if (!el) return;
+    const q = gsap.utils.selector(el);
+    if (grow && !reduceMotion()) {
+      gsap.set(q('.orb-ember'), { scale: 1.03, transformOrigin: '50% 50%' });
+      gsap.fromTo(
+        q('.orb-glow, .orb-ember'),
+        { morphSVG: PILL },
+        { morphSVG: GLOW_CENTRED, duration: 0.9, ease: 'power3.inOut' },
+      );
+    } else gsap.set(q('.orb-ember'), { scale: lit ? 1.03 : 0, transformOrigin: '50% 50%' });
+    // how it begins is decided once, when it first appears
   }, []);
 
   // lit while it records; out, in the glow's own shape, while paused, starting or finishing
@@ -129,6 +153,8 @@ export const VoiceOrb = forwardRef<
       ref={ref}
       type="button"
       className="voice-orb"
+      // the Start button's id: the page's Flip finds the button this grew out of by it
+      data-flip-id="start"
       data-status={status}
       aria-label={label}
       title={label}
