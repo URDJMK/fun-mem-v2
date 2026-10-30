@@ -98,7 +98,7 @@ export function NoteForm({
       </label>
       {withType && (
         <fieldset style={{ margin: 0, padding: 2, border: 'none' }} className="stack">
-          <legend style={{ fontWeight: 600, marginBottom: 10 }}>What is this memory about?</legend>
+          <legend style={{ marginBottom: 10 }}>What is this memory about?</legend>
           <div className="row" data-testid="note-type">
             {TYPES.map((t) => (
               <button

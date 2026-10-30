@@ -34,8 +34,7 @@
   }
 }
 .live-turn p {
-  font-size: 18px;
-  line-height: 1.6;
+  font: var(--type-body);
 }
 /* what is being said right now, not settled yet */
 .live-partial {

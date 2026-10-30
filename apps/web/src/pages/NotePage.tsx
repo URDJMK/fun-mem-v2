@@ -234,14 +234,7 @@ function Story({ archive, data, onEdit }: { archive: Archive; data: Loaded; onEd
             <span className="small muted">
               {[whenLabel(note.occurred), typeLabel(note.type)].filter(Boolean).join(' · ')}
             </span>
-            <h1
-              data-testid="note-heading"
-              style={{
-                fontSize: 24,
-                lineHeight: 1.08,
-                textWrap: 'balance',
-              }}
-            >
+            <h1 data-testid="note-heading" className="t-heading" style={{ textWrap: 'balance' }}>
               {note.title}
             </h1>
             {note.revised && (
@@ -300,14 +293,14 @@ function Story({ archive, data, onEdit }: { archive: Archive; data: Loaded; onEd
               className="stack"
               style={{ gap: 8, borderTop: '1px solid var(--line)', paddingTop: 16 }}
             >
-              <h2 id="differ-h" style={{ fontSize: 16 }}>
+              <h2 id="differ-h" className="t-small">
                 Remembered a little differently
               </h2>
               <p className="muted">We keep both. No one has to be right.</p>
               <div className="differ">
                 {parts.differs.map((d, i) => (
                   <div key={i}>
-                    <p style={{ fontSize: 16, lineHeight: 1.5 }}>
+                    <p className="t-small">
                       <Linked text={d} notes={notes} archiveId={archive.id} />
                     </p>
                   </div>
@@ -320,9 +313,7 @@ function Story({ archive, data, onEdit }: { archive: Archive; data: Loaded; onEd
         <aside aria-label="About this story" className="story-aside">
           {(inThis.length > 0 || (archive.writer && missing.length > 0)) && (
             <section className="stack" style={{ gap: 5 }}>
-              <h2 className="label-heading" style={{ fontSize: 16 }}>
-                In this story
-              </h2>
+              <h2 className="label-heading t-small">In this story</h2>
               <div className="row" style={{ gap: 4 }}>
                 {inThis.map((n) => (
                   <Link key={n.id} to={noteHref(archive.id, n)} className="tag-link">
@@ -345,9 +336,7 @@ function Story({ archive, data, onEdit }: { archive: Archive; data: Loaded; onEd
             </section>
           )}
           <section data-testid="backlinks" className="stack" style={{ gap: 6 }}>
-            <h2 className="label-heading" style={{ fontSize: 16 }}>
-              Mentioned in
-            </h2>
+            <h2 className="label-heading t-small">Mentioned in</h2>
             {backlinks.occurrences.length === 0 ? (
               <p className="muted">No other memory links here yet.</p>
             ) : (
@@ -362,8 +351,8 @@ function Story({ archive, data, onEdit }: { archive: Archive; data: Loaded; onEd
                   className="stack"
                   style={{ textDecoration: 'none' }}
                 >
-                  <span style={{ fontWeight: 600 }}>{o.sourceTitle}</span>
-                  <span style={{ fontSize: 16, color: 'var(--graphite)' }}>
+                  <span>{o.sourceTitle}</span>
+                  <span className="t-small" style={{ color: 'var(--graphite)' }}>
                     {plainLinks(o.snippet)}
                   </span>
                 </Link>

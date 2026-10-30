@@ -2,7 +2,7 @@
  * The look of every page, from DESIGN.md: two neutral surfaces (canvas, paper), one ink, one quiet
  * grey (graphite), Voice green for the teller's voice and anything live, and Marker yellow behind
  * the teller's own quoted words only. Atkinson Hyperlegible Next for reading and the interface,
- * Familjen Grotesk for titles. Text never goes below 16px (test/type-floor.test.ts holds it).
+ * Familjen Grotesk for titles, in five type roles. Text never goes below 16px (test/type-floor.test.ts).
  * Light only: dark mode is not designed yet.
  */
 :root {
@@ -12,6 +12,14 @@
   --graphite: #585e64;
   --voice: #0a7a5a;
   --marker: #ffe14a;
+  /* the brand: primary buttons, links, the current place in the nav, the landing page's brand
+     moments. --on-brand is text set on it; --brand-text is the brand as text or a mark on Paper or
+     Canvas, at 4.5:1 at least. It is not Voice green or Marker yellow, which keep their meanings. */
+  --brand: var(--ink);
+  --on-brand: var(--paper);
+  --brand-text: var(--ink);
+  /* the flame in the logo: the brand once there is one, Ink until then */
+  --brand-mark: var(--ink);
   /* the only variations of those (DESIGN.md): borders, field edges, hover, the interviewer's voice */
   --line: rgb(21 24 26 / 0.12);
   --edge: rgb(21 24 26 / 0.45);
@@ -21,8 +29,15 @@
   --danger: #c22f26;
   /* floating layers only: menus, popovers, dialogs, the caption bar */
   --shadow-float: 0 1px 2px rgb(21 24 26 / 0.08), 0 8px 24px rgb(21 24 26 / 0.12);
-  --display: 'Familjen Grotesk', system-ui, sans-serif;
-  --sans: 'Atkinson Hyperlegible Next', system-ui, sans-serif;
+  /* the type scale: five roles, each exactly one family, size, weight and line height (DESIGN.md).
+     Titles take the display face, reading and the interface the text face. Nothing else sets type. */
+  --font-display: 'Familjen Grotesk', system-ui, sans-serif;
+  --font-text: 'Atkinson Hyperlegible Next', system-ui, sans-serif;
+  --type-display: 700 44px/1.05 var(--font-display);
+  --type-title: 700 32px/1.15 var(--font-display);
+  --type-heading: 600 22px/1.3 var(--font-display);
+  --type-body: 400 20px/1.55 var(--font-text);
+  --type-small: 500 16px/1.4 var(--font-text);
   --ease-out: cubic-bezier(0.22, 1, 0.36, 1);
   /* the app's own bars: the top bar everywhere, the tabs on a phone */
   --appbar: 56px;
@@ -40,41 +55,61 @@ body {
   background: var(--canvas);
 }
 body {
+  font: var(--type-body);
   margin: 0;
   min-height: 100dvh;
   color: var(--ink);
-  font-family: var(--sans);
-  font-size: 18px;
-  line-height: 1.55;
   -webkit-font-smoothing: antialiased;
 }
 
 a {
-  color: var(--ink);
+  color: var(--brand-text);
   text-underline-offset: 0.18em;
 }
 a:hover {
-  color: var(--ink);
+  color: var(--brand-text);
   text-decoration-thickness: 2px;
+}
+/* a link that is a whole row or panel stays Ink: only a link in running text is the brand */
+a:where(.list-row, .when-card, .decade, .brand, .card-link, .entity-link, .graph-node, .menu-item) {
+  color: var(--ink);
 }
 
 h1,
 h2,
 h3 {
   margin: 0;
-  line-height: 1.15;
 }
-/* Familjen Grotesk for titles; everything else is Atkinson Hyperlegible Next */
+/* five type roles and no others (the --type-* tokens; test/type-scale.test.ts holds it): a
+   heading is a heading wherever it is, and bold or small inside text changes nothing */
 h1 {
-  font-family: var(--display);
-  font-weight: 600;
-  letter-spacing: -0.01em;
-  line-height: 1.15;
+  font: var(--type-title);
 }
 h2,
-h3 {
-  font-family: var(--sans);
-  font-weight: 600;
+h3,
+h4 {
+  font: var(--type-heading);
+}
+b,
+strong,
+small,
+th {
+  font: inherit;
+}
+.t-display {
+  font: var(--type-display);
+}
+.t-title {
+  font: var(--type-title);
+}
+.t-heading {
+  font: var(--type-heading);
+}
+.t-body {
+  font: var(--type-body);
+}
+.t-small {
+  font: var(--type-small);
 }
 
 p {
@@ -112,18 +147,16 @@ nav[aria-label='Breadcrumb'] a {
 }
 
 .serif {
-  font-family: var(--display);
-  font-weight: 600;
+  font: var(--type-heading);
 }
 .title {
-  font-weight: 600;
-  line-height: 1.25;
+  font: var(--type-heading);
 }
 .muted {
   color: var(--graphite);
 }
 .small {
-  font-size: 16px;
+  font: var(--type-small);
 }
 .stack {
   display: flex;
@@ -153,14 +186,12 @@ nav[aria-label='Breadcrumb'] a {
   text-decoration: none;
 }
 .brand-name {
-  font-family: var(--display);
-  font-size: 20px;
-  font-weight: 700;
-  letter-spacing: -0.01em;
+  font: var(--type-heading);
 }
 
 /* ── buttons: every one at least 44px tall (DESIGN.md) ── */
 .btn {
+  font: var(--type-small);
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -169,8 +200,6 @@ nav[aria-label='Breadcrumb'] a {
   padding: 0 18px;
   border-radius: 10px;
   border: 1px solid transparent;
-  font-weight: 600;
-  font-size: 16px;
   text-decoration: none;
   cursor: pointer;
   background: var(--canvas);
@@ -185,13 +214,20 @@ nav[aria-label='Breadcrumb'] a {
   background: var(--canvas);
   color: color-mix(in srgb, var(--graphite) 60%, var(--canvas));
 }
-/* one per view: Ink, Paper text */
-.btn-primary,
+/* one per view: the brand, its own text colour on it */
+.btn-primary {
+  background-color: var(--brand);
+  color: var(--on-brand);
+}
+.btn-primary:hover {
+  color: var(--on-brand);
+  background-color: color-mix(in srgb, var(--brand), var(--ink) 14%);
+}
+/* Ink, for what is not the page's main action (ending an interview, joining) */
 .btn-ink {
   background-color: var(--ink);
   color: var(--paper);
 }
-.btn-primary:hover,
 .btn-ink:hover {
   color: var(--paper);
   background-color: color-mix(in srgb, var(--ink), var(--paper) 14%);
@@ -224,27 +260,23 @@ nav[aria-label='Breadcrumb'] a {
 .btn-lg {
   min-height: 52px;
   padding: 0 24px;
-  font-size: 18px;
 }
 
 /* ── fields ──────────────────────────────────────────── */
 .field {
+  font: var(--type-small);
   display: flex;
   flex-direction: column;
   gap: 6px;
-  font-weight: 600;
-  font-size: 16px;
 }
 .field .hint {
-  font-weight: 400;
-  font-size: 16px;
+  font: var(--type-small);
   color: var(--graphite);
 }
 .input,
 .textarea,
 .select {
-  font-weight: 400;
-  font-size: 18px;
+  font: var(--type-body);
   padding: 0 14px;
   min-height: 48px;
   border-radius: 10px;
@@ -255,14 +287,14 @@ nav[aria-label='Breadcrumb'] a {
 }
 .textarea {
   padding: 12px 14px;
-  line-height: 1.55;
   resize: vertical;
 }
 .textarea-serif {
-  font-size: 18px;
+  font: var(--type-body);
 }
 
 .chip {
+  font: var(--type-small);
   display: inline-flex;
   align-items: center;
   min-height: 44px;
@@ -272,13 +304,11 @@ nav[aria-label='Breadcrumb'] a {
   background: var(--canvas);
   color: var(--ink);
   cursor: pointer;
-  font-size: 16px;
 }
 .chip[aria-pressed='true'],
 .chip[aria-selected='true'] {
   border: 2px solid var(--ink);
   background: var(--paper);
-  font-weight: 600;
 }
 
 /* ── panels and notices: flat, Paper on Canvas ───────── */
@@ -297,9 +327,9 @@ nav[aria-label='Breadcrumb'] a {
   border-color: var(--edge);
 }
 .notice {
+  font: var(--type-small);
   border-radius: 10px;
   padding: 12px 14px;
-  font-size: 16px;
   background: var(--canvas);
   color: var(--ink);
 }
@@ -314,10 +344,9 @@ nav[aria-label='Breadcrumb'] a {
 
 /* a label, not a control: quiet, the same everywhere */
 .pill {
+  font: var(--type-small);
   display: inline-flex;
   align-items: center;
-  font-size: 16px;
-  font-weight: 400;
   border-radius: 6px;
   padding: 2px 10px;
   white-space: nowrap;
@@ -335,20 +364,20 @@ nav[aria-label='Breadcrumb'] a {
 }
 
 .avatar {
+  font: var(--type-small);
   flex: none;
   border-radius: 50%;
   display: flex;
   align-items: center;
   justify-content: center;
-  font-weight: 600;
 }
 
 .empty {
+  font: var(--type-small);
   border: 1.5px dashed var(--edge);
   border-radius: 16px;
   padding: 20px;
   color: var(--graphite);
-  font-size: 16px;
 }
 
 /* ── public pages (signed out) ───────────────────────── */
@@ -363,10 +392,10 @@ nav[aria-label='Breadcrumb'] a {
   gap: 12px 24px;
 }
 .public-nav {
+  font: var(--type-small);
   display: flex;
   flex-wrap: wrap;
   gap: 4px 20px;
-  font-size: 16px;
 }
 .public-nav a {
   min-height: 44px;
@@ -380,24 +409,15 @@ nav[aria-label='Breadcrumb'] a {
   margin: 0 auto;
   padding: 56px 24px;
 }
-.display,
-.h-section {
-  font-family: var(--display);
-  font-weight: 400;
-  font-size: clamp(26px, 3vw, 34px);
-}
 .display {
-  font-size: clamp(36px, 5vw, 60px);
-  line-height: 1.08;
-  letter-spacing: -0.02em;
+  font: var(--type-display);
   text-wrap: balance;
 }
 .h-section {
-  font-size: clamp(32px, 4vw, 48px);
-  letter-spacing: -0.015em;
+  font: var(--type-title);
 }
 .lede {
-  font-size: 16px;
+  font: var(--type-small);
   color: var(--graphite);
   text-wrap: pretty;
 }
@@ -407,6 +427,7 @@ nav[aria-label='Breadcrumb'] a {
   gap: 16px;
 }
 .step-num {
+  font: var(--type-small);
   width: 28px;
   height: 28px;
   border-radius: 50%;
@@ -415,8 +436,6 @@ nav[aria-label='Breadcrumb'] a {
   display: flex;
   align-items: center;
   justify-content: center;
-  font-weight: 700;
-  font-size: 16px;
 }
 .band {
   background: var(--ink);
@@ -428,6 +447,7 @@ nav[aria-label='Breadcrumb'] a {
   border-top: 1px solid var(--line);
 }
 .footer-inner {
+  font: var(--type-small);
   max-width: 1160px;
   margin: 0 auto;
   padding: 16px 24px;
@@ -435,7 +455,6 @@ nav[aria-label='Breadcrumb'] a {
   flex-wrap: wrap;
   gap: 8px 24px;
   justify-content: space-between;
-  font-size: 16px;
   color: var(--graphite);
 }
 
@@ -480,14 +499,13 @@ nav[aria-label='Breadcrumb'] a {
   gap: 4px;
 }
 .appnav a {
+  font: var(--type-small);
   min-height: 44px;
   padding: 0 14px;
   border-radius: 10px;
   display: inline-flex;
   align-items: center;
   text-decoration: none;
-  font-size: 16px;
-  font-weight: 600;
   color: var(--graphite);
 }
 .appnav a:hover {
@@ -495,7 +513,7 @@ nav[aria-label='Breadcrumb'] a {
   background: var(--hover);
 }
 .appnav a[aria-current='page'] {
-  color: var(--ink);
+  color: var(--brand-text);
   background: var(--paper);
 }
 
@@ -505,6 +523,7 @@ nav[aria-label='Breadcrumb'] a {
   margin-left: auto;
 }
 .project-menu-trigger {
+  font: var(--type-small);
   display: flex;
   align-items: center;
   gap: 10px;
@@ -514,8 +533,6 @@ nav[aria-label='Breadcrumb'] a {
   border-radius: 10px;
   border: 1px solid var(--line);
   background: var(--paper);
-  font-size: 16px;
-  font-weight: 600;
   cursor: pointer;
 }
 .project-menu-trigger:hover {
@@ -542,6 +559,7 @@ nav[aria-label='Breadcrumb'] a {
   box-shadow: var(--shadow-float);
 }
 .menu-item {
+  font: var(--type-small);
   display: flex;
   align-items: center;
   gap: 12px;
@@ -552,7 +570,6 @@ nav[aria-label='Breadcrumb'] a {
   border-radius: 10px;
   background: none;
   color: var(--ink);
-  font-size: 16px;
   text-align: left;
   text-decoration: none;
   cursor: pointer;
@@ -568,8 +585,8 @@ nav[aria-label='Breadcrumb'] a {
   background: var(--line);
 }
 .menu-note {
+  font: var(--type-small);
   padding: 6px 12px;
-  font-size: 16px;
   color: var(--graphite);
 }
 
@@ -589,12 +606,10 @@ nav[aria-label='Breadcrumb'] a {
   max-width: 1200px;
 }
 .page-title {
-  font-size: 35px;
+  font: var(--type-title);
 }
 .label-heading {
-  font-family: var(--sans);
-  font-size: 16px;
-  font-weight: 600;
+  font: var(--type-small);
   color: var(--graphite);
 }
 
@@ -646,6 +661,7 @@ nav[aria-label='Breadcrumb'] a {
     border-top: 1px solid var(--line);
   }
   .tabbar a {
+    font: var(--type-small);
     min-height: var(--tabbar);
     display: flex;
     flex-direction: column;
@@ -653,12 +669,10 @@ nav[aria-label='Breadcrumb'] a {
     justify-content: center;
     gap: 2px;
     text-decoration: none;
-    font-size: 16px;
-    font-weight: 600;
     color: var(--graphite);
   }
   .tabbar a[aria-current='page'] {
-    color: var(--ink);
+    color: var(--brand-text);
     background: var(--paper);
   }
   .main {
@@ -667,9 +681,6 @@ nav[aria-label='Breadcrumb'] a {
   }
   .app-focus .main {
     padding-bottom: calc(env(safe-area-inset-bottom) + 24px);
-  }
-  .page-title {
-    font-size: 29px;
   }
 }
 
@@ -707,22 +718,17 @@ a.list-row:hover {
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  line-height: 1.1;
   flex: none;
 }
 .date-tile .mon {
-  font-size: 16px;
-  font-weight: 700;
+  font: var(--type-small);
   color: var(--graphite);
 }
 .date-tile .day {
-  font-size: 16px;
-  font-weight: 600;
+  font: var(--type-small);
 }
 .row-title {
-  font-size: 16px;
-  font-weight: 500;
-  line-height: 1.4;
+  font: var(--type-heading);
 }
 
 /* ── reading a story ─────────────────────────────────── */
@@ -742,18 +748,17 @@ a.list-row:hover {
   gap: 20px;
 }
 .story-aside {
+  font: var(--type-small);
   flex: 1 1 200px;
   max-width: 240px;
   display: flex;
   flex-direction: column;
   gap: 18px;
-  font-size: 16px;
   padding-top: 6px;
 }
 /* a story's own words: the largest reading text in the app, at a comfortable measure */
 .prose {
-  font-size: 21px;
-  line-height: 1.6;
+  font: var(--type-body);
   max-width: 65ch;
   color: var(--ink);
   display: flex;
@@ -770,8 +775,7 @@ a.list-row:hover {
   text-underline-offset: 5px;
 }
 .provenance {
-  font-family: var(--sans);
-  font-size: 16px;
+  font: var(--type-small);
   color: var(--graphite);
   background: var(--canvas);
   border-radius: 6px;
@@ -791,6 +795,7 @@ a.list-row:hover {
   gap: 6px;
 }
 .tag-link {
+  font: var(--type-small);
   min-height: 44px;
   padding: 0 8px;
   border-radius: 6px;
@@ -799,7 +804,6 @@ a.list-row:hover {
   display: inline-flex;
   align-items: center;
   text-decoration: none;
-  font-size: 16px;
 }
 .tag-link.missing {
   border: 1.5px dashed var(--line);
@@ -850,7 +854,7 @@ a.list-row:hover {
   color: var(--ink);
 }
 .decade-name {
-  font-size: 16px;
+  font: var(--type-small);
   color: var(--graphite);
 }
 .when-row {
@@ -859,12 +863,11 @@ a.list-row:hover {
   align-items: stretch;
 }
 .when {
+  font: var(--type-small);
   flex: none;
   width: 88px;
-  font-weight: 600;
   padding-top: 10px;
   text-align: right;
-  font-size: 16px;
 }
 .when-card {
   flex: 1;
@@ -903,6 +906,7 @@ a.when-card:hover {
   padding: 3px;
 }
 .segmented button {
+  font: var(--type-small);
   flex: 1;
   min-height: 44px;
   border: none;
@@ -910,14 +914,13 @@ a.when-card:hover {
   background: none;
   color: var(--graphite);
   cursor: pointer;
-  font-size: 16px;
 }
 .segmented button[aria-selected='true'] {
   background: var(--paper);
-  font-weight: 600;
   color: var(--ink);
 }
 .entity-link {
+  font: var(--type-small);
   display: flex;
   gap: 10px;
   align-items: center;
@@ -925,7 +928,6 @@ a.when-card:hover {
   padding: 2px 8px;
   border-radius: 6px;
   text-decoration: none;
-  font-size: 16px;
 }
 .entity-link[aria-current='page'] {
   background: var(--paper);
@@ -947,11 +949,11 @@ a.when-card:hover {
   inset: 0;
 }
 .graph-node {
+  font: var(--type-small);
   position: absolute;
   transform: translate(-50%, -50%);
   border-radius: 6px;
   padding: 4px 10px;
-  font-size: 16px;
   text-decoration: none;
   white-space: nowrap;
   max-width: 42%;
@@ -968,7 +970,6 @@ a.when-card:hover {
 .graph-node.center {
   background: var(--canvas);
   color: var(--ink);
-  font-weight: 600;
   padding: 6px 12px;
 }
 
@@ -984,11 +985,11 @@ a.when-card:hover {
   box-shadow: none;
 }
 .ask-box input {
+  font: var(--type-body);
   flex: 1;
   min-width: 0;
   border: none;
   background: none;
-  font-size: 16px;
   min-height: 44px;
 }
 .ask-box input:focus-visible {
@@ -1028,6 +1029,7 @@ a.when-card:hover {
   gap: 8px;
 }
 .review-dot {
+  font: var(--type-small);
   min-height: 44px;
   min-width: 44px;
   padding: 0 8px;
@@ -1035,8 +1037,6 @@ a.when-card:hover {
   border: 1px solid var(--line);
   background: var(--paper);
   color: var(--graphite);
-  font-size: 16px;
-  font-weight: 600;
   cursor: pointer;
 }
 .review-dot.ok {
@@ -1159,11 +1159,10 @@ a.when-card:hover {
   min-height: 300px;
 }
 .lp-panel-label {
+  font: var(--type-small);
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  font-size: 16px;
-  font-weight: 600;
   color: var(--graphite);
 }
 .lp-rec {
@@ -1179,12 +1178,10 @@ a.when-card:hover {
   }
 }
 .lp-line {
-  font-size: 16px;
-  line-height: 1.55;
+  font: var(--type-small);
   opacity: 0;
 }
 .lp-line b {
-  font-weight: 600;
   color: var(--graphite);
   margin-right: 4px;
 }
@@ -1221,16 +1218,14 @@ a.when-card:hover {
   background: var(--canvas);
 }
 .lp-when {
-  font-size: 16px;
-  font-weight: 600;
+  font: var(--type-small);
   color: var(--ink);
 }
 .lp-mem-title {
-  font-weight: 600;
-  font-size: 16px;
+  font: var(--type-heading);
 }
 .lp-mem-quote {
-  font-size: 16px;
+  font: var(--type-small);
   color: var(--graphite);
 }
 .lp-decades {
@@ -1270,7 +1265,7 @@ a.when-card:hover {
   background: var(--canvas);
 }
 .lp-decade {
-  font-size: 16px;
+  font: var(--type-small);
   color: var(--graphite);
 }
 
@@ -1284,10 +1279,7 @@ a.when-card:hover {
   gap: 28px;
 }
 .lp-word {
-  font-family: var(--display);
-  font-weight: 400;
-  font-size: clamp(32px, 4vw, 44px);
-  letter-spacing: -0.01em;
+  font: var(--type-title);
 }
 .lp-ask {
   width: 100%;
@@ -1297,11 +1289,11 @@ a.when-card:hover {
   gap: 12px;
 }
 .lp-typed {
+  font: var(--type-small);
   flex: 1;
   min-height: 34px;
   display: flex;
   align-items: center;
-  font-size: 16px;
 }
 .lp-typed::after {
   content: '';
@@ -1319,12 +1311,12 @@ a.when-card:hover {
   align-items: flex-start;
 }
 .lp-a2 {
+  font: var(--type-small);
   opacity: 0;
   background: var(--canvas);
   border: 1px solid var(--line);
   border-radius: 8px;
   padding: 12px 14px;
-  font-size: 16px;
 }
 .lp-a2 b {
   color: var(--ink);
@@ -1348,11 +1340,11 @@ a.when-card:hover {
   stroke-dashoffset: 1;
 }
 .lp-node {
+  font: var(--type-small);
   position: absolute;
   opacity: 0;
   translate: -50% -50%;
   white-space: nowrap;
-  font-size: 16px;
   padding: 6px 12px;
   border-radius: 999px;
   background: var(--paper);
@@ -1370,9 +1362,7 @@ a.when-card:hover {
 .lp-node.lp-center {
   background: var(--canvas);
   border-color: var(--line);
-  font-weight: 600;
   padding: 8px 16px;
-  font-size: 16px;
 }
 .lp-final {
   padding: 56px 24px 88px;
@@ -1393,7 +1383,6 @@ a.when-card:hover {
     min-height: 0;
   }
   .lp-node {
-    font-size: 16px;
     padding: 4px 8px;
   }
 }
@@ -1445,9 +1434,8 @@ a.when-card:hover {
 }
 
 .live-clock {
+  font: var(--type-small);
   font-variant-numeric: tabular-nums;
-  font-weight: 600;
-  font-size: 16px;
   min-width: 44px;
 }
 .live-dot {
@@ -1502,16 +1490,14 @@ a.when-card:hover {
   gap: 2px;
 }
 .live-turn p {
+  font: var(--type-body);
   margin: 0;
-  font-size: 16px;
-  line-height: 1.6;
 }
 .live-who {
+  font: var(--type-small);
   display: inline-flex;
   align-items: baseline;
   gap: 8px;
-  font-size: 16px;
-  font-weight: 600;
 }
 /* in the review, a turn's speaker can be changed: the name is the control */
 .live-who-select {
@@ -1541,7 +1527,6 @@ a.when-card:hover {
   color: var(--ink);
 }
 .live-time {
-  font-weight: 400;
   color: var(--graphite);
   font-variant-numeric: tabular-nums;
 }

@@ -70,8 +70,8 @@ export function NewArchive() {
       </header>
       <main className="page page-narrow" style={{ paddingTop: 21 }}>
         <div className="stack" style={{ gap: 5 }}>
-          <h1 style={{ fontSize: 24 }}>Whose stories are we keeping?</h1>
-          <p className="muted" style={{ fontSize: 16 }}>
+          <h1 className="t-heading">Whose stories are we keeping?</h1>
+          <p className="muted t-small">
             A project holds the interviews, stories, people and places, all in one spot. You can
             invite family to help once it’s made.
           </p>

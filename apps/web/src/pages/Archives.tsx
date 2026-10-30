@@ -84,13 +84,11 @@ export function Archives() {
       <TopBar />
       <main className="page">
         <div className="stack" style={{ gap: 4 }}>
-          <h1 style={{ fontSize: 24 }}>
+          <h1 className="t-heading">
             {greeting()}
             {first ? `, ${first}` : ''}
           </h1>
-          <p className="muted" style={{ fontSize: 16 }}>
-            Whose stories would you like to spend time with?
-          </p>
+          <p className="muted t-small">Whose stories would you like to spend time with?</p>
         </div>
 
         {invites.length > 0 && (
@@ -152,9 +150,7 @@ export function Archives() {
                 >
                   <Avatar name={a.subjectName} size={36} />
                   <span className="stack" style={{ gap: 2 }}>
-                    <span className="title" style={{ fontSize: 16, lineHeight: 1.15 }}>
-                      {a.subjectName}
-                    </span>
+                    <span className="title t-small">{a.subjectName}</span>
                     <span className="muted">
                       {a.kind === 'family' ? 'Family · ' : ''}
                       {ROLE_LINE[a.role] ?? 'Shared with you'}
@@ -192,9 +188,7 @@ export function Archives() {
                 >
                   <Icon name="plus" size={24} stroke={2.2} />
                 </span>
-                <span className="title" style={{ fontSize: 16 }}>
-                  Start a new project
-                </span>
+                <span className="title t-small">Start a new project</span>
                 <span className="small muted">For one person, or a whole family</span>
               </Link>
             </li>

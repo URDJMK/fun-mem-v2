@@ -125,7 +125,7 @@ export function FirepitMark({ size = 28 }: { size?: number }) {
   const cut = size <= 24 ? MARK.small : MARK.full;
   return (
     <svg aria-hidden="true" width={size} height={size} viewBox="0 0 256 256" className="mark">
-      <path d={cut.glow} fill="var(--ink)" />
+      <path d={cut.glow} fill="var(--brand-mark)" />
       <path d={cut.bowl} fill="var(--ink)" />
     </svg>
   );
@@ -146,14 +146,13 @@ export function Avatar({ name, size = 36 }: { name: string; size?: number }) {
   return (
     <span
       aria-hidden="true"
-      className="avatar"
+      className="avatar t-small"
       style={{
         width: size,
         height: size,
         background: 'var(--canvas)',
         color: 'var(--ink)',
         border: '1px solid var(--line)',
-        fontSize: Math.max(16, size * 0.46),
       }}
     >
       {initial}
@@ -205,13 +204,7 @@ export function Account({ withName = false }: { withName?: boolean }) {
       {withName && name && (
         <span
           className="small"
-          style={{
-            fontWeight: 500,
-            flex: 1,
-            minWidth: 0,
-            overflow: 'hidden',
-            textOverflow: 'ellipsis',
-          }}
+          style={{ flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis' }}
         >
           {name}
         </span>

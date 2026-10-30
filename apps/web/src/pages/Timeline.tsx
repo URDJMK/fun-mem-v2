@@ -76,9 +76,9 @@ function Years({ archiveId, notes }: { archiveId: string; notes: NoteSummary[] }
           className="stack"
           style={{ gap: 8 }}
         >
-          <h2 id={`h${d.start}`} style={{ fontSize: 16 }}>
+          <h2 id={`h${d.start}`} className="t-small">
             The {d.start}s{' '}
-            <span className="muted" style={{ fontSize: 16 }}>
+            <span className="muted t-small">
               · {d.items.length === 0 ? 'nothing yet' : count(d.items.length, 'memory', 'memories')}
             </span>
           </h2>
@@ -107,9 +107,7 @@ function Years({ archiveId, notes }: { archiveId: string; notes: NoteSummary[] }
                     {whenLabel(n.occurred).replace(/^Around /, '~')}
                   </span>
                   <Link to={noteHref(archiveId, n)} className="when-card">
-                    <span className="title" style={{ fontSize: 16 }}>
-                      {n.title}
-                    </span>
+                    <span className="title t-small">{n.title}</span>
                     <span className="small muted">{typeLabel(n.type)}</span>
                   </Link>
                 </li>

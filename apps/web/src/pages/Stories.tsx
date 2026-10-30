@@ -68,7 +68,7 @@ export function Stories() {
       </div>
 
       {stories.length > 6 && (
-        <label className="field" style={{ fontWeight: 400 }}>
+        <label className="field">
           <span className="visually-hidden">Find a story by its title</span>
           <input
             className="input"

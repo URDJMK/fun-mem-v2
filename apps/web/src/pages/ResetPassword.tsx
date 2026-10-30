@@ -41,7 +41,7 @@ export function ResetPassword() {
   }
 
   return (
-    <div className="stack" style={{ minHeight: '100vh', fontSize: 16 }}>
+    <div className="stack t-small" style={{ minHeight: '100vh' }}>
       <title>Reset password · Firepit</title>
       <header className="public-header" style={{ width: '100%' }}>
         <Brand />
@@ -72,7 +72,7 @@ export function ResetPassword() {
             </p>
           ) : !ready ? (
             <div className="stack" style={{ gap: 10 }}>
-              <h1 style={{ fontSize: 22 }}>This link didn’t work</h1>
+              <h1 className="t-heading">This link didn’t work</h1>
               <p className="muted">It may have expired. Ask for a new one from the sign-in page.</p>
               <button
                 type="button"
@@ -84,7 +84,7 @@ export function ResetPassword() {
             </div>
           ) : done ? (
             <div className="stack" style={{ gap: 10 }}>
-              <h1 style={{ fontSize: 22 }}>Password changed</h1>
+              <h1 className="t-heading">Password changed</h1>
               <p className="muted">You’re signed in with your new password.</p>
               <button type="button" className="btn btn-primary" onClick={() => void navigate('/')}>
                 Continue
@@ -93,7 +93,7 @@ export function ResetPassword() {
           ) : (
             <>
               <div className="stack" style={{ gap: 4, textAlign: 'center' }}>
-                <h1 style={{ fontSize: 22 }}>Choose a new password</h1>
+                <h1 className="t-heading">Choose a new password</h1>
               </div>
               <form className="stack" style={{ gap: 10 }} onSubmit={(e) => void submit(e)}>
                 <label className="field">

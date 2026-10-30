@@ -226,7 +226,7 @@ function InviteCard({
   return (
     <section className="card stack invite-card" style={{ gap: 14 }}>
       <div className="stack" style={{ gap: 2 }}>
-        <h2 style={{ fontSize: 16 }}>Invite someone</h2>
+        <h2 className="t-small">Invite someone</h2>
         <p className="small muted">
           They’ll find the invitation in Firepit and choose whether to join.
         </p>

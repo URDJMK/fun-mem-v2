@@ -188,12 +188,12 @@ export function Running({ job, onCancel }: { job: ImportJob; onCancel: () => Pro
   return (
     <div className="stack" style={{ gap: 12 }}>
       <h1 className="page-title">Reading the interview…</h1>
-      <p className="muted" style={{ fontSize: 16 }}>
+      <p className="muted t-small">
         A long conversation takes a few minutes. You can leave this page — it keeps going, and you
         can come back to it; nothing is saved until you’ve read it over.
       </p>
       <div className="card stack" style={{ gap: 8 }} role="status">
-        <span style={{ fontWeight: 600 }}>{STAGE[job.stage]}</span>
+        <span>{STAGE[job.stage]}</span>
         <div className="progress" aria-hidden="true">
           <span style={{ width: `${pct}%` }} />
         </div>
@@ -237,7 +237,7 @@ export function WhoIsTelling({
     <div className="stack" style={{ gap: 12 }}>
       <div className="stack" style={{ gap: 5 }}>
         <h1 className="page-title">Who is telling?</h1>
-        <p className="muted" style={{ fontSize: 16 }}>
+        <p className="muted t-small">
           It wasn’t clear whose memories these are. Choose the people whose words should be kept as
           testimony; the others are the ones asking.
         </p>
@@ -254,7 +254,7 @@ export function WhoIsTelling({
                 setChosen((c) => (e.target.checked ? [...c, s.id] : c.filter((x) => x !== s.id)))
               }
             />
-            <span style={{ fontWeight: 600 }}>{s.id}</span>
+            <span>{s.id}</span>
             <span className="small muted">{count(s.turns, 'turn', 'turns')}</span>
           </label>
         ))}
@@ -475,7 +475,7 @@ export function Review({
           </div>
         )}
         {decided[at] && !editing && (
-          <p role="status" style={{ fontWeight: 600, color: 'var(--ink)' }}>
+          <p role="status" style={{ color: 'var(--ink)' }}>
             {decided[at] === 'ok'
               ? 'This one will be kept.'
               : 'Left out. You can change your mind until you save.'}
@@ -528,7 +528,7 @@ function MemoryView({
   return (
     <>
       {meta && <span className="small muted">{meta}</span>}
-      <h2 style={{ fontSize: 18, lineHeight: 1.15 }}>{shown.title}</h2>
+      <h2 className="t-body">{shown.title}</h2>
       <div className="prose" style={{ gap: 9 }}>
         {parts.paragraphs.map((p, i) => (
           <p key={i}>
@@ -538,11 +538,11 @@ function MemoryView({
       </div>
       {parts.provenance.length > 0 && (
         <div className="said">
-          <span className="small" style={{ fontWeight: 600, color: 'var(--ink)' }}>
+          <span className="small" style={{ color: 'var(--ink)' }}>
             Where it came from
           </span>
           {parts.provenance.map((line, i) => (
-            <span key={i} style={{ fontSize: 16 }}>
+            <span key={i} className="t-small">
               {line}
             </span>
           ))}
@@ -563,7 +563,7 @@ function MemoryView({
             <ol className="stack" style={{ gap: 8, paddingLeft: 18, margin: 0 }}>
               {memory.sources!.map((s, i) => (
                 <li key={i} className="small">
-                  <span style={{ fontWeight: 600 }}>{s.sentence}</span>
+                  <span>{s.sentence}</span>
                   <span
                     className="said"
                     style={{ display: 'block', whiteSpace: 'pre-line', marginTop: 3 }}
@@ -588,14 +588,12 @@ function MemoryView({
           className="stack"
           style={{ background: 'var(--canvas)', borderRadius: 8, padding: '9px 12px', gap: 3 }}
         >
-          <span className="small" style={{ fontWeight: 600, color: 'var(--ink)' }}>
+          <span className="small" style={{ color: 'var(--ink)' }}>
             {c.source
               ? `May disagree with “${c.source.title}”`
               : 'May disagree with another memory'}
           </span>
-          <span style={{ fontSize: 16 }}>
-            That says “{c.existing}”. Both will be kept, and marked.
-          </span>
+          <span className="t-small">That says “{c.existing}”. Both will be kept, and marked.</span>
         </div>
       ))}
     </>

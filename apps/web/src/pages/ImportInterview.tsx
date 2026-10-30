@@ -131,7 +131,7 @@ function TranscriptForm({
     <>
       <div className="stack" style={{ gap: 3 }}>
         <h1 className="page-title">Add an interview</h1>
-        <p className="muted" style={{ fontSize: 16 }}>
+        <p className="muted t-small">
           Bring in the transcript of a conversation with {family ? 'someone in the family' : name}.
           It becomes memories in their own words, and you read every one before it joins the
           project.

@@ -160,8 +160,8 @@ function Answer({
         className="stack"
         style={{ background: 'var(--canvas)', borderRadius: 8, padding: '10px 12px', gap: 4 }}
       >
-        <span style={{ fontWeight: 600, color: 'var(--ink)' }}>Not in the records</span>
-        <p style={{ fontSize: 16, lineHeight: 1.5 }}>
+        <span style={{ color: 'var(--ink)' }}>Not in the records</span>
+        <p className="t-small">
           {answer.message ?? 'There is not enough in the records to answer this.'}
         </p>
         <span className="small muted">
@@ -179,18 +179,16 @@ function Answer({
       {answer.selfIdentification && <p className="small muted">{answer.selfIdentification}</p>}
       <div className="stack" style={{ gap: 8 }}>
         {answer.claims.map((c, i) => (
-          <p key={i} style={{ fontSize: 16, lineHeight: 1.6 }}>
+          <p key={i} className="t-small">
             <span className={c.kind === 'quote' ? 'quote' : undefined}>{c.text}</span>{' '}
-            <span className="small" style={{ fontFamily: 'var(--sans)', color: 'var(--graphite)' }}>
+            <span className="small" style={{ color: 'var(--graphite)' }}>
               — {KIND_LABEL[c.kind] ?? c.kind}
             </span>
           </p>
         ))}
       </div>
       <div className="stack" style={{ gap: 5 }}>
-        <span className="small muted" style={{ fontWeight: 600 }}>
-          Where this comes from
-        </span>
+        <span className="small muted">Where this comes from</span>
         <div className="row">
           {sources.map((id) => {
             const n = byId.get(id);

@@ -36,6 +36,9 @@ function tooSmall(): string[] {
     const text = readFileSync(file, 'utf8');
     const where = (i: number) => `${relative(src, file)}:${text.slice(0, i).split('\n').length}`;
     if (file.endsWith('.css')) {
+      // the type roles carry the sizes: `--type-small: 500 16px/1.4 var(--font-text);`
+      for (const m of text.matchAll(/--type-[a-z]+:\s*\d00 (\d+(?:\.\d+)?px)\//g))
+        for (const size of sizes(m[1]!)) if (size < FLOOR) out.push(`${where(m.index)} ${m[0]}`);
       for (const m of text.matchAll(/font-size:\s*([^;]+);/g))
         for (const size of sizes(m[1]!)) if (size < FLOOR) out.push(`${where(m.index)} ${m[0]}`);
     }
@@ -52,6 +55,11 @@ function tooSmall(): string[] {
 describe('the type floor', () => {
   it('sets no text below 16px, in any stylesheet or component', () => {
     expect(tooSmall()).toEqual([]);
+  });
+
+  it('finds the sizes in the type roles', () => {
+    const roles = readFileSync(join(src, 'styles.css'), 'utf8').match(/--type-[a-z]+:/g) ?? [];
+    expect(roles.length).toBeGreaterThan(0);
   });
 
   it('reads the sizes it checks the way a browser would', () => {

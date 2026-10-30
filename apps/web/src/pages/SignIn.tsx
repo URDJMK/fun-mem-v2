@@ -95,7 +95,7 @@ export function SignIn() {
   }
 
   return (
-    <div className="stack" style={{ minHeight: '100vh', fontSize: 16 }}>
+    <div className="stack t-small" style={{ minHeight: '100vh' }}>
       <title>Sign in · Firepit</title>
       <header className="public-header" style={{ width: '100%' }}>
         <Brand />
@@ -133,7 +133,7 @@ export function SignIn() {
           }}
         >
           <div className="stack" style={{ gap: 4, textAlign: 'center' }}>
-            <h1 style={{ fontSize: 22 }}>Welcome</h1>
+            <h1 className="t-heading">Welcome</h1>
             <p className="muted">
               {mode === 'signup'
                 ? 'Create an account. It only takes a moment.'
@@ -157,15 +157,8 @@ export function SignIn() {
           >
             <span
               aria-hidden="true"
-              className="avatar"
-              style={{
-                width: 22,
-                height: 22,
-                background: 'var(--canvas)',
-                fontFamily: 'var(--sans)',
-                fontSize: 16,
-                fontWeight: 700,
-              }}
+              className="avatar t-small"
+              style={{ width: 22, height: 22, background: 'var(--canvas)' }}
             >
               G
             </span>

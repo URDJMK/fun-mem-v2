@@ -20,11 +20,7 @@
 }
 .home-name,
 .studio-caption span {
-  font-family: var(--display);
-  font-weight: 400;
-  font-size: 22px;
-  line-height: 1.2;
-  letter-spacing: -0.01em;
+  font: var(--type-title);
 }
 .home-middle {
   flex: 1;
@@ -46,10 +42,10 @@
 }
 /* the record button (DESIGN.md): Voice green, a full pill; the card it becomes grows out of it */
 .home-start-btn {
+  font: var(--type-small);
   position: relative;
   min-height: 64px;
   padding: 0 32px;
-  font-size: 18px;
   border-radius: 999px;
   background-color: var(--voice);
   color: var(--paper);
@@ -67,6 +63,7 @@
   border: 1px solid var(--line);
 }
 .home-mode button {
+  font: var(--type-small);
   display: inline-flex;
   align-items: center;
   gap: 6px;
@@ -76,8 +73,6 @@
   border-radius: 999px;
   background: none;
   color: var(--graphite);
-  font-size: 16px;
-  font-weight: 500;
   cursor: pointer;
   transition:
     background-color 0.2s,
@@ -88,9 +83,9 @@
   color: var(--paper);
 }
 .home-hint {
+  font: var(--type-small);
   max-width: 54ch;
   text-align: center;
-  font-size: 16px;
   color: var(--graphite);
 }
 .home-aura {
@@ -150,32 +145,22 @@
   padding: 26px 34px 30px;
 }
 .assist-step {
+  font: var(--type-small);
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 12px;
-  font-size: 16px;
-  font-weight: 600;
   color: var(--ink);
 }
 .assist-step .btn {
   text-transform: none;
-  letter-spacing: 0;
 }
 .assist-prompt {
-  font-family: var(--display);
-  font-weight: 400;
-  font-size: clamp(26px, 3.4vw, 36px);
-  line-height: 1.22;
-  letter-spacing: -0.015em;
+  font: var(--type-title);
   text-wrap: balance;
 }
-.assist-question {
-  font-size: clamp(28px, 3.8vw, 40px);
-}
 .assist-eyebrow {
-  font-size: 16px;
-  font-weight: 600;
+  font: var(--type-small);
   color: var(--graphite);
   margin-bottom: -8px;
 }
@@ -184,7 +169,6 @@
   display: flex;
   align-items: center;
   gap: 10px;
-  font-size: 16px;
   color: var(--graphite);
 }
 .assist-wave {
@@ -223,7 +207,6 @@
 }
 .assist-state[data-state='listening'] {
   color: var(--ink);
-  font-weight: 500;
 }
 
 /* what the assistant has learned so far */
@@ -236,6 +219,7 @@
   gap: 8px;
 }
 .assist-person {
+  font: var(--type-small);
   display: inline-flex;
   align-items: center;
   gap: 8px;
@@ -244,7 +228,6 @@
   border-radius: 999px;
   border: 1px dashed var(--line);
   color: var(--graphite);
-  font-size: 16px;
   transition:
     background-color 0.3s,
     border-color 0.3s,
@@ -254,7 +237,6 @@
   border: 1px solid color-mix(in srgb, var(--ink) 40%, var(--line));
   background: var(--canvas);
   color: var(--ink);
-  font-weight: 600;
 }
 .assist-person-dot {
   width: 18px;
@@ -272,8 +254,7 @@
   opacity: 1;
 }
 .assist-person-wait {
-  font-size: 16px;
-  font-weight: 400;
+  font: var(--type-small);
 }
 .assist-who {
   width: 100%;
@@ -285,12 +266,11 @@
   background: var(--canvas);
 }
 .assist-note {
-  font-size: 16px;
+  font: var(--type-small);
   color: var(--graphite);
 }
 .assist-quote {
-  font-family: var(--display);
-  font-size: 18px;
+  font: var(--type-body);
   color: var(--ink);
 }
 .assist-topics {
@@ -299,9 +279,9 @@
   gap: 8px;
 }
 .assist-topics .chip {
+  font: var(--type-small);
   min-height: 44px;
   padding: 0 14px;
-  font-size: 16px;
   border-radius: 999px;
   transition:
     background-color 0.25s,
@@ -350,6 +330,7 @@
   gap: 2px;
 }
 .assist-next button {
+  font: var(--type-small);
   width: 100%;
   text-align: left;
   padding: 8px 10px;
@@ -357,8 +338,6 @@
   border-radius: 8px;
   background: none;
   color: var(--ink);
-  font-size: 16px;
-  line-height: 1.45;
   cursor: pointer;
   transition: background-color 0.2s;
 }
@@ -366,14 +345,13 @@
   background: color-mix(in srgb, var(--paper) 70%, transparent);
 }
 .assist-tip {
+  font: var(--type-small);
   display: flex;
   flex-direction: column;
   gap: 4px;
   padding: 12px 14px;
   border-radius: 12px;
   background: color-mix(in srgb, var(--canvas) 85%, transparent);
-  font-size: 16px;
-  line-height: 1.5;
   align-self: start;
 }
 
@@ -414,15 +392,14 @@
   border-bottom: 1px solid var(--line);
 }
 .float-title {
+  font: var(--type-small);
   flex: 1;
-  font-size: 16px;
-  font-weight: 600;
   color: var(--graphite);
 }
 .float-latest {
+  font: var(--type-small);
   flex: 1;
   min-width: 0;
-  font-size: 16px;
   color: var(--ink);
   white-space: nowrap;
   overflow: hidden;
@@ -461,12 +438,11 @@
   gap: 10px;
 }
 .float-body .live-turn p {
-  font-size: 16px;
-  line-height: 1.5;
+  font: var(--type-small);
 }
 .transcript-empty {
+  font: var(--type-small);
   color: var(--graphite);
-  font-size: 16px;
 }
 
 /* ── reading it over ──────────────────────────────────── */
@@ -485,6 +461,7 @@
 }
 /* the second transcription, of the whole recording */
 .review-pass {
+  font: var(--type-small);
   display: flex;
   flex-wrap: wrap;
   align-items: center;
@@ -492,7 +469,6 @@
   margin: 0;
   padding: 10px 14px;
   border-radius: 10px;
-  font-size: 16px;
   background: var(--canvas);
   color: var(--graphite);
 }
@@ -521,15 +497,14 @@
   background: var(--paper);
 }
 .review-fix-words {
-  font-size: 16px;
+  font: var(--type-small);
   white-space: nowrap;
 }
 .review-fix-words s {
   color: var(--graphite);
 }
 .review-notes li {
-  font-size: 16px;
-  line-height: 1.5;
+  font: var(--type-small);
 }
 .review-stray {
   display: flex;
@@ -546,9 +521,7 @@
 
 /* ── the coach: one suggested move at a time ──────────── */
 .coach-thinking {
-  font-size: 16px;
-  font-weight: 500;
-  letter-spacing: 0;
+  font: var(--type-small);
   text-transform: none;
   color: var(--graphite);
   animation: guide-pulse 1.4s ease-in-out infinite;
@@ -580,19 +553,18 @@
   opacity: 0.55;
 }
 .assist-label {
-  font-size: clamp(22px, 2.6vw, 28px);
+  font: var(--type-heading);
   font-style: italic;
 }
 .coach-reason {
+  font: var(--type-small);
   display: flex;
   align-items: center;
   gap: 8px;
-  font-size: 16px;
   color: var(--graphite);
 }
 .coach-source {
-  font-size: 16px;
-  font-weight: 700;
+  font: var(--type-small);
   padding: 2px 6px;
   border-radius: 4px;
   background: var(--canvas);
@@ -623,7 +595,7 @@
   color: var(--graphite);
 }
 .coach-privacy {
-  font-size: 16px;
+  font: var(--type-small);
   color: var(--graphite);
   padding-top: 6px;
   border-top: 1px solid var(--line);
@@ -637,13 +609,13 @@
   gap: 6px;
 }
 .coach-threads button {
+  font: var(--type-small);
   min-height: 44px;
   padding: 0 12px;
   border: 1px dashed var(--line);
   border-radius: 999px;
   background: color-mix(in srgb, var(--paper) 70%, transparent);
   color: var(--ink);
-  font-size: 16px;
   cursor: pointer;
   transition:
     border-color 0.2s,
@@ -682,15 +654,14 @@
   gap: 2px;
 }
 .coach-notes-list li {
+  font: var(--type-small);
   display: flex;
   align-items: baseline;
   gap: 8px;
-  font-size: 16px;
-  line-height: 1.45;
 }
 .coach-notes-time {
+  font: var(--type-small);
   flex: none;
-  font-size: 16px;
   color: var(--graphite);
   font-variant-numeric: tabular-nums;
 }
@@ -700,12 +671,11 @@
   overflow-wrap: anywhere;
 }
 .coach-notes-remove {
+  font: var(--type-small);
   flex: none;
   border: 0;
   background: none;
   color: var(--graphite);
-  font-size: 16px;
-  line-height: 1;
   cursor: pointer;
   padding: 0 4px;
 }
@@ -720,9 +690,9 @@
   margin: 0;
 }
 .coach-time {
+  font: var(--type-small);
   padding: 10px 12px;
   border-radius: 10px;
-  font-size: 16px;
   background: var(--canvas);
   color: var(--graphite);
 }
@@ -733,9 +703,8 @@
 /* the interview has reached its thanks: End stands out (as the primary button, still) */
 
 .studio-with {
-  font-size: 16px;
+  font: var(--type-small);
   color: var(--graphite);
-  font-family: var(--sans);
 }
 
 /* ── a family project: who are you talking with ───────── */
@@ -750,9 +719,7 @@
   border: 1px solid var(--line);
 }
 .narrator-title {
-  font-family: var(--display);
-  font-size: 22px;
-  letter-spacing: -0.01em;
+  font: var(--type-heading);
 }
 .narrator-people {
   display: flex;
@@ -760,6 +727,7 @@
   gap: 8px;
 }
 .narrator-person {
+  font: var(--type-small);
   display: inline-flex;
   align-items: center;
   gap: 8px;
@@ -769,7 +737,6 @@
   border: 1px solid var(--line);
   background: var(--paper);
   color: var(--ink);
-  font-size: 16px;
   cursor: pointer;
   transition:
     border-color 0.2s,
@@ -802,14 +769,12 @@
   align-items: center;
   gap: 8px;
   min-height: 44px;
-  font-weight: 400;
 }
 .country-picker {
   display: flex;
   flex-direction: column;
   gap: 4px;
   max-width: 360px;
-  font-weight: 400;
 }
 .country-list {
   list-style: none;
@@ -823,6 +788,7 @@
   box-shadow: var(--shadow-float);
 }
 .country-list li {
+  font: var(--type-small);
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -830,7 +796,6 @@
   min-height: 44px;
   padding: 0 10px;
   border-radius: 6px;
-  font-size: 16px;
   cursor: pointer;
 }
 .country-list li[data-active='true'] {
@@ -838,10 +803,9 @@
 }
 .country-list li[aria-selected='true'] {
   color: var(--ink);
-  font-weight: 600;
 }
 .country-code {
-  font-size: 16px;
+  font: var(--type-small);
   color: var(--graphite);
   font-variant-numeric: tabular-nums;
 }
@@ -855,7 +819,6 @@
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
   gap: 8px;
-  font-weight: 400;
 }
 
 /* ── members and invites ──────────────────────────────── */
@@ -903,7 +866,6 @@
 .invite-mail {
   width: 28px;
   height: 28px;
-  font-weight: 600;
 }
 .invite-picked,
 .invite-waiting {
@@ -970,10 +932,10 @@
   opacity: 0.45;
 }
 .member-role {
+  font: var(--type-small);
   width: auto;
   min-height: 44px;
   padding: 0 8px;
-  font-size: 16px;
 }
 
 @media (max-width: 639px) {

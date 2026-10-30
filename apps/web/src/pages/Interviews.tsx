@@ -156,7 +156,7 @@ export function Interviews() {
         <Failed>Could not load the interviews. Reload the page.</Failed>
       ) : runs.length === 0 ? (
         <div className="empty stack" style={{ gap: 4 }}>
-          <span className="title" style={{ fontSize: 16, color: 'var(--ink)' }}>
+          <span className="title t-small" style={{ color: 'var(--ink)' }}>
             No interviews yet
           </span>
           <span>
