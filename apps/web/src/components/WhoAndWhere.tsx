@@ -397,7 +397,7 @@ function NodeMark({
   dimmed: boolean;
   onPick: () => void;
 }) {
-  // large enough for two initials at the 16px floor
+  // large enough for two initials in the small role
   const r = Math.min(28, 18 + node.stories * 2) + (node.subject ? 4 : 0);
   const cls = `wa-node wa-${node.type}${node.subject ? ' wa-subject' : ''}${picked ? ' wa-picked' : ''}${dimmed ? ' wa-dim' : ''}`;
   return (

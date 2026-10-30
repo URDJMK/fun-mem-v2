@@ -103,7 +103,7 @@ export function Archives() {
       <TopBar />
       <main className="page projects">
         <div className="stack" style={{ gap: 2 }}>
-          <h1 className="t-heading">
+          <h1 className="t-title">
             {greeting()}
             {first ? `, ${first}` : ''}
           </h1>

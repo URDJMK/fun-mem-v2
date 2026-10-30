@@ -3,11 +3,12 @@ import { join, relative } from 'node:path';
 import { describe, expect, it } from 'vitest';
 
 /**
- * Text never goes below 16px (DESIGN.md): the people Firepit is for read it with older eyes.
- * Every font size written in the app's stylesheets and components is held to that, so a new
- * 13px label fails here instead of shipping.
+ * Text never goes below 14px (DESIGN.md): the people Firepit is for read it with older eyes, so
+ * the interface's smallest text (labels, menus, meta lines) stops at 14px, and reading text sits
+ * at 18px. Every font size written in the app's stylesheets and components is held to that, so a
+ * new 12px label fails here instead of shipping.
  */
-const FLOOR = 16;
+const FLOOR = 14;
 const src = join(__dirname, '..', 'src');
 
 function files(dir: string): string[] {
@@ -36,7 +37,7 @@ function tooSmall(): string[] {
     const text = readFileSync(file, 'utf8');
     const where = (i: number) => `${relative(src, file)}:${text.slice(0, i).split('\n').length}`;
     if (file.endsWith('.css')) {
-      // the type roles carry the sizes: `--type-small: 500 16px/1.4 var(--font-text);`
+      // the type roles carry the sizes: `--type-small: 500 14px/1.4 var(--font-text);`
       for (const m of text.matchAll(/--type-[a-z]+:\s*\d00 (\d+(?:\.\d+)?px)\//g))
         for (const size of sizes(m[1]!)) if (size < FLOOR) out.push(`${where(m.index)} ${m[0]}`);
       for (const m of text.matchAll(/font-size:\s*([^;]+);/g))
@@ -53,7 +54,7 @@ function tooSmall(): string[] {
 }
 
 describe('the type floor', () => {
-  it('sets no text below 16px, in any stylesheet or component', () => {
+  it('sets no text below 14px, in any stylesheet or component', () => {
     expect(tooSmall()).toEqual([]);
   });
 

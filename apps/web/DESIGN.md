@@ -17,25 +17,25 @@ typography:
     letterSpacing: "0em"
   title:
     fontFamily: "Ronzino, system-ui, sans-serif"
-    fontSize: "2rem"
+    fontSize: "1.75rem"
     fontWeight: 500
     lineHeight: 1.15
     letterSpacing: "0em"
   heading:
     fontFamily: "Ronzino, system-ui, sans-serif"
-    fontSize: "1.375rem"
+    fontSize: "1.125rem"
     fontWeight: 500
     lineHeight: 1.3
     letterSpacing: "0em"
   body:
     fontFamily: "Atkinson Hyperlegible Next, system-ui, sans-serif"
-    fontSize: "1.25rem"
+    fontSize: "1.125rem"
     fontWeight: 400
     lineHeight: 1.55
     letterSpacing: "0em"
   small:
     fontFamily: "Atkinson Hyperlegible Next, system-ui, sans-serif"
-    fontSize: "1rem"
+    fontSize: "0.875rem"
     fontWeight: 500
     lineHeight: 1.4
     letterSpacing: "0em"
@@ -229,13 +229,17 @@ inherits one, and `apps/web/test/type-scale.test.ts` fails the build on anything
 | Role | Size / line | Face / weight | Use |
 |---|---|---|---|
 | display | 44px / 1.05 | Ronzino 500 | Landing headlines only |
-| title | 32px / 1.15 | Ronzino 500 | One per screen |
-| heading | 22px / 1.3 | Ronzino 500 | Sections, story titles, person names, the wordmark |
-| body | 20px / 1.55 | Atkinson 400 | A story's own text (at most 65 characters a line), quotes, everything else |
-| small | 16px / 1.4 | Atkinson 500 | Buttons, nav, labels, meta lines, timecodes, hints |
+| title | 28px / 1.15 | Ronzino 500 | One per screen: the page's header ("Good morning, Kenneth", "Stories") |
+| heading | 18px / 1.3 | Ronzino 500 | Sections, story titles in a story's page, dialog titles, the wordmark |
+| body | 18px / 1.55 | Atkinson 400 | Reading: a story's own text (at most 65 characters a line), transcripts, answers, quotes |
+| small | 14px / 1.4 | Atkinson 500 | The interface: project and list names, menu items, nav, buttons, labels, meta lines, hints |
 
-**Nothing is set below 16px**, in any stylesheet or component: `apps/web/test/type-floor.test.ts`
-fails the build on a smaller size.
+The hierarchy comes from the steps: one title per screen, then the interface at 14px, so a page's
+header is plainly the header. Reading stays at 18px, for older eyes.
+
+**Nothing is set below 14px**, in any stylesheet or component: `apps/web/test/type-floor.test.ts`
+fails the build on a smaller size. (On 2026-10-30 the floor moved from 16px to 14px, and reading
+text from 20px to 18px, because everything sat at one size and the pages had no hierarchy.)
 
 Labels are sentence case. Emphasis comes from weight and size, never from capitals or letter-spacing.
 
@@ -272,7 +276,7 @@ The nav never stacks above content.
 - **Slim top bar, 56px, on Canvas.** The project menu (avatar and name) is on the left, the Firepit
   mark on the right. The page's own title follows directly below, so the bar doesn't repeat it.
 - **Bottom tab bar, 64px plus the safe area, on Canvas.** The same five places, each an icon with a
-  visible 16px label; the current one is Ink with a Rose line along its top edge. Interviews, Members and Settings are in the project menu.
+  visible 14px label; the current one is Ink with a Rose line along its top edge. Interviews, Members and Settings are in the project menu.
 - Content scrolls between the two bars, full width with 16px side gutters.
 - **During a live interview,** both bars give way to the recording bar (the voice line, time, Pause,
   End). Nothing else competes with the conversation.
@@ -441,5 +445,5 @@ Each rule can be checked against the code or a screenshot.
 9. **At 390px, don't stack navigation above content.** The page title sits within 72px of the top,
    the bottom tab bar is visible, nothing scrolls sideways, and floating layers are inset at least
    16px.
-10. **Don't go below 16px text or 44×44px tap targets, and don't let colour carry meaning alone.**
+10. **Don't go below 14px text or 44×44px tap targets, and don't let colour carry meaning alone.**
     Speakers are also named, and the recording state also says "Recording".
