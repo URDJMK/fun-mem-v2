@@ -49,6 +49,13 @@ export const SERVICE_KEY =
   process.env.FUNMEM_SERVICE_KEY ??
   'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZS1kZW1vIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImV4cCI6MTk4MzgxMjk5Nn0.EGIM96RAZx35lJzdJsyH-qQwv8Hdp7fsn3W0YpN81IU';
 
+/**
+ * SQL: a note other than the protagonist's own, which every personal project has from the
+ * start (graph design 3.5). `$1` must be the archive. For counting what a test wrote.
+ */
+export const NOT_PROTAGONIST =
+  'id is distinct from (select subject_note_id from public.archives where id = $1)';
+
 export interface RealSession {
   token: string;
   userId: string;

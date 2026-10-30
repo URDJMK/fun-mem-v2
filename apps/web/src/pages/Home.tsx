@@ -24,6 +24,7 @@ import { ArchiveLayout } from '../components/ArchiveLayout';
 import { InterviewReview } from '../components/InterviewReview';
 import { Review, Running, Saved, useImportRun, WhoIsTelling } from '../components/ImportRun';
 import { Studio } from '../components/Studio';
+import { WhoAndWhere } from '../components/WhoAndWhere';
 import { Avatar, Failed, Icon, useAccountName } from '../components/ui';
 import { readProfileDraft } from '../components/ProfileInputs';
 
@@ -210,6 +211,11 @@ export function Home() {
             </div>
           )}
         </section>
+      )}
+      {phase.kind === 'idle' && (
+        <div className="home-graph">
+          <WhoAndWhere archiveId={archive.id} />
+        </div>
       )}
 
       {phase.kind === 'studio' && (

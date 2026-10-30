@@ -1,3 +1,4 @@
+import type { GraphPatch } from './graph/types';
 import type { Context } from 'hono';
 import { bodyLimit } from 'hono/body-limit';
 import type { App, AppDeps } from './app';
@@ -112,6 +113,30 @@ function readRequest(body: Record<string, unknown>): IngestRequest | { error: st
  * a "leave this one out" that was silently ignored would save the memory the person meant
  * to leave out.
  */
+/** The reviewer's choices about the people, places and things (graph design 5.1). */
+function readGraphPatch(raw: unknown): GraphPatch | string {
+  if (raw === undefined || raw === null) return {};
+  if (typeof raw !== 'object' || Array.isArray(raw)) return '"graph" must be an object';
+  const g = raw as Record<string, unknown>;
+  const strings = (v: unknown) => Array.isArray(v) && v.every((x) => typeof x === 'string');
+  const map = (v: unknown) =>
+    typeof v === 'object' &&
+    v !== null &&
+    !Array.isArray(v) &&
+    Object.values(v).every((x) => typeof x === 'string');
+  if (g.leave !== undefined && !strings(g.leave)) return '"graph.leave" must be a list of refs';
+  if (g.rename !== undefined && !map(g.rename)) return '"graph.rename" must map refs to names';
+  if (g.same !== undefined && !map(g.same)) return '"graph.same" must map refs to entity ids';
+  if (g.leaveParagraph !== undefined && !strings(g.leaveParagraph))
+    return '"graph.leaveParagraph" must be a list of refs';
+  return {
+    ...(g.leave ? { leave: (g.leave as string[]).slice(0, 1000) } : {}),
+    ...(g.leaveParagraph ? { leaveParagraph: (g.leaveParagraph as string[]).slice(0, 200) } : {}),
+    ...(g.rename ? { rename: g.rename as Record<string, string> } : {}),
+    ...(g.same ? { same: g.same as Record<string, string> } : {}),
+  };
+}
+
 function readPatches(raw: unknown): MemoryPatch[] | { error: string } {
   if (raw === undefined || raw === null) return [];
   if (!Array.isArray(raw)) return { error: '"memories" must be a list of changes' };
@@ -259,6 +284,52 @@ export function registerIngestRoutes(app: App, deps: AppDeps): IngestJobs {
     },
   );
 
+  /**
+   * "Find people, places and things" (graph design 4.4): a job with no transcript that finds the
+   * graph in the project's saved stories, for the same review and save as an import.
+   */
+  app.post('/v1/archives/:archiveId/graph/build', async (c) => {
+    const archiveId = idOf(c, 'archiveId');
+    const userId = c.get('userId');
+    const role = await roleIn(archiveId, userId);
+    if (role === null) return c.json(NOT_FOUND, 404);
+    if (!IMPORT_ROLES.includes(role)) {
+      return roleRefused(c, 'only an owner, steward or contributor can find people and places');
+    }
+    const raw = (await c.req.json().catch(() => ({}))) as { async?: unknown } | null;
+    let job;
+    try {
+      job = await jobs.start(
+        archiveId,
+        userId,
+        { transcript: '', graph: true },
+        {
+          wait: raw?.async !== true,
+        },
+      );
+    } catch (e) {
+      if (e instanceof BusyError) {
+        return c.json(
+          { error: e.message, code: 'busy', reason: e.why, jobId: e.jobId, retryAfter: 5 },
+          429,
+          { 'retry-after': '5' },
+        );
+      }
+      throw e;
+    }
+    if (raw?.async === true) return c.json(jobs.view(job), 202);
+    const v = jobs.view(await job.done);
+    if (v.status === 'failed' || v.status === 'cancelled') {
+      const f = v.error!;
+      if (f.code === 'forbidden' && f.reason === 'membership') return c.json(NOT_FOUND, 404);
+      return c.json(
+        { error: f.message, code: f.code, ...(f.reason ? { reason: f.reason } : {}) },
+        statusFor(f),
+      );
+    }
+    return c.json({ ...v.outcome, jobId: v.id });
+  });
+
   /** Following a job also keeps it alive: an open review page polls this. */
   app.get('/v1/archives/:archiveId/ingest/:jobId', async (c) => {
     const archiveId = idOf(c, 'archiveId');
@@ -311,11 +382,13 @@ export function registerIngestRoutes(app: App, deps: AppDeps): IngestJobs {
       if (typeof raw !== 'object' || raw === null || Array.isArray(raw)) {
         return c.json({ error: 'the request must be a JSON object', code: 'bad_request' }, 400);
       }
-      const body = raw as { memories?: unknown; force?: unknown };
+      const body = raw as { memories?: unknown; force?: unknown; graph?: unknown };
       const patches = readPatches(body.memories);
       if ('error' in patches) return c.json({ error: patches.error, code: 'bad_request' }, 400);
+      const graph = readGraphPatch(body.graph);
+      if (typeof graph === 'string') return c.json({ error: graph, code: 'bad_request' }, 400);
       try {
-        const outcome = await jobs.save(job, patches, body.force === true);
+        const outcome = await jobs.save(job, patches, body.force === true, graph);
         return c.json({ ...outcome, jobId: job.id });
       } catch (e) {
         if (e instanceof DuplicateImport) {

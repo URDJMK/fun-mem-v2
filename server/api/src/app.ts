@@ -20,6 +20,7 @@ import { registerProjectSettingsRoutes } from './project-settings';
 import { registerInterviewRoutes } from './stories/interviews';
 import { parseProfileInput } from './stories/profile';
 import { registerProfileRoutes, setSubjectProfile } from './stories/profile-store';
+import { registerGraphRoutes } from './graph/routes';
 import type { EmbeddingProvider } from '@funmem/core';
 
 export interface AppDeps {
@@ -104,14 +105,13 @@ export function createApp(deps: AppDeps): App {
         tenantName: body.tenantName,
         kind: body.kind as 'personal' | 'family' | undefined,
       });
-      // a personal project is about one person: their person note holds the profile. Made only
-      // when something was entered (else the first time it is saved in Settings). If this fails
-      // the project still stands, and the profile can be entered in Settings.
-      if (profile.born || profile.died || profile.aliases.length) {
-        await setSubjectProfile(deps, provisioned.archiveId, c.get('userId'), profile).catch(
-          (e: unknown) => console.error(`[provision] the profile was not saved: ${String(e)}`),
-        );
-      }
+      // a personal project is about one person: their person note holds the profile, and is
+      // the protagonist's node in the graph from the start (graph design 3.5). If this fails
+      // the project still stands, and the note is made the first time its graph is read.
+      await setSubjectProfile(deps, provisioned.archiveId, c.get('userId'), profile).catch(
+        (e: unknown) =>
+          console.error(`[provision] the protagonist's note was not made: ${String(e)}`),
+      );
       return c.json(provisioned, 201);
     } catch (e) {
       if (e instanceof ProvisionError) return c.json({ error: e.message }, 400);
@@ -156,6 +156,7 @@ export function createApp(deps: AppDeps): App {
   registerProjectSettingsRoutes(app, deps);
   registerInterviewRoutes(app, deps);
   registerProfileRoutes(app, deps);
+  registerGraphRoutes(app, deps);
   registerInternalRoutes(app, deps, jobs);
 
   return app;

@@ -3,6 +3,7 @@ import { createStep, createWorkflow } from '@mastra/core/workflows';
 import { z } from 'zod';
 import { stripInvisible } from '@funmem/persona';
 import type { EntityType } from '@funmem/core';
+import type { GraphProposal } from './graph/types';
 import { readMemoryDate } from './dates';
 import { linkKnownTitles, type DraftRequest } from './drafts';
 import { GroundingGate } from './drafts-gate';
@@ -165,6 +166,8 @@ export function parseProposals(raw: unknown): RawProposal[] | null {
 export type MemoryMethod = 'ai-grounded' | 'verbatim' | 'story';
 
 export interface ProposedMemory {
+  /** "m1", "m2": how the graph's proposal names this memory's story (graph design 4.1) */
+  id?: string;
   title: string;
   /** always 'event' from the pipeline (a guess from keywords typed a trip to LA a "place"); the reviewer may change it */
   type: EntityType;
@@ -263,6 +266,11 @@ export interface IngestResult {
   interviewId?: string;
   /** the story workflow's proposed name for the interview, from its topics */
   interviewName?: string | null;
+  /**
+   * the people, places and things in the interview, found before its stories, with where the
+   * stories name them, and the relationships told (entity design 3)
+   */
+  graph?: GraphProposal;
   stats: {
     turns: number;
     intervieweeTurns: number;

@@ -163,6 +163,8 @@ export async function planPart(
     signal?: AbortSignal;
     /** "Who this is about" (stories/profile.ts), or '' */
     profile?: string;
+    /** the people, places and things of the interview with their types, one per line, or '' */
+    cast?: string;
   },
 ): Promise<{ plan: StoryPlan; calls: number }> {
   const carriedText = o.carried.length
@@ -173,6 +175,7 @@ export async function planPart(
   const task = [
     o.profile ?? '',
     `The narrator: ${o.subject}.`,
+    o.cast ? `Who is in it:\n${o.cast}` : '',
     carriedText,
     `The transcript:\n${renderLines(o.lines)}`,
   ]

@@ -76,10 +76,14 @@ describe('the profile', () => {
     const owner = await ctx.realSession(`profile-owner-${RUN}@test.local`);
     const stranger = await ctx.realSession(`profile-stranger-${RUN}@test.local`);
     const app = createApp(ctx.deps);
-    // made without a profile (or before profiles existed): no person note yet
+    // made without a profile: the person note is there, with nothing entered yet
     const archive = await ctx.provisionArchive(owner, `Nell ${RUN}`);
     const before = await call(app, owner.token, 'GET', `/v1/archives/${archive}/profile`);
-    expect(await before.json()).toMatchObject({ name: `Nell ${RUN}`, born: null, noteId: null });
+    expect(await before.json()).toMatchObject({
+      name: `Nell ${RUN}`,
+      born: null,
+      noteId: expect.any(String),
+    });
 
     const put = await call(app, owner.token, 'PUT', `/v1/archives/${archive}/profile`, {
       born: '1931-05-02',
@@ -88,7 +92,7 @@ describe('the profile', () => {
     });
     expect(put.status).toBe(200);
     expect(await put.json()).toMatchObject({ born: '1931-05-02', died: '2019' });
-    // the person note is made then, and the project points at it
+    // the project points at it
     const linked = await ctx.pool.query(
       `select n.title from public.archives a join public.notes n on n.id = a.subject_note_id
         where a.id = $1`,

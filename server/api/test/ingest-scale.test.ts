@@ -3,7 +3,7 @@ import { Pool } from 'pg';
 import { afterAll, describe, expect, it } from 'vitest';
 import { createApp } from '../src/app';
 import { sharedTitles } from '../src/ingest-save';
-import { DB_URL, testContext } from './helpers';
+import { DB_URL, NOT_PROTAGONIST, testContext } from './helpers';
 
 /**
  * The largest interview a person can send, and many saves into one archive at once, must
@@ -255,7 +255,7 @@ describe('many saves into one archive at once', () => {
         expect(elsewhereMs).toBeLessThan(1000);
         expect(await saves).toEqual(new Array(12).fill(200));
         const titles = await ctx.pool.query(
-          `select title from public.notes where archive_id = $1`,
+          `select title from public.notes where archive_id = $1 and ${NOT_PROTAGONIST}`,
           [A],
         );
         expect(titles.rowCount).toBe(12);

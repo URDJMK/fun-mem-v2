@@ -42,12 +42,17 @@ async function setup(label: string) {
   const archive = await ctx.provisionArchive(owner, `IS ${label} ${RUN}`);
   const post = (body: object, s: RealSession = owner) =>
     ctx.api(s.token, 'POST', `/v1/archives/${archive}/ingest`, body);
+  // the protagonist's own note is there from the start (graph design 3.5): these count what
+  // imports make
   const noteCount = async () =>
     (
       (
-        await ctx.pool.query(`select count(*)::int as n from public.notes where archive_id = $1`, [
-          archive,
-        ])
+        await ctx.pool.query(
+          `select count(*)::int as n from public.notes
+            where archive_id = $1
+              and id is distinct from (select subject_note_id from public.archives where id = $1)`,
+          [archive],
+        )
       ).rows[0] as { n: number }
     ).n;
   return { owner, archive, post, noteCount };
@@ -202,7 +207,9 @@ describe('a save is all or nothing', () => {
     };
     const ids = (
       await ctx.pool.query(
-        `select distinct change_id from public.revisions where archive_id = $1`,
+        `select distinct change_id from public.revisions
+          where archive_id = $1
+            and note_id is distinct from (select subject_note_id from public.archives where id = $1)`,
         [archive],
       )
     ).rows;
@@ -215,7 +222,9 @@ describe('a save is all or nothing', () => {
     expect(run.change_id).toBe((ids[0] as { change_id: string }).change_id);
     expect(run.note_count).toBe(4);
     const reasons = await ctx.pool.query(
-      `select distinct reason from public.revisions where archive_id = $1`,
+      `select distinct reason from public.revisions
+        where archive_id = $1
+          and note_id is distinct from (select subject_note_id from public.archives where id = $1)`,
       [archive],
     );
     expect(reasons.rows).toEqual([{ reason: 'ai-suggestion' }]);
@@ -248,7 +257,9 @@ describe('undo', () => {
     );
     expect((stones.rows[0] as { n: number }).n).toBe(5);
     const revs = await ctx.pool.query(
-      `select count(*)::int as n from public.revisions where archive_id = $1`,
+      `select count(*)::int as n from public.revisions
+        where archive_id = $1
+          and note_id is distinct from (select subject_note_id from public.archives where id = $1)`,
       [archive],
     );
     expect((revs.rows[0] as { n: number }).n).toBe(1); // the erased notes' revisions are gone, content and all

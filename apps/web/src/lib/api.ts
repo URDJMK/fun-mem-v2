@@ -92,7 +92,97 @@ export interface NoteSummary {
 export interface Note extends NoteSummary {
   body: string;
   createdAt: string;
+  /** the people, places and things a story names, for its page to underline */
+  mentions?: Mention[];
 }
+
+/* ── the people, places and things graph (server/api/src/graph/) ── */
+
+export type EntityType = 'person' | 'place' | 'thing';
+
+export interface Mention {
+  entityId: string;
+  words: string[];
+}
+
+export interface GraphNode {
+  id: string;
+  name: string;
+  type: EntityType;
+  stories: number;
+  subject: boolean;
+  noteId: string | null;
+}
+
+export interface GraphView {
+  nodes: GraphNode[];
+  /** relationships told in the stories: solid lines */
+  told: Array<{
+    a: string;
+    b: string;
+    lines: Array<{ id: string; description: string; storyId: string; storyTitle: string }>;
+  }>;
+  /** named in the same stories: faint lines */
+  together: Array<{ a: string; b: string; stories: number }>;
+  more: number;
+}
+
+export interface EntitySummary {
+  id: string;
+  name: string;
+  type: EntityType;
+  noteId: string | null;
+  subject: boolean;
+  aliases: string[];
+  stories: number;
+}
+
+export interface EntityDetail extends Omit<EntitySummary, 'stories'> {
+  description: string;
+  profile: { born: string | null; died: string | null; aliases: string[] } | null;
+  mentions: Array<{
+    storyId: string;
+    storyTitle: string;
+    occurred: string | null;
+    words: string[];
+    line: string;
+  }>;
+  relationships: Array<{
+    id: string;
+    description: string;
+    storyId: string;
+    storyTitle: string;
+    other: { id: string; name: string; type: EntityType };
+  }>;
+  graph: GraphView;
+}
+
+export const getGraph = (archive: string) =>
+  apiFetch<GraphView>('GET', `/archives/${archive}/graph`);
+
+export const listEntities = (archive: string) =>
+  apiFetch<EntitySummary[]>('GET', `/archives/${archive}/entities`);
+
+/** by the entity's id, or the id of its note */
+export const getEntity = (archive: string, id: string) =>
+  apiFetch<EntityDetail>('GET', `/archives/${archive}/entities/${id}`);
+
+/** a new name (the old one kept as an alias) or type; 409 `taken` names the entity to merge with */
+export const changeEntity = (
+  archive: string,
+  id: string,
+  change: { name?: string; type?: EntityType },
+) => apiFetch<{ ok: true }>('PATCH', `/archives/${archive}/entities/${id}`, change);
+
+/** `from` merged into `keep`: its stories, relationships and names; then it is gone */
+export const mergeEntity = (archive: string, keep: string, from: string) =>
+  apiFetch<{ ok: true }>('POST', `/archives/${archive}/entities/${keep}/merge`, { from });
+
+export const removeEntity = (archive: string, id: string) =>
+  apiFetch<{ ok: true }>('DELETE', `/archives/${archive}/entities/${id}`);
+
+export const removeRelationship = (archive: string, id: string) =>
+  apiFetch<{ ok: true }>('DELETE', `/archives/${archive}/relationships/${id}`);
 
 export interface Occurrence {
   sourceId: string;
@@ -350,6 +440,8 @@ export interface StorySource {
 
 export interface ImportOutcome {
   status: 'previewed' | 'saved' | 'needs_confirmation' | 'duplicate';
+  /** 'graph' identifies the button's run, even when an import has no accepted stories. */
+  format?: string;
   memories: ImportMemory[];
   /** the stories could not be written yet; the interview keeps its transcript */
   pending?: { reason: string };
@@ -360,6 +452,53 @@ export interface ImportOutcome {
   runId?: string | null;
   duplicateOf?: { createdAt: string; source: string | null };
   degraded: { windows: number };
+  /** the people, places and things in the stories, and the relationships told */
+  graph?: GraphProposal;
+}
+
+/** What an import proposes for the graph (server/api/src/graph/types.ts). */
+export interface GraphProposal {
+  entities: ProposedEntity[];
+  relationships: ProposedRelationship[];
+  /** it could not be found yet; the stories are unaffected */
+  pending?: { reason: string };
+}
+
+export interface ProposedEntity {
+  ref: string;
+  name: string;
+  type: EntityType;
+  match:
+    | { kind: 'new' }
+    | { kind: 'existing'; entityId: string; name: string }
+    | { kind: 'ask'; candidates: Array<{ entityId: string; name: string }> };
+  /** `story` is a memory id ("m1"), or a note id when built from saved stories */
+  mentions: Array<{ story: string; words: string[]; line: string }>;
+  aliases?: string[];
+  ways?: string[];
+  description?: Array<{ text: string; sources: GraphSource[] }>;
+  note?: { kind: 'new' } | { kind: 'existing'; noteId: string; title: string };
+  subject?: boolean;
+}
+
+/** Interview lines, or a saved story's sentence, cited by a checked description. */
+export type GraphSource =
+  { interviewId: string | null; from: number; to: number } | { noteId: string; sentence: number };
+
+export interface ProposedRelationship {
+  ref: string;
+  a: string;
+  b: string;
+  description: string;
+  story: string | null;
+}
+
+/** the reviewer's choices: refs left out, renamed, or the same as an entity already here */
+export interface GraphPatch {
+  leave?: string[];
+  rename?: Record<string, string>;
+  same?: Record<string, string>;
+  leaveParagraph?: string[];
 }
 
 export interface ImportJob {
@@ -490,6 +629,10 @@ export async function transcribeRecording(
 export const startImport = (archive: string, req: ImportRequest) =>
   apiFetch<ImportJob>('POST', `/archives/${archive}/ingest`, { ...req, save: false, async: true });
 
+/** "Find people, places and things": a job with no transcript, over the saved stories */
+export const startGraphBuild = (archive: string) =>
+  apiFetch<ImportJob>('POST', `/archives/${archive}/graph/build`, { async: true });
+
 export const getImport = (archive: string, job: string) =>
   apiFetch<ImportJob>('GET', `/archives/${archive}/ingest/${job}`);
 
@@ -504,8 +647,16 @@ export interface MemoryPatch {
   occurred?: string | null;
 }
 
-export const saveImport = (archive: string, job: string, memories: MemoryPatch[]) =>
-  apiFetch<ImportOutcome>('POST', `/archives/${archive}/ingest/${job}/save`, { memories });
+export const saveImport = (
+  archive: string,
+  job: string,
+  memories: MemoryPatch[],
+  graph?: GraphPatch,
+) =>
+  apiFetch<ImportOutcome>('POST', `/archives/${archive}/ingest/${job}/save`, {
+    memories,
+    ...(graph ? { graph } : {}),
+  });
 
 /** One import already in the archive; `source` is null once it is undone or its notes are gone. */
 export interface ImportRun {
@@ -543,7 +694,8 @@ export const listImports = (archive: string) =>
   apiFetch<ImportRun[]>('GET', `/archives/${archive}/ingest-runs`);
 
 export const undoImport = (archive: string, run: string) =>
-  apiFetch<{ erased: number; kept: Array<{ id: string; title: string; reason: string }> }>(
-    'POST',
-    `/archives/${archive}/ingest-runs/${run}/undo`,
-  );
+  apiFetch<{
+    erased: number;
+    restored?: number;
+    kept: Array<{ id: string; title: string; reason: string }>;
+  }>('POST', `/archives/${archive}/ingest-runs/${run}/undo`);

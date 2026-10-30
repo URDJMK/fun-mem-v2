@@ -25,6 +25,7 @@ import {
   type ImportRecord,
   type MarkerLine,
   type SavedNote,
+  persistGraphRun,
 } from './ingest-save';
 import { displayNameOf } from './conflicts';
 import { onLostConnection } from './notes';
@@ -39,6 +40,10 @@ import {
 } from './stories/interviews';
 import { writeStories } from './stories/workflow';
 import { profilesFor } from './stories/profile-store';
+import { ensureGraph, entityLookup, knownFor } from './graph/store';
+import { applyGraphPatch, relinkMemories, storiesOf } from './graph/save';
+import { buildGraph, isGraphOnly } from './graph/build';
+import type { GraphPatch } from './graph/types';
 
 /**
  * Interviews are LONG: an hour of speech is tens of model calls, so a request that
@@ -79,6 +84,8 @@ export interface IngestRequest extends IngestOptions {
   confirm?: boolean;
   /** import it again even though this interview was already imported */
   force?: boolean;
+  /** no transcript: find the graph in the project's saved stories (graph design 4.4) */
+  graph?: boolean;
 }
 
 export type OutcomeStatus = 'previewed' | 'saved' | 'needs_confirmation' | 'duplicate';
@@ -879,8 +886,12 @@ export class IngestJobs {
       ),
     ].filter((t): t is string => typeof t === 'string');
     const profiles = await profilesFor(pool, job.archiveId, job.userId, tellers);
+    // the project's graph: who and what is in the interview is found first (entity design 3)
+    await ensureGraph(this.deps, job.archiveId);
+    const known = await knownFor(pool, job.archiveId, job.userId, tellers);
     const result = await writeStories(parsed, req, {
       profiles,
+      graph: { lookup: entityLookup(pool, job.archiveId, job.userId), known },
       chat: this.deps.chat ?? null,
       judge: this.deps.chat ?? null,
       lookup: archiveLookup(this.deps, job.archiveId, job.userId),
@@ -929,6 +940,18 @@ export class IngestJobs {
     };
     const signal = ac.signal;
     try {
+      // the button: the graph from the project's saved stories, for the same review
+      if (req.graph) {
+        await stage('organizing');
+        const result = (await buildGraph(this.deps, job.archiveId, job.userId, {
+          signal,
+          onProgress: (p) => (job.progress = { done: p.done, total: p.total }),
+        })) as IngestOutcome;
+        if (signal.aborted) throw new IngestCancelled();
+        result.status = 'previewed';
+        job.outcome = result;
+        return await this.finish(job, 'succeeded', { timedOut }, true);
+      }
       // 1. read it, and see whether this interview is already in
       let parsed: ParsedTranscript;
       try {
@@ -1050,7 +1073,12 @@ export class IngestJobs {
    * Writes atomically; a second attempt (or a double-click, or the same click arriving at
    * two instances) is refused.
    */
-  async save(job: Job, patches: MemoryPatch[] = [], force = false): Promise<IngestOutcome> {
+  async save(
+    job: Job,
+    patches: MemoryPatch[] = [],
+    force = false,
+    graphPatch: GraphPatch = {},
+  ): Promise<IngestOutcome> {
     const pool = this.deps.pool;
     const claim = await pool.query(
       `update public.ingest_jobs set saving = true, heartbeat_at = $2
@@ -1078,9 +1106,27 @@ export class IngestJobs {
     }
     let saved: IngestOutcome | null = null;
     try {
+      // the button's run (`req.graph`): only the graph, on stories already saved. An import that
+      // kept no stories is not one, though it carries a graph: it has nothing to save.
+      if (isGraphOnly(held.outcome) && held.outcome.graph) {
+        const all = held.outcome.graph;
+        const graph = applyGraphPatch(all, graphPatch, new Set(storiesOf(all)));
+        if (graph.entities.length === 0)
+          throw new SaveError('nothing is selected to save', 400, { reason: 'nothing_selected' });
+        const { runId } = await persistGraphRun(this.deps, job.archiveId, job.userId, graph);
+        saved = { ...held.outcome, graph, status: 'saved', runId, saved: [] };
+        return saved;
+      }
       const { outcome: edited, wanted, skipped } = applyPatches(held.outcome, patches);
       if (edited.memories.length === 0)
         throw new SaveError('nothing is selected to save', 400, { reason: 'nothing_selected' });
+      // the people, places and things as the reviewer left them, from the stories kept
+      if (edited.graph) {
+        const all = edited.graph;
+        edited.graph = applyGraphPatch(all, graphPatch, new Set(edited.memories.map((m) => m.id)));
+        // and the stories' links with it
+        relinkMemories(edited.memories, all, edited.graph);
+      }
       // a memory left out takes the markers that named it with it
       const markers = held.markers ?? [];
       dropMarkers(edited.memories, markers, skipped);

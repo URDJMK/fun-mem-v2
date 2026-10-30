@@ -1,8 +1,7 @@
 # Interview import — the API
 
-> **In fun-mem v2** this is the contract for whatever sends a transcript in: there is no interview
-> page in this repository yet (v1's lived in `apps/web/src/pages/Ingest.tsx` there). A client signs
-> the person in, then calls these routes with their session token.
+> **In fun-mem v2** this is the contract used by the web interview pages and other import clients.
+> A client signs the person in, then calls these routes with their session token.
 
 All routes need a signed-in member of the archive (`Authorization: Bearer <session token>`);
 anyone else gets `404`, never a hint that the archive or a job exists. Ids in paths may be in any
@@ -28,9 +27,11 @@ With `FUNMEM_IMPORT_MODE` unset or `stories`, an import writes the interview's *
 
 1. The interview is kept with its transcript as soon as the import starts (`public.interviews`).
    Bringing the same words in again picks up the interview that is still waiting.
-2. The AI reads the whole interview (up to ~200k tokens a part) and plans its stories, one per period
-   of the narrator's life, looking up the project's notes as it goes (read-only).
-3. Each story is written in the third person; every sentence cites the transcript lines it comes from.
+2. The Entity step reads the whole interview (up to ~200k tokens a part), finding people, places and
+   remembered things, their cited descriptions and relationships before any stories are planned.
+3. The planner and writer receive that list. Each story is written in the third person; every
+   sentence cites its transcript lines and marks the entities it names. Checked marks become real
+   `[[Note title|words]]` links at each entity's first mention in a story.
 4. Code checks every name, number, date, place and quotation against the cited lines; an AI judge
    rules only on whether anything is made up (wording is free). A failing story is written again with
    the reasons, twice at most; what still fails is left out and listed in the memory's `notes`.
@@ -66,6 +67,74 @@ eighteen"), code works out the year from the birth date: `occurred` `~1964`, wit
 | `PUT /v1/archives/:id/profile` | owners, stewards, contributors: `{ born, died, aliases }` (aliases as a list or comma-separated); makes the person note if needed; `400` with `error` naming the field it cannot read |
 | `PUT /v1/archives/:id/people/:noteId/profile` | the same, on any visible person note (a family narrator) |
 
+### The people, places and things graph
+
+Design: `docs/superpowers/specs/2026-10-29-entity-notes-first-design.md` (E1, imports),
+with the graph tables and browsing described in `2026-10-28-people-places-graph-design.md`.
+Every kept import entity gets a note or links to its existing shared note; an existing note gets a
+reviewed paragraph when the interview adds something. The protagonist gets no paragraph or link.
+A private note, even the importer's own, gets no paragraph or story links: imports link only to
+notes every member may read. Things use note type `object`.
+
+The Entity step has its own slice of the import's 12-minute deadline and 200-call budget:
+`min(deadline / 3, 4 minutes)` and at most 60 calls. Parts run in parallel. If this step fails or
+uses up its slice, stories can still be written without entity links and `graph.pending` says why.
+`stats.stories.calls` includes Entity-step calls (`graph.stats.calls` counts only that step); dropped writer marks appear in
+`stats.stories.problems.mark` without dropping their sentences.
+
+The outcome's `graph` includes these proposal fields:
+
+```json
+{
+  "entities": [
+    { "ref": "e2", "name": "Sarah", "type": "person",
+      "match": { "kind": "new" },
+      "ways": ["his friend"],
+      "description": [{ "text": "Sarah sat next to Noah at school.",
+                         "sources": [{ "interviewId": null, "from": 8, "to": 8 }] }],
+      "note": { "kind": "new" },
+      "mentions": [{ "story": "m2", "words": ["Sarah"], "line": "Sarah sat next to Noah…",
+                     "sources": [{ "interviewId": null, "from": 8, "to": 8 }] }] }
+  ],
+  "relationships": [
+    { "ref": "r1", "a": "e3", "b": "e2", "description": "Tom — Sarah's brother", "story": null, "sources": [] }
+  ]
+}
+```
+
+`match` is `new`, `{ "kind": "existing", "entityId", "name" }`, or
+`{ "kind": "ask", "candidates" }`. `note` is `{ "kind": "new" }` or
+`{ "kind": "existing", "noteId", "title" }`; it is checked again at save. `ways` are phrases from
+the protagonist's side, never aliases. `description` has up to four checked sentences, possibly
+none. `subject: true` marks the protagonist (the field is present only then), hidden from note review. These fields are
+optional so the older graph-only button keeps its current behavior.
+
+A relationship's `story` is a memory id (`m1`, `m2`, …), or `null` when no kept story tells it;
+it then belongs to a's entity note, falling back to b's. Entity notes survive a story being left
+out; its mentions go. The save body carries review choices as
+`"graph": { "leave": [refs], "rename": { ref: name }, "same": { ref: entityId }, "leaveParagraph": [entityRefs] }`.
+Leaving an entity out turns its links into their shown words and removes its relationships.
+`leaveParagraph` keeps links but omits an existing note's added paragraph. A rename onto another
+kept entity's name of a different type is ignored; the web review warns about it.
+
+Stories and new entity notes are saved in one transaction with titles settled together; links
+follow the final titles. `saved` lists stories only. A new note's `extra.sources` is
+`[{ sentence, sources }]`; added paragraphs use `extra.paragraphs: [{ runId, sources }]`.
+Undo restores appended notes before the run's first revision unless edited later, and removes
+all mentions and relationships of the run. An entity note needed by a later import's links stays.
+
+| Route | |
+|---|---|
+| `GET /v1/archives/:id/graph` | members: `{ nodes, told, together, more }` (at most 80 nodes, most-mentioned first; `?limit=`) |
+| `GET /v1/archives/:id/entities` | members: `[{ id, name, type, noteId, subject, aliases, stories }]` |
+| `GET /v1/archives/:id/entities/:entityId` | members (an entity's id or its note's): its mentions, relationships, `profile` for the protagonist, and `graph` around it |
+| `PATCH /v1/archives/:id/entities/:entityId` | writers: `{ name }` (the old name kept as an alias; `409 taken` with the `entityId` that has it) or `{ type }` |
+| `POST /v1/archives/:id/entities/:entityId/merge` | writers: `{ from }`, merged into this one; the protagonist is never merged away (`409 subject`) |
+| `DELETE /v1/archives/:id/entities/:entityId` | writers: the entity with its mentions and relationships; stories stay; never the protagonist |
+| `DELETE /v1/archives/:id/relationships/:relationshipId` | writers |
+| `POST /v1/archives/:id/graph/build` | writers: "Find people, places and things" in the saved stories; answered like `POST …/ingest` (`{ "async": true }` for a job to follow); the outcome has `format: "graph"`, no memories and a `graph`; saving writes a run of kind `graph` that undo takes back |
+| `GET /v1/archives/:id/notes/:noteId` | gains `mentions: [{ entityId, words }]`, which a story's page underlines |
+
 `FUNMEM_IMPORT_MODE=memories` brings back the earlier import described below, where every spoken line
 becomes a memory.
 
@@ -94,8 +163,8 @@ becomes a memory.
 | `GET …/ingest/:job` | `{ id, status: running\|succeeded\|failed\|cancelled, stage: reading\|organizing\|checking\|saving\|done, progress: {done,total}, startedAt, finishedAt?, elapsedMs, canCancel, outcome?, error? }`. Reading a job also **keeps it alive** (see below): a review page that stays open polls this. |
 | `POST …/ingest/:job/cancel` | Stops it while it is `reading`, `organizing` or `checking`: `200` with the job, which then ends `cancelled` and nothing is saved. Once it is `saving` it can no longer be stopped: `409 { code: "too_late" }` (it finishes, and can be undone). On a job that has already finished: `200`, nothing changes. `canCancel` in the job says which applies. |
 | `POST …/ingest/:job/save` | Writes the preview the job is holding. Body: `{ "memories": [{ "index", "skip"?, "title"?, "type"?, "body"?, "occurred"? }], "force"? }` (no body: save it as it is). All or nothing; once only. A change the server cannot read is **refused** (`400 bad_request`), never ignored: `index` must be a whole number from 0, `skip` a boolean, `title`/`type`/`body` strings, `occurred` a string or null, and `memories` a list. |
-| `GET …/ingest-runs` | the archive's imports, newest first: `{ id, createdAt, source, mine, notes, undone }`. `source` is `null` once an import is undone or its notes are all gone. Every member. |
-| `POST …/ingest-runs/:run/undo` | takes an import back as a unit → `{ erased, kept: [{ id, title, reason }], alreadyUndone }`. Erases the notes it made, except any somebody has worked on since, which are kept and say why: `edited` (a revision other than the import's own; a rename cascade from another note does not count), `linked` (a note a person wrote, edited or restored since links to it, including one memory of the same import that a person has edited; a link between memories nobody touched does not count, and a kept note never pulls others in). The notes are locked first and the decision is made afterwards, so an edit or a link committed while the undo waited is seen. Undo (and deleting a note by hand) also removes, from the OTHER notes, the machine-written `> ⚠ May disagree with [[erased title]] … that note says “…”` lines that quote an erased note, as revisions with the reason `erasure-cascade` (which, like `rename-cascade`, does not count as somebody having worked on the note); a person's own text and links are never touched. A preview prepared earlier is re-checked at save and drops markers whose source is gone. One residue: the OLDER saved versions of the other note still hold the line (the revision log is append-only). Two undos at once erase once: the second answers `alreadyUndone: true`. Afterwards the import keeps no file name and no hash of its words, and the job that made it no longer holds them (`outcome.undone: true`, `memories: []`). |
+| `GET …/ingest-runs` | the archive's imports, newest first: `{ id, createdAt, source, mine, notes, undone }`. `notes` counts only notes the run created, identified by their first revision; paragraphs added elsewhere do not count. `source` is `null` once an import is undone or its created notes are all gone. Every member. |
+| `POST …/ingest-runs/:run/undo` | takes an import back as a unit → `{ erased, restored, kept: [{ id, title, reason }], alreadyUndone }`. Restores notes it only added paragraphs to (unless edited later), removing their run-specific paragraph sources. `restored` counts those notes; repeated undo returns zero. Erases the notes it made, except any somebody has worked on since, which are kept and say why: `edited` (a revision other than the import's own; a rename cascade from another note does not count), `linked` (a note a person wrote, edited or restored since links to it, including one memory of the same import that a person has edited; a link between memories nobody touched does not count, and a kept note never pulls others in). A later import's link to an entity note also keeps that note. Restoration revisions written by import undos are bookkeeping and never count as later human link evidence. The notes are locked first and the decision is made afterwards, so an edit or a link committed while the undo waited is seen. Undo (and deleting a note by hand) also removes, from the OTHER notes, the machine-written `> ⚠ May disagree with [[erased title]] … that note says “…”` lines that quote an erased note, as revisions with the reason `erasure-cascade` (which, like `rename-cascade`, does not count as somebody having worked on the note); a person's own text and links are never touched. A preview prepared earlier is re-checked at save and drops markers whose source is gone. One residue: the OLDER saved versions of the other note still hold the line (the revision log is append-only). Two undos at once erase once: the second answers `alreadyUndone: true`. Afterwards the import keeps no file name and no hash of its words, and the job that made it no longer holds them (`outcome.undone: true`, `memories: []`). |
 
 **How long a job is kept.** A job lives on *idle* time, refreshed whenever its owner reads, saves or
 cancels it: an unsaved preview 60 minutes, any other finished job 15. An unsaved preview also has an
@@ -124,7 +193,7 @@ only while a job waits for the Worker's queue, and it is cleared the moment the 
 - `previewed` — nothing written; `memories` to read and `…/save`
 - `needs_confirmation` — who is telling was a close call; pick `interviewees` (or `confirm`)
 - `duplicate` — this interview (the same words, whatever the file format or speaker labels) is already
-  in the archive; `duplicateOf` says when. Any import of it whose notes are still there counts, so
+  in the archive; `duplicateOf` says when. Any import of it whose created notes are still there counts (an appended-to note alone does not), so
   "import it again anyway" followed by an undo of the second copy still finds the first.
 
 with `memories[]` (`id, title, type, occurred, body, notes, turns, anchor, startSec, endSec, method: ai-grounded|verbatim, speaker, speakerName?, conflicts?`),
@@ -177,8 +246,8 @@ arrives decomposed), and an import's file name is scrubbed from the record as so
 - **Limits and refusals.** A note body may hold 200,000 characters (413 `too_long`) and 1,000 `[[links]]` (400 `too_many_links`); a request over 2 MB is 413 `too_large`; a body that is not a JSON object, text that is not JSON, a field that is not text, or a missing title or type is 400 `bad_request`; a new `occurred` must look like `1987`, `1987-03`, `1987-03-15`, `~1948` or `unknown` (400 `date`). C0 control characters in a title or body are removed. All of this is decided before the archive's write lock is taken.
 - **Writers queue.** Writers to one archive wait their turn inside the API process before they take a database connection (the database advisory lock, keyed on the lower-cased archive id, still serialises across processes), so many waiting saves cannot hold every connection.
 - **Shutdown.** On SIGTERM/SIGINT the embedding pass stops between batches; the server waits at most 5 s for it and 2 s for requests in flight, then closes the pool. A second signal at least a second later exits at once. A lost database connection is logged (`database connection lost: pg <code>`) and does not stop the server.
-- **Migrations.** v2's one migration (`supabase/migrations/20261019180000_initial_schema.sql`) holds all of v1's, including the import records and their scrub-on-erase trigger and the revision reason `erasure-cascade`.
-- **Links by title.** Links an import makes are by title, read when the job starts: a note renamed before the save leaves those links unresolved (`[[Busan]]`); her words are intact; re-link by editing.
+- **Migrations.** The initial v2 schema holds v1's import records and revision history. Apply later interview, profile, graph and undo migrations in order as listed in `docs/deploy.md`, including both `20261029` migrations before deploying this Worker.
+- **Links by title.** Entity links are resolved again at save using the note's current title, including title collisions and review renames. Other title links read when the job started may become unresolved if their target is renamed before save; the shown words stay intact.
 
 ## Configuration
 

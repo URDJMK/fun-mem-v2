@@ -99,8 +99,10 @@ export const canManage = (role: string) => role === 'owner' || role === 'steward
 /** The address of a page inside an archive. */
 export const inArchive = (archiveId: string, path = '') => `/a/${archiveId}${path}`;
 
-/** People and places live on the People & places page; every other note is a story. */
-export const isEntity = (type: string) => type === 'person' || type === 'place';
+/** People, places and things live on the People, places & things page; every other note is a story. */
+/** a person, place or thing: its page is on People, places & things */
+export const isEntity = (type: string) =>
+  type === 'person' || type === 'place' || type === 'object';
 
 export const noteHref = (archiveId: string, note: { id: string; type: string }) =>
   inArchive(archiveId, `${isEntity(note.type) ? '/people' : '/stories'}/${note.id}`);

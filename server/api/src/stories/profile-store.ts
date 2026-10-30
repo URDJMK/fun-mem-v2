@@ -2,6 +2,7 @@ import type { Pool, PoolClient } from 'pg';
 import type { App, AppDeps } from '../app';
 import { memberRole, UUID_RE, WRITE_ROLES } from '../membership';
 import { createNotesBatch } from '../notes';
+import { entityForNote, syncProfileAliases } from '../graph/note-entity';
 import { visibleSql } from '../views';
 import { parseProfileInput, readProfile, type Profile, type ProfileFields } from './profile';
 
@@ -15,13 +16,19 @@ type Db = Pool | PoolClient;
 const NOT_FOUND = { error: 'not found' };
 const EMPTY: ProfileFields = { born: null, died: null, aliases: [] };
 
+/** The profile on its note; the names in it become (or stop being) its entity's aliases. */
 async function setProfile(db: Db, noteId: string, fields: ProfileFields): Promise<void> {
+  const old = await db.query(`select extra->'profile' as profile from public.notes where id = $1`, [
+    noteId,
+  ]);
+  const before = readProfile((old.rows[0] as { profile: unknown } | undefined)?.profile ?? {});
   await db.query(
     `update public.notes
         set extra = jsonb_set(coalesce(extra, '{}'::jsonb), '{profile}', $2::jsonb, true)
       where id = $1`,
     [noteId, JSON.stringify(fields)],
   );
+  await syncProfileAliases(db, noteId, before.aliases, fields.aliases);
 }
 
 /**
@@ -49,7 +56,16 @@ export async function ensureSubjectNote(
     [archiveId, row.subject_name],
   );
   let id = (same.rows[0] as { id: string } | undefined)?.id;
-  if (!id) {
+  if (id) {
+    // adopted: it is the protagonist's entity's note too
+    await entityForNote(deps.pool, {
+      id,
+      archiveId,
+      title: row.subject_name,
+      type: 'person',
+      createdBy: userId,
+    });
+  } else {
     const made = await createNotesBatch(
       deps,
       archiveId,

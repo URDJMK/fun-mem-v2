@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { afterAll, describe, expect, it } from 'vitest';
-import { testContext, type RealSession } from './helpers';
+import { NOT_PROTAGONIST, type RealSession, testContext } from './helpers';
 
 /**
  * FR-100 on the note routes: only owners, stewards and contributors add, change, delete or
@@ -75,9 +75,10 @@ describe('#6 the note routes: who may write, who may read', () => {
         expect((await ctx.api(m.token, 'GET', path)).status, `${role} GET ${path}`).toBe(200);
       }
     }
-    const left = await ctx.pool.query(`select body from public.notes where archive_id = $1`, [
-      archive,
-    ]);
+    const left = await ctx.pool.query(
+      `select body from public.notes where archive_id = $1 and ${NOT_PROTAGONIST}`,
+      [archive],
+    );
     expect(left.rows).toEqual([{ body: 'She cooked for everyone on Sundays.' }]);
   });
 
@@ -177,9 +178,10 @@ describe('D6 the role is checked again inside the write, not only before it wait
         expect(status, `${then} ${method} ${path('A')}`).toBe(expected);
       }
     }
-    const left = await ctx.pool.query(`select body from public.notes where archive_id = $1`, [
-      archive,
-    ]);
+    const left = await ctx.pool.query(
+      `select body from public.notes where archive_id = $1 and ${NOT_PROTAGONIST}`,
+      [archive],
+    );
     expect(left.rows).toEqual([{ body: 'She cooked for everyone on Sundays.' }]);
   });
 });

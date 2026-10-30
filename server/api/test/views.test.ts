@@ -55,8 +55,8 @@ describe('FM-020 people index and neighborhood', () => {
     const res = await ctx.api(s.token, 'GET', `/v1/archives/${archive}/people`);
     expect(res.status).toBe(200);
     const rows = (await res.json()) as Array<{ id: string; title: string; backlinks: number }>;
-    // only person-typed notes, each with its incoming-occurrence count
-    expect(rows.map((r) => r.title).sort()).toEqual(['Dad', 'Mom']);
+    // only person-typed notes (the protagonist's own among them), each with its incoming-occurrence count
+    expect(rows.map((r) => r.title).sort()).toEqual(['Dad', 'Mom', `Ppl ${RUN}`]);
     const mom = rows.find((r) => r.title === 'Mom')!;
     const dad = rows.find((r) => r.title === 'Dad')!;
     expect(mom.backlinks).toBe(2);

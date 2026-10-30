@@ -41,16 +41,60 @@ const RESULT_CHARS = 4000;
 const isObj = (v: unknown): v is Record<string, unknown> =>
   typeof v === 'object' && v !== null && !Array.isArray(v);
 
-/** The JSON object in an answer, fenced or not; undefined when there is none. */
+/**
+ * The JSON object in an answer, fenced or not; undefined when there is none. Thinking is left
+ * out, and a lone "</think>" too: the real model sometimes ends its answer with one. An answer
+ * that stops with something still open (measured: a long one a brace short) is closed.
+ */
 export function readJson(text: string): unknown {
-  const t = text.replace(/<think>[\s\S]*?<\/think>/g, '').trim();
+  const t = text
+    .replace(/<think>[\s\S]*?<\/think>/g, '')
+    .replace(/<\/?think>/g, '')
+    .trim();
   const fenced = /```(?:json)?\s*([\s\S]*?)```/i.exec(t);
   const body = fenced ? fenced[1]!.trim() : t;
   const from = body.indexOf('{');
+  if (from < 0) return undefined;
   const to = body.lastIndexOf('}');
-  if (from < 0 || to <= from) return undefined;
+  if (to > from) {
+    try {
+      return JSON.parse(body.slice(from, to + 1)) as unknown;
+    } catch {
+      // perhaps left open: below
+    }
+  }
+  return closed(body.slice(from));
+}
+
+/** JSON that stops with objects or lists still open, closed; never mends a cut string */
+function closed(s: string): unknown {
+  const open: string[] = [];
+  let inString = false;
+  let escaped = false;
+  let end = s.length;
+  for (let i = 0; i < s.length; i++) {
+    const c = s[i];
+    if (inString) {
+      if (escaped) escaped = false;
+      else if (c === '\\') escaped = true;
+      else if (c === '"') inString = false;
+      continue;
+    }
+    if (c === '"') inString = true;
+    else if (c === '{') open.push('}');
+    else if (c === '[') open.push(']');
+    else if (c === '}' || c === ']') {
+      open.pop();
+      if (open.length === 0) {
+        end = i + 1;
+        break;
+      }
+    }
+  }
+  if (inString) return undefined;
+  const text = s.slice(0, end).replace(/[\s,]+$/, '') + open.reverse().join('');
   try {
-    return JSON.parse(body.slice(from, to + 1)) as unknown;
+    return JSON.parse(text) as unknown;
   } catch {
     return undefined;
   }

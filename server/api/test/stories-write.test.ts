@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { ChatModel } from '../src/nim';
 import { linesOf } from '../src/stories/lines';
-import { parseDraft, writeStory } from '../src/stories/write';
+import { parseDraft, showDraft, writeStory } from '../src/stories/write';
 
 /** The write step: one story, in the third person, every sentence citing its lines. */
 const say = (speaker: string, text: string) => ({
@@ -86,6 +86,88 @@ describe('parseDraft', () => {
   });
 });
 
+describe('parseDraft names', () => {
+  it('reads the names each sentence marks', () => {
+    const d = parseDraft({
+      title: 'Seaweed soup',
+      occurred: null,
+      until: null,
+      sentences: [
+        {
+          text: 'His mother made seaweed soup.',
+          cites: ['L4'],
+          names: [{ e: 'e4', words: 'His mother' }, { e: 'e5', words: '' }, 'x'],
+        },
+      ],
+    });
+    expect(typeof d === 'string' ? d : d.sentences[0]!.names).toEqual([
+      { e: 'e4', words: 'His mother' },
+    ]);
+  });
+
+  it('drops names with no entity, keeps at most twelve, and leaves a sentence without them alone', () => {
+    const many = Array.from({ length: 15 }, (_, i) => ({ e: `e${i}`, words: `w${i}` }));
+    const d = parseDraft({
+      title: 'T',
+      sentences: [
+        { text: 'A.', cites: ['L2'], names: [{ words: 'her' }, { e: '', words: 'her' }, ...many] },
+        { text: 'B.', cites: ['L4'], names: 'e4' },
+        { text: 'C.', cites: ['L4'] },
+      ],
+    });
+    if (typeof d === 'string') throw new Error(d);
+    expect(d.sentences[0]!.names).toEqual(many.slice(0, 12));
+    expect(d.sentences[1]).not.toHaveProperty('names');
+    expect(d.sentences[2]).not.toHaveProperty('names');
+  });
+
+  it('leaves out the key when no mark is usable', () => {
+    const d = parseDraft({
+      title: 'T',
+      sentences: [{ text: 'A.', cites: ['L2'], names: [{ e: 'e4', words: '   ' }, 7, null] }],
+    });
+    if (typeof d === 'string') throw new Error(d);
+    expect(d.sentences[0]).not.toHaveProperty('names');
+  });
+
+  it('trims the id and the words, drops words that are only whitespace, and joins inner whitespace', () => {
+    const d = parseDraft({
+      title: 'T',
+      sentences: [
+        {
+          text: 'His mother made soup.',
+          cites: ['L4'],
+          names: [
+            { e: ' e4 ', words: ' His mother ' },
+            { e: 'e5', words: ' \n\t ' },
+            { e: 'e6', words: 'His   old\n mother' },
+          ],
+        },
+      ],
+    });
+    if (typeof d === 'string') throw new Error(d);
+    expect(d.sentences[0]!.names).toEqual([
+      { e: 'e4', words: 'His mother' },
+      { e: 'e6', words: 'His old mother' },
+    ]);
+  });
+});
+
+describe('showDraft', () => {
+  it('shows the sentences without the names they mark (the writer gives them again)', () => {
+    const d = parseDraft({
+      title: 'Seaweed soup',
+      occurred: null,
+      until: null,
+      sentences: [
+        { text: 'His mother made soup.', cites: ['L4'], names: [{ e: 'e4', words: 'His mother' }] },
+      ],
+    });
+    if (typeof d === 'string') throw new Error(d);
+    expect(showDraft(d)).toBe('Title: Seaweed soup\nOccurred: none\n0. His mother made soup. [L4]');
+  });
+});
+
 describe('writeStory', () => {
   it('shows the story’s lines, and on a second try the problems found', async () => {
     const users: string[] = [];
@@ -158,5 +240,81 @@ describe('writeStory', () => {
       maxToolCalls: 0,
     });
     expect(out.draft.title).toBe('Born by the harbour');
+  });
+
+  it('shows the writer the list of people, places and things', async () => {
+    const seen: string[] = [];
+    const chat: ChatModel = {
+      id: 'scripted',
+      complete: async (_s, user) => {
+        seen.push(user);
+        return JSON.stringify({
+          result: {
+            title: 'T',
+            occurred: null,
+            until: null,
+            sentences: [{ text: 'A.', cites: ['L2'] }],
+          },
+        });
+      },
+    };
+    const base = {
+      story: {
+        title: 'Born by the harbour',
+        ranges: [{ from: 2, to: 2 }],
+        tellers: ['Sunja'],
+        continues: null,
+      },
+      lines,
+      subject: 'Sunja',
+      feedback: null,
+      lookup: { search: async () => [], read: async () => null },
+      maxToolCalls: 0,
+    };
+    await writeStory(chat, { ...base, cast: "e4  Noah Kim's mother (person): his mother" });
+    expect(seen[0]).toContain(
+      "People, places and things in this interview:\ne4  Noah Kim's mother (person): his mother",
+    );
+    expect(seen[0]!.indexOf('The narrator: Sunja.')).toBeLessThan(
+      seen[0]!.indexOf('People, places and things'),
+    );
+
+    await writeStory(chat, base);
+    await writeStory(chat, { ...base, cast: '' });
+    expect(seen[1]).not.toContain('People, places and things');
+    expect(seen[2]).not.toContain('People, places and things');
+  });
+
+  it('keeps the names a sentence marks', async () => {
+    const chat: ChatModel = {
+      id: 'scripted',
+      complete: async () =>
+        JSON.stringify({
+          result: {
+            title: 'T',
+            sentences: [
+              {
+                text: 'Her father repaired boats.',
+                cites: ['L4'],
+                names: [{ e: 'e1', words: 'Her father' }],
+              },
+            ],
+          },
+        }),
+    };
+    const out = await writeStory(chat, {
+      story: {
+        title: 'Boats',
+        ranges: [{ from: 3, to: 4 }],
+        tellers: ['Sunja'],
+        continues: null,
+      },
+      lines,
+      subject: 'Sunja',
+      feedback: null,
+      lookup: { search: async () => [], read: async () => null },
+      maxToolCalls: 0,
+    });
+    expect(out.draft.sentences[0]!.names).toEqual([{ e: 'e1', words: 'Her father' }]);
   });
 });

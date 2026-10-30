@@ -16,6 +16,8 @@ export interface Sentence {
   cites: Range[];
   /** starts a new paragraph */
   paragraph: boolean;
+  /** the people, places and things it names (ids from the list given) and the words used for each */
+  names?: Array<{ e: string; words: string }>;
 }
 
 export interface StoryDraft {
@@ -62,14 +64,35 @@ How it reads:
   from the birth date. Do not work it out yourself.
 - "Who this is about" is what the family entered about the narrator. A sentence may use a fact
   from it, citing "P".
+- People, places and things: when a list of them is given, call each one as the list does (its
+  name, or one of the ways after the colon). For each sentence give "names": the ones from the
+  list it names, by their id, with the words exactly as they appear in that sentence's text, like
+  [{"e": "e4", "words": "His mother"}]; [] when it names none. Do not list the narrator.
 
 Every sentence lists the lines it comes from in "cites" (like ["L3", "L7-L9"]). A summarizing
 sentence may cite a wider range. Set "paragraph": true on a sentence that starts a new paragraph.
 
-Result: {"title": "...", "occurred": "1946" | null, "until": null, "sentences": [{"text": "...", "cites": ["L3"], "paragraph": true}]}`;
+Result: {"title": "...", "occurred": "1946" | null, "until": null, "sentences": [{"text": "...", "cites": ["L3"], "paragraph": true, "names": [{"e": "e4", "words": "His mother"}]}]}`;
 
 const isObj = (v: unknown): v is Record<string, unknown> =>
   typeof v === 'object' && v !== null && !Array.isArray(v);
+
+/** most names a single sentence can mark */
+const MAX_NAMES = 12;
+
+/** the names a sentence marks: only those with an id and the words used; none left is none given */
+function parseNames(v: unknown): Sentence['names'] {
+  if (!Array.isArray(v)) return undefined;
+  const names: NonNullable<Sentence['names']> = [];
+  for (const n of v) {
+    if (!isObj(n) || typeof n.e !== 'string' || typeof n.words !== 'string') continue;
+    const e = n.e.trim();
+    const words = n.words.replace(/\s+/g, ' ').trim();
+    if (e && words) names.push({ e, words });
+    if (names.length === MAX_NAMES) break;
+  }
+  return names.length ? names : undefined;
+}
 
 const fuzzy = (v: unknown): string | null =>
   typeof v === 'string' && parseFuzzyDate(v.trim()) ? v.trim() : null;
@@ -84,10 +107,12 @@ export function parseDraft(v: unknown): StoryDraft | string {
     const cites = (Array.isArray(s.cites) ? s.cites : [s.cites])
       .map((c) => parseCite(c))
       .filter((r): r is Range => r !== null);
+    const names = parseNames(s.names);
     sentences.push({
       text: s.text.replace(/\s+/g, ' ').trim(),
       cites,
       paragraph: sentences.length === 0 || s.paragraph === true,
+      ...(names ? { names } : {}),
     });
   }
   if (sentences.length === 0) return 'the story has no sentences: write it, sentence by sentence';
@@ -133,12 +158,15 @@ export async function writeStory(
     signal?: AbortSignal;
     /** "Who this is about" (stories/profile.ts), or '' */
     profile?: string;
+    /** the interview's people, places and things, one per line as `ref  Name (type): ways`, or '' */
+    cast?: string;
   },
 ): Promise<{ draft: StoryDraft; calls: number }> {
   const own = o.lines.filter((l) => o.story.ranges.some((r) => l.n >= r.from && l.n <= r.to));
   const task = [
     o.profile ?? '',
     `The narrator: ${o.subject}. Told by: ${o.story.tellers.join(', ')}.`,
+    o.cast ? `People, places and things in this interview:\n${o.cast}` : '',
     `Working title: ${o.story.title}`,
     `The story's lines:\n${renderLines(own)}`,
     // only the story's own lines: shown the whole interview, the writer borrows from other

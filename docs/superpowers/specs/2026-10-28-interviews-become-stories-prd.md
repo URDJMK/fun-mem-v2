@@ -60,8 +60,8 @@ The AI is also currently down in production: NVIDIA rejects the deployed key (40
 | D5 | Titles come from the story's heart, like a book of family stories ("Mrs. Han's pencil box", "Gravy at the church supper"). Under 60 characters, and every word backed by the story. |
 | D6 | The full transcript is stored with the interview. This replaces the rule that every spoken sentence must become a memory. The "Short answers" notes go away. |
 | D7 | An import may **edit any note**. It may **delete only by merging**: the merged-away note's content is carried into the surviving note, and the old note is removed. Nothing is deleted outright. |
-| D8 | People and places get **one note each, with aliases**. Family words ("Dad", "Grandma") are resolved per speaker, not stored as aliases. |
-| D9 | The import proposes a note for **every named person and place**. A person can untick any. |
+| D8 | People and places get **one note each, with aliases**. Family words ("Dad", "Grandma") are resolved per speaker, not stored as aliases. *Superseded (2026-10-28) by `2026-10-28-people-places-graph-design.md`: one **graph entity** each (people, places and things), with aliases; a note is optional.* |
+| D9 | The import proposes a note for **every named person and place**. A person can untick any. *Now: the import proposes graph entities and relationships (graph design, G-D6).* |
 | D10 | Architecture: approach 1 (plan → write → judge) as a **fixed, repeatable workflow**, whose AI steps **use tools** to look things up (from approach 3). Tools can read and propose; they never write. |
 | D11 | **Paraphrasing is free; only making things up fails.** The AI may reword, condense, reorder, summarize and add plain transitions ("Years later,"). It may not add an event, person, place, number, date or quote that was not told, contradict what was said, or credit one person's memory to another. A merge keeps the content of every merged note, not its exact wording. |
 | D12 | **Every note the import adds or changes carries its metadata** (7.3): when it happened, who told it, in which interview and at what point in the recording, who saved it and when, and how it was written. An update never loses metadata. |
@@ -397,7 +397,7 @@ Each phase ships on its own and gets its own implementation plan.
    - "Stories not written yet".
    - The evaluation set and metrics.
    - This removes problems 1–5 from section 1.
-2. **One name, one note.**
+2. **One name, one note.** The profile is built; everything after it is now designed in `2026-10-28-people-places-graph-design.md` (G1–G4).
    - First: the protagonist's profile (7.5) at project creation and in Settings, in every prompt, and age-based dates.
    - Aliases and match keys, and link resolution through aliases.
    - Step 6 (people, places and aliases proposed).

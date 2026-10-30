@@ -14,6 +14,8 @@ import type { PoolClient } from 'pg';
 import type { Context } from 'hono';
 import type { App, AppDeps } from './app';
 import { crossNoteMarker } from './conflicts';
+import { entityForNote } from './graph/note-entity';
+import { mentionsOf } from './graph/routes';
 import { isMember, UUID_RE, WRITE_ROLES } from './membership';
 import { visibleSql, visibleNoteSql } from './views';
 import { reindexChunks } from './chunks';
@@ -815,6 +817,7 @@ export async function createNoteCore(
     await reindexLinks(client, archiveId, note.id, body);
     await reindexChunks(client, archiveId, note.id, createRev, body);
     await promoteUnresolved(client, archiveId, note.id, title);
+    await entityForNote(client, { id: note.id, archiveId, title, type, createdBy: userId });
     return note;
   });
   return row;
@@ -831,6 +834,11 @@ export interface NewNoteInput {
   contributors?: string[];
   /** what else is known about it: its sources, how it was written (stories/workflow.ts) */
   extra?: Record<string, unknown>;
+  /**
+   * whether a person, place or object note gets its graph entity here (default true); an
+   * import that ties the note to its entity itself says false
+   */
+  entity?: boolean;
 }
 
 export interface BatchHooks {
@@ -882,6 +890,7 @@ export async function createNotesBatch(
         recorded: input.recorded ?? null,
         contributors: input.contributors ?? [],
         extra: input.extra ?? {},
+        entity: input.entity !== false,
       };
     });
   // known inputs are checked before any connection is taken
@@ -922,11 +931,86 @@ export async function createNotesBatch(
       await reindexLinks(client, archiveId, note.id, n.body);
       await reindexChunks(client, archiveId, note.id, createRev, n.body);
       await promoteUnresolved(client, archiveId, note.id, n.title);
+      if (n.entity) {
+        await entityForNote(client, {
+          id: note.id,
+          archiveId,
+          title: n.title,
+          type: n.type,
+          createdBy: userId,
+        });
+      }
       notes.push(note);
     }
     if (hooks.after) await hooks.after(client, { changeId, notes });
     return { notes, changeId };
   });
+}
+
+/**
+ * Add a paragraph to the end of a note, as a new revision of it (entity design 5.2): what is
+ * written is never changed. The paragraph's sources go in `extra.paragraphs` with the run, so
+ * an undo can take them back. Returns false, changing nothing, for a note the user cannot see
+ * or that is not in the project, for a paragraph with no words, and for a note the paragraph
+ * would make too long.
+ *
+ * It runs inside a transaction the caller owns, and the caller has checked that the user may
+ * write. `text` is one paragraph.
+ */
+export async function appendParagraph(
+  client: PoolClient,
+  o: {
+    archiveId: string;
+    noteId: string;
+    userId: string;
+    text: string;
+    sources: unknown[];
+    runId: string;
+    changeId: string;
+  },
+): Promise<boolean> {
+  if (!o.text.trim()) return false;
+  const cur = await client.query(
+    `select n.title, n.body, n.extra from public.notes n
+      where ${visibleNoteSql('n', '$1', '$2', '$3')} for update`,
+    [o.noteId, o.archiveId, o.userId],
+  );
+  const head = cur.rows[0] as
+    { title: string; body: string; extra: Record<string, unknown> | null } | undefined;
+  if (!head) return false;
+  const body = head.body.trim() ? `${head.body.trimEnd()}\n\n${o.text}` : o.text;
+  try {
+    checkBody(body);
+  } catch (e) {
+    if (e instanceof ApiError) return false;
+    throw e;
+  }
+  const extra = head.extra ?? {};
+  const paragraphs = Array.isArray(extra.paragraphs) ? extra.paragraphs : [];
+  await client.query(
+    `update public.notes set body = $1, extra = $2::jsonb, revised = now() where id = $3`,
+    [
+      body,
+      JSON.stringify({
+        ...extra,
+        paragraphs: [...paragraphs, { runId: o.runId, sources: o.sources }],
+      }),
+      o.noteId,
+    ],
+  );
+  const rev = await appendRevision(
+    client,
+    o.archiveId,
+    o.noteId,
+    o.userId,
+    head.title,
+    body,
+    'import',
+    o.changeId,
+  );
+  await reindexLinks(client, o.archiveId, o.noteId, body);
+  await reindexChunks(client, o.archiveId, o.noteId, rev, body);
+  return true;
 }
 
 /**
@@ -1117,7 +1201,10 @@ export function registerNotesRoutes(app: App, deps: AppDeps): void {
       [c.req.param('noteId'), c.req.param('archiveId'), c.get('userId')],
     );
     if (found.rowCount === 0) return c.json(NOT_FOUND, 404);
-    return c.json(noteShape(found.rows[0] as NoteRow));
+    const row = found.rows[0] as NoteRow;
+    // the entities a story names, for its page to underline (graph design 6.3)
+    const mentions = await mentionsOf(deps, row.archive_id, row.id, c.get('userId'));
+    return c.json({ ...noteShape(row), mentions });
   });
 
   app.put('/v1/archives/:archiveId/notes/:noteId', noteBodyLimit(), async (c) => {

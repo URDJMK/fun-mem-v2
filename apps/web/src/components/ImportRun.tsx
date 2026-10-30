@@ -1,19 +1,24 @@
 import { useEffect, useRef, useState } from 'react';
+import { GraphReview, keptCount, NO_CHOICES, patchOf, type GraphChoices } from './GraphReview';
 import { Link, useNavigate } from 'react-router';
 import {
   ApiError,
   getImport,
+  listEntities,
   listNotes,
   saveImport,
   startImport,
   type ImportJob,
+  type EntitySummary,
   type ImportMemory,
   type ImportOutcome,
   type ImportRequest,
   type MemoryPatch,
   type NoteSummary,
+  startGraphBuild,
 } from '../lib/api';
 import { inArchive, noteHref } from '../lib/archive';
+import { previewStory } from '../lib/graph-review';
 import { Linked, splitNote } from './NoteText';
 import { count, Failed, Icon, whenLabel } from './ui';
 
@@ -87,6 +92,8 @@ export function useImportRun(
   step: RunStep | null;
   req: ImportRequest | null;
   run: (request: ImportRequest) => Promise<void>;
+  /** "Find people, places and things": the graph from the saved stories (graph design 4.4) */
+  build: () => Promise<void>;
   resume: (jobId: string) => Promise<void>;
   /** `<Review>` saves directly (outside the poll loop) and reports the outcome here. */
   saved: (outcome: ImportOutcome) => void;
@@ -149,11 +156,11 @@ export function useImportRun(
     await poll(job);
   }
 
-  async function run(request: ImportRequest) {
+  async function run(request: ImportRequest | null) {
     setReq(request);
     let job: ImportJob;
     try {
-      job = await startImport(archiveId, request);
+      job = request ? await startImport(archiveId, request) : await startGraphBuild(archiveId);
     } catch (e) {
       if (e instanceof ApiError && e.code === 'busy') {
         // the server names the job already in the way when it is this same person's own: follow
@@ -178,22 +185,36 @@ export function useImportRun(
     setReq(null);
   }
 
-  return { step, req, run, resume, saved, reset };
+  return { step, req, run, build: () => run(null), resume, saved, reset };
 }
 
-export function Running({ job, onCancel }: { job: ImportJob; onCancel: () => Promise<void> }) {
+export function Running({
+  job,
+  onCancel,
+  graph = false,
+}: {
+  job: ImportJob;
+  onCancel: () => Promise<void>;
+  /** the button's run: reading the saved stories, not an interview */
+  graph?: boolean;
+}) {
   const [stopping, setStopping] = useState(false);
   const { done, total } = job.progress;
   const pct = total > 0 ? Math.round((done / total) * 100) : 5;
   return (
     <div className="stack" style={{ gap: 12 }}>
-      <h1 className="page-title">Reading the interview…</h1>
+      <h1 className="page-title">{graph ? 'Reading the stories…' : 'Reading the interview…'}</h1>
       <p className="muted t-small">
-        A long conversation takes a few minutes. You can leave this page — it keeps going, and you
-        can come back to it; nothing is saved until you’ve read it over.
+        {graph
+          ? 'Finding the people, places and things in them, and how they relate. It takes a few minutes; nothing is saved until you’ve read it over.'
+          : 'A long conversation takes a few minutes. You can leave this page — it keeps going, and you can come back to it; nothing is saved until you’ve read it over.'}
       </p>
       <div className="card stack" style={{ gap: 8 }} role="status">
-        <span>{STAGE[job.stage]}</span>
+        <span>
+          {graph && job.stage === 'organizing'
+            ? 'Finding the people, places and things'
+            : STAGE[job.stage]}
+        </span>
         <div className="progress" aria-hidden="true">
           <span style={{ width: `${pct}%` }} />
         </div>
@@ -311,12 +332,19 @@ export function Review({
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [notes, setNotes] = useState<NoteSummary[]>([]);
+  const [knownEntities, setKnownEntities] = useState<EntitySummary[]>([]);
+  const [graphChoices, setGraphChoices] = useState<GraphChoices>(NO_CHOICES);
 
   useEffect(() => {
     listNotes(archiveId)
       .then(setNotes)
       .catch(() => {
         /* links in a preview simply show as written */
+      });
+    listEntities(archiveId)
+      .then(setKnownEntities)
+      .catch(() => {
+        /* the proposal still carries its matched notes */
       });
   }, [archiveId]);
 
@@ -333,6 +361,54 @@ export function Review({
           <div className="row">
             <button type="button" className="btn btn-primary" onClick={onRetry}>
               Try again
+            </button>
+          </div>
+        )}
+      </div>
+    );
+  }
+
+  // the button's run: only people, places and things, in stories already saved
+  if (outcome.format === 'graph' && outcome.graph) {
+    const g = outcome.graph;
+    const kept = keptCount(g, graphChoices, () => true);
+    return (
+      <div className="stack" style={{ gap: 14 }}>
+        <div className="stack" style={{ gap: 4 }}>
+          <h1 className="page-title">People, places and things in your stories</h1>
+          <p className="muted">Nothing joins the graph until you save it.</p>
+        </div>
+        {!g.pending && g.entities.length === 0 ? (
+          <p className="notice notice-sage" role="status">
+            Nothing new: everyone and everything the stories name is in the graph already.
+          </p>
+        ) : (
+          <GraphReview
+            archiveId={archiveId}
+            graph={g}
+            storyTitle={(id) => notes.find((n) => n.id === id)?.title ?? 'a story'}
+            storyKept={() => true}
+            choices={graphChoices}
+            onChange={setGraphChoices}
+            knownEntities={knownEntities}
+            noteTitles={new Map(notes.map((n) => [n.id, n.title]))}
+            standalone
+          />
+        )}
+        {error && <Failed>{error}</Failed>}
+        {!g.pending && g.entities.length > 0 && (
+          <div className="spread card" style={{ padding: '10px 13px' }}>
+            <span className="muted">
+              Saving keeps {count(kept, 'person, place or thing', 'people, places and things')}.
+            </span>
+            <button
+              type="button"
+              className="btn btn-primary"
+              data-testid="import-save"
+              disabled={saving || kept === 0}
+              onClick={() => void save()}
+            >
+              {saving ? 'Saving…' : 'Save them'}
             </button>
           </div>
         )}
@@ -360,6 +436,13 @@ export function Review({
   };
   const left = memories.filter((_, i) => !decided[i]).length;
   const keeping = memories.filter((_, i) => decided[i] !== 'out').length;
+  const storyKept = (id: string) => {
+    const i = memories.findIndex((x) => x.id === id);
+    return i >= 0 && decided[i] !== 'out';
+  };
+  const preview = outcome.graph
+    ? previewStory(shown.body, outcome.graph, graphChoices, storyKept, knownEntities, notes)
+    : undefined;
 
   function decide(d: Decision) {
     const next = { ...decided, [at]: d };
@@ -384,7 +467,14 @@ export function Review({
       };
     });
     try {
-      onSaved(await saveImport(archiveId, jobId, patches));
+      onSaved(
+        await saveImport(
+          archiveId,
+          jobId,
+          patches,
+          outcome.graph ? patchOf(graphChoices) : undefined,
+        ),
+      );
     } catch (e) {
       const code = e instanceof ApiError ? e.code : null;
       setError(
@@ -457,7 +547,13 @@ export function Review({
             onCancel={() => setEditing(false)}
           />
         ) : (
-          <MemoryView memory={m} shown={shown} notes={notes} archiveId={archiveId} />
+          <MemoryView
+            memory={m}
+            shown={{ ...shown, body: preview?.body ?? shown.body }}
+            notes={notes}
+            archiveId={archiveId}
+            proposed={preview?.proposed}
+          />
         )}
 
         {!editing && (
@@ -482,6 +578,19 @@ export function Review({
           </p>
         )}
       </article>
+
+      {outcome.graph && (
+        <GraphReview
+          archiveId={archiveId}
+          graph={outcome.graph}
+          storyTitle={(id) => memories.find((x) => x.id === id)?.title ?? 'a story'}
+          storyKept={storyKept}
+          choices={graphChoices}
+          onChange={setGraphChoices}
+          knownEntities={knownEntities}
+          noteTitles={new Map(notes.map((n) => [n.id, n.title]))}
+        />
+      )}
 
       {error && <Failed>{error}</Failed>}
       <div className="spread card" style={{ padding: '10px 13px' }}>
@@ -508,11 +617,13 @@ function MemoryView({
   shown,
   notes,
   archiveId,
+  proposed,
 }: {
   memory: ImportMemory;
   shown: { title: string; body: string; occurred: string };
   notes: NoteSummary[];
   archiveId: string;
+  proposed?: ReadonlyMap<string, boolean>;
 }) {
   const parts = splitNote(shown.body);
   const [showSources, setShowSources] = useState(false);
@@ -532,7 +643,7 @@ function MemoryView({
       <div className="prose" style={{ gap: 9 }}>
         {parts.paragraphs.map((p, i) => (
           <p key={i}>
-            <Linked text={p} notes={notes} archiveId={archiveId} />
+            <Linked text={p} notes={notes} archiveId={archiveId} proposed={proposed} />
           </p>
         ))}
       </div>
@@ -669,6 +780,31 @@ export function Saved({
 }) {
   const navigate = useNavigate();
   const saved = outcome.saved ?? [];
+  if (outcome.format === 'graph' && outcome.graph) {
+    return (
+      <div className="stack" style={{ gap: 12 }}>
+        <h1 className="page-title">Added to the graph</h1>
+        <p role="status" className="notice notice-sage">
+          {count(
+            outcome.graph.entities.length,
+            'person, place or thing',
+            'people, places and things',
+          )}{' '}
+          from your stories, with how they relate. If something’s not right, you can change it on
+          its page, or undo the whole lot from Interviews.
+        </p>
+        <div className="row">
+          <button
+            type="button"
+            className="btn btn-primary"
+            onClick={() => (onRestart ? onRestart() : void navigate(inArchive(archiveId)))}
+          >
+            See them
+          </button>
+        </div>
+      </div>
+    );
+  }
   return (
     <div className="stack" style={{ gap: 12 }}>
       <h1 className="page-title">Added to the project</h1>
@@ -679,7 +815,11 @@ export function Saved({
             ? ['story was', 'stories were']
             : ['memory was', 'memories were']) as [string, string]),
         )}{' '}
-        saved. Thank you! If something’s not right, you can fix it on its page, or undo the whole
+        saved
+        {outcome.graph && outcome.graph.entities.length > 0
+          ? `, with ${count(outcome.graph.entities.length, 'person, place or thing', 'people, places and things')} for the graph`
+          : ''}
+        . Thank you! If something’s not right, you can fix it on its page, or undo the whole
         interview from Interviews.
       </p>
       <ul className="list">
